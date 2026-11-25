@@ -59,7 +59,7 @@ describe("recipe feature ownership", () => {
             ),
         ])
     );
-    const visit = (file: string, ancestors: readonly string[]): void => {
+    const visit = (file: string, ancestors: readonly string[]) => {
       expect(ancestors, `cycle through ${file}`).not.toContain(file);
       for (const dependency of graph.get(file) ?? []) {
         visit(dependency, [...ancestors, file]);

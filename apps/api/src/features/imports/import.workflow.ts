@@ -168,18 +168,18 @@ interface UnconfirmedAcquisitionRetry {
 
 type AcquisitionRetry = ConfirmedAcquisitionRetry | UnconfirmedAcquisitionRetry;
 
-const acquisitionFailureReasonCode = (
-  failure: ConfirmedAcquisitionRetry
-): AcquisitionDiagnosticReasonCode => {
+const acquisitionFailureReasonCode = (failure: ConfirmedAcquisitionRetry) => {
   if (
     failure.reason === "download_timeout" ||
     failure.reason === "acquisition_timeout" ||
     failure.reason === "container_process_timeout"
   ) {
-    return "timeout";
+    const checkedResult: AcquisitionDiagnosticReasonCode = "timeout";
+    return checkedResult;
   }
   if (failure.reason === "container_exit") {
-    return "container_exit";
+    const checkedResult: AcquisitionDiagnosticReasonCode = "container_exit";
+    return checkedResult;
   }
   if (
     failure.reason === "container_rpc" ||
@@ -188,37 +188,50 @@ const acquisitionFailureReasonCode = (
     failure.reason === "download_source_unavailable" ||
     failure.reason === "download_stream_or_tls"
   ) {
-    return "transport";
+    const checkedResult: AcquisitionDiagnosticReasonCode = "transport";
+    return checkedResult;
   }
-  return failure.stage === "process" ? "container_exit" : "validation";
+  {
+    const checkedResult: AcquisitionDiagnosticReasonCode =
+      failure.stage === "process" ? "container_exit" : "validation";
+    return checkedResult;
+  }
 };
 
-const acquisitionOutcomeReasonCode = (
-  outcome: AcquisitionTaskOutcome
-): AcquisitionDiagnosticReasonCode | undefined => {
+const acquisitionOutcomeReasonCode = (outcome: AcquisitionTaskOutcome) => {
   if (outcome._tag === "RetryExhausted") {
     const retry: ConfirmedAcquisitionRetry = {
       _tag: "ConfirmedAcquisitionRetry",
       generation: outcome.generation,
       stage: outcome.stage,
     };
-    return acquisitionFailureReasonCode(
-      outcome.reason === undefined
-        ? retry
-        : { ...retry, reason: outcome.reason }
-    );
+    {
+      const checkedResult: AcquisitionDiagnosticReasonCode | undefined =
+        acquisitionFailureReasonCode(
+          outcome.reason === undefined
+            ? retry
+            : { ...retry, reason: outcome.reason }
+        );
+      return checkedResult;
+    }
   }
   if (outcome._tag === "TerminalMedia") {
-    return outcome.code === "unsupported_streams"
-      ? "unsupported_type"
-      : "validation";
+    const checkedResult: AcquisitionDiagnosticReasonCode | undefined =
+      outcome.code === "unsupported_streams"
+        ? "unsupported_type"
+        : "validation";
+    return checkedResult;
   }
   if (outcome._tag === "Unavailable") {
-    return "transport";
+    const checkedResult: AcquisitionDiagnosticReasonCode | undefined =
+      "transport";
+    return checkedResult;
   }
-  return outcome._tag === "UnsupportedCarousel"
-    ? "unsupported_type"
-    : undefined;
+  {
+    const checkedResult: AcquisitionDiagnosticReasonCode | undefined =
+      outcome._tag === "UnsupportedCarousel" ? "unsupported_type" : undefined;
+    return checkedResult;
+  }
 };
 
 export const observeAcquisitionCheckpoint = (
@@ -312,10 +325,13 @@ export const runAcquisitionTask = <
           : Effect.void;
       return begin.pipe(
         Effect.andThen(allocate()),
-        Effect.mapError((): UnconfirmedAcquisitionRetry => ({
-          _tag: "UnconfirmedAcquisitionRetry",
-          stage: "reconcile",
-        })),
+        Effect.mapError(() => {
+          const checkedResult: UnconfirmedAcquisitionRetry = {
+            _tag: "UnconfirmedAcquisitionRetry",
+            stage: "reconcile",
+          };
+          return checkedResult;
+        }),
         Effect.tap((allocation) =>
           Effect.sync(() => {
             confirmedGeneration = allocation.generation;
@@ -351,32 +367,39 @@ export const runAcquisitionTask = <
           }).pipe(
             Effect.mapError(
               // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.mapError is a typed Effect combinator, not Promise callback control flow.
-              (error): ConfirmedAcquisitionRetry => {
+              (error) => {
                 const reason = "reason" in error ? error.reason : undefined;
                 const retry: ConfirmedAcquisitionRetry = {
                   _tag: "ConfirmedAcquisitionRetry",
                   generation: allocation.generation,
                   stage: error.stage,
                 };
-                return reason === undefined ? retry : { ...retry, reason };
+                {
+                  const checkedResult: ConfirmedAcquisitionRetry =
+                    reason === undefined ? retry : { ...retry, reason };
+                  return checkedResult;
+                }
               }
             )
           )
         ),
         Effect.timeoutOrElse({
           duration: `${MaximumAcquisitionExecutionMilliseconds} millis`,
-          orElse: (): Effect.Effect<never, AcquisitionRetry> =>
-            confirmedGeneration === undefined
-              ? Effect.fail({
-                  _tag: "UnconfirmedAcquisitionRetry",
-                  stage: "reconcile",
-                })
-              : Effect.fail({
-                  _tag: "ConfirmedAcquisitionRetry",
-                  generation: confirmedGeneration,
-                  reason: "acquisition_timeout",
-                  stage: "process",
-                }),
+          orElse: () => {
+            const checkedResult: Effect.Effect<never, AcquisitionRetry> =
+              confirmedGeneration === undefined
+                ? Effect.fail({
+                    _tag: "UnconfirmedAcquisitionRetry",
+                    stage: "reconcile",
+                  })
+                : Effect.fail({
+                    _tag: "ConfirmedAcquisitionRetry",
+                    generation: confirmedGeneration,
+                    reason: "acquisition_timeout",
+                    stage: "process",
+                  });
+            return checkedResult;
+          },
         }),
         // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect.tapError is a typed Effect combinator, not Promise callback control flow.
         Effect.tapError((error) =>
@@ -418,21 +441,24 @@ export const runAcquisitionTask = <
     return runAttempt.pipe(
       Effect.retry({ schedule: TypedAcquisitionRetrySchedule }),
       Effect.matchEffect({
-        onFailure: (
-          error
-        ): Effect.Effect<
-          AcquisitionTaskOutcome,
-          UnconfirmedAcquisitionRetry
-        > => {
+        onFailure: (error) => {
           if (error._tag !== "ConfirmedAcquisitionRetry") {
-            return Effect.fail(error);
+            const checkedResult: Effect.Effect<
+              AcquisitionTaskOutcome,
+              UnconfirmedAcquisitionRetry
+            > = Effect.fail(error);
+            return checkedResult;
           }
           if (error.reason === "download_source_unavailable") {
-            return Effect.succeed({
+            const checkedResult: Effect.Effect<
+              AcquisitionTaskOutcome,
+              UnconfirmedAcquisitionRetry
+            > = Effect.succeed({
               _tag: "Unavailable" as const,
               code: "private_or_unavailable" as const,
               generation: error.generation,
             });
+            return checkedResult;
           }
           const outcome =
             error.reason === undefined
@@ -449,7 +475,13 @@ export const runAcquisitionTask = <
                   reason: error.reason,
                   stage: error.stage,
                 };
-          return Effect.succeed(outcome);
+          {
+            const checkedResult: Effect.Effect<
+              AcquisitionTaskOutcome,
+              UnconfirmedAcquisitionRetry
+            > = Effect.succeed(outcome);
+            return checkedResult;
+          }
         },
         onSuccess: Effect.succeed,
       })
@@ -561,10 +593,13 @@ export const runHouseholdAcquisitionTask = (input: {
       retryOptions
     );
   }).pipe(
-    Effect.mapError((): UnconfirmedAcquisitionRetry => ({
-      _tag: "UnconfirmedAcquisitionRetry",
-      stage: "reconcile",
-    }))
+    Effect.mapError(() => {
+      const checkedResult: UnconfirmedAcquisitionRetry = {
+        _tag: "UnconfirmedAcquisitionRetry",
+        stage: "reconcile",
+      };
+      return checkedResult;
+    })
   );
 
 const makeHouseholdIntentTransitions = (input: {
@@ -714,16 +749,19 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
             });
             const retryLifecycle = (
               boundary: "acquisition" | "speech" | "visual" | "recipe"
-            ): ProviderTaskRetryLifecycle => ({
-              retrying: (attempt) =>
-                intentTransitions
-                  .setActivity(boundary, attempt, "retrying")
-                  .pipe(Effect.orDie),
-              working: (attempt) =>
-                intentTransitions
-                  .setActivity(boundary, attempt, "working")
-                  .pipe(Effect.orDie),
-            });
+            ) => {
+              const checkedResult: ProviderTaskRetryLifecycle = {
+                retrying: (attempt) =>
+                  intentTransitions
+                    .setActivity(boundary, attempt, "retrying")
+                    .pipe(Effect.orDie),
+                working: (attempt) =>
+                  intentTransitions
+                    .setActivity(boundary, attempt, "working")
+                    .pipe(Effect.orDie),
+              };
+              return checkedResult;
+            };
             const terminalRecovery = {
               speechDispatchId: ({
                 acquisitionGeneration,
@@ -848,7 +886,7 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                 yield* intentTransitions
                   .advanceComponent("visuals", "processing")
                   .pipe(Effect.orDie);
-                // Resolve recovered speech ownership outside the visual task so replay refreshes it.
+
                 const dispatchIds =
                   preparedDispatchIds ??
                   (yield* Effect.all({
@@ -1017,13 +1055,11 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                     });
                   }),
               }).pipe(
-                Effect.flatMap(
-                  (
-                    recovered
-                  ): Effect.Effect<
+                Effect.flatMap((recovered) => {
+                  const checkedResult: Effect.Effect<
                     AcquisitionTaskOutcome | AcquisitionCheckpointRejected,
                     UnconfirmedAcquisitionRetry
-                  > =>
+                  > =
                     recovered === null
                       ? runHouseholdAcquisitionTask({
                           admission,
@@ -1074,8 +1110,9 @@ export default class ImportAcquisitionWorkflow extends Cloudflare.Workflow<Impor
                           intentId,
                           lifecycle: retryLifecycle("acquisition"),
                         })
-                      : Effect.succeed(recovered)
-                ),
+                      : Effect.succeed(recovered);
+                  return checkedResult;
+                }),
                 Effect.map((outcome) =>
                   outcome._tag === "AcquisitionCheckpointRejected"
                     ? outcome
@@ -1341,32 +1378,43 @@ export const ProviderRestartResult = Schema.Literals([
 export type ProviderRestartResult = typeof ProviderRestartResult.Type;
 
 const reconcileExisting = (instance: WorkflowInstanceLike) =>
-  Effect.flatMap(
-    instance.status(),
-    ({
-      status,
-    }): Effect.Effect<EnsureStartedResult, WorkflowStartUnavailable> => {
-      switch (status) {
-        case "queued":
-        case "running":
-        case "waiting":
-        case "waitingForPause": {
-          return Effect.succeed("already_active");
-        }
-        case "paused": {
-          return Effect.succeed("paused");
-        }
-        case "complete":
-        case "errored":
-        case "terminated": {
-          return Effect.as(instance.restart(), "restarted" as const);
-        }
-        default: {
-          return Effect.fail(workflowStartUnavailable());
-        }
+  Effect.flatMap(instance.status(), ({ status }) => {
+    switch (status) {
+      case "queued":
+      case "running":
+      case "waiting":
+      case "waitingForPause": {
+        const checkedResult: Effect.Effect<
+          EnsureStartedResult,
+          WorkflowStartUnavailable
+        > = Effect.succeed("already_active");
+        return checkedResult;
+      }
+      case "paused": {
+        const checkedResult: Effect.Effect<
+          EnsureStartedResult,
+          WorkflowStartUnavailable
+        > = Effect.succeed("paused");
+        return checkedResult;
+      }
+      case "complete":
+      case "errored":
+      case "terminated": {
+        const checkedResult: Effect.Effect<
+          EnsureStartedResult,
+          WorkflowStartUnavailable
+        > = Effect.as(instance.restart(), "restarted" as const);
+        return checkedResult;
+      }
+      default: {
+        const checkedResult: Effect.Effect<
+          EnsureStartedResult,
+          WorkflowStartUnavailable
+        > = Effect.fail(workflowStartUnavailable());
+        return checkedResult;
       }
     }
-  );
+  });
 
 const reconcileProviderRestart = (
   instance: WorkflowInstanceLike,
@@ -1424,9 +1472,7 @@ const reconcileProviderRestart = (
     )
   );
 
-export const makeImportWorkflowStarter = (
-  workflow: WorkflowHandleLike
-): ImportWorkflowReconciler => {
+export const makeImportWorkflowStarter = (workflow: WorkflowHandleLike) => {
   const restartPostAcquisition = (
     workflowIdentity: ImportWorkflowIdentity,
     rawCheckpoint: PostAcquisitionJournalCheckpoint
@@ -1456,11 +1502,11 @@ export const makeImportWorkflowStarter = (
     readonly instanceId: string;
     readonly organizationId: HouseholdOrganizationId;
     readonly trace: ImportTraceContext;
-  }): Effect.Effect<
-    EnsureStartedResult,
-    WorkflowStartRefused | WorkflowStartUnavailable
-  > =>
-    Effect.gen(function* startImportWorkflow() {
+  }) => {
+    const checkedResult: Effect.Effect<
+      EnsureStartedResult,
+      WorkflowStartRefused | WorkflowStartUnavailable
+    > = Effect.gen(function* startImportWorkflow() {
       const decodedInput = yield* Schema.decodeUnknownEffect(
         ImportWorkflowInput,
         { onExcessProperty: "error" }
@@ -1473,13 +1519,11 @@ export const makeImportWorkflowStarter = (
       const params = yield* Schema.encodeEffect(ImportWorkflowInput)(
         decodedInput
       ).pipe(Effect.mapError(() => workflowStartUnavailable()));
-      const reconcileCreateFailure = (
-        cause: Cause.Cause<unknown>
-      ): Effect.Effect<
-        { readonly _tag: "Reconciled"; readonly result: EnsureStartedResult },
-        WorkflowStartRefused | WorkflowStartUnavailable
-      > =>
-        isNativeWorkflowPreStartRefusal(cause)
+      const reconcileCreateFailure = (cause: Cause.Cause<unknown>) => {
+        const nestedResult: Effect.Effect<
+          { readonly _tag: "Reconciled"; readonly result: EnsureStartedResult },
+          WorkflowStartRefused | WorkflowStartUnavailable
+        > = isNativeWorkflowPreStartRefusal(cause)
           ? Effect.fail(workflowStartRefused())
           : workflow.get(input.instanceId).pipe(
               Effect.flatMap(reconcileExisting),
@@ -1488,6 +1532,8 @@ export const makeImportWorkflowStarter = (
                 result,
               }))
             );
+        return nestedResult;
+      };
       const createOutcome = yield* workflow
         .createBatch([{ id: input.instanceId, params }])
         .pipe(
@@ -1528,39 +1574,44 @@ export const makeImportWorkflowStarter = (
             )
       )
     );
-
-  return {
-    dispatchAdmission: (input) =>
-      start({
-        ...input,
-        instanceId: cloudflareWorkflowInstanceId(input.workflowIdentity),
-      }),
-    reconcileAdmission: (workflowIdentity) =>
-      workflow.get(cloudflareWorkflowInstanceId(workflowIdentity)).pipe(
-        Effect.flatMap(reconcileExisting),
-        Effect.catchCauseIf(
-          (cause) => !Cause.hasInterrupts(cause),
-          () => Effect.fail(workflowStartUnavailable())
-        )
-      ),
-    restartFromSpeech: (workflowIdentity) =>
-      workflow
-        .get(cloudflareWorkflowInstanceId(workflowIdentity))
-        .pipe(
-          Effect.flatMap((instance) =>
-            reconcileProviderRestart(instance, "record-acquisition-v2")
-          )
-        ),
-    restartFromVisual: (workflowIdentity) =>
-      workflow
-        .get(cloudflareWorkflowInstanceId(workflowIdentity))
-        .pipe(
-          Effect.flatMap((instance) =>
-            reconcileProviderRestart(instance, "extract-visual-evidence-v1")
-          )
-        ),
-    restartPostAcquisition,
+    return checkedResult;
   };
+
+  {
+    const checkedResult: ImportWorkflowReconciler = {
+      dispatchAdmission: (input) =>
+        start({
+          ...input,
+          instanceId: cloudflareWorkflowInstanceId(input.workflowIdentity),
+        }),
+      reconcileAdmission: (workflowIdentity) =>
+        workflow.get(cloudflareWorkflowInstanceId(workflowIdentity)).pipe(
+          Effect.flatMap(reconcileExisting),
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterrupts(cause),
+            () => Effect.fail(workflowStartUnavailable())
+          )
+        ),
+      restartFromSpeech: (workflowIdentity) =>
+        workflow
+          .get(cloudflareWorkflowInstanceId(workflowIdentity))
+          .pipe(
+            Effect.flatMap((instance) =>
+              reconcileProviderRestart(instance, "record-acquisition-v2")
+            )
+          ),
+      restartFromVisual: (workflowIdentity) =>
+        workflow
+          .get(cloudflareWorkflowInstanceId(workflowIdentity))
+          .pipe(
+            Effect.flatMap((instance) =>
+              reconcileProviderRestart(instance, "extract-visual-evidence-v1")
+            )
+          ),
+      restartPostAcquisition,
+    };
+    return checkedResult;
+  }
 };
 
 export const ImportWorkflowStarter = Context.Service<ImportWorkflowStarter>(

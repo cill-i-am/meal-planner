@@ -9,34 +9,36 @@ import {
 } from "./auth.model.js";
 import type { TescoAuthCookieHeader, TescoAuthSnapshot } from "./auth.model.js";
 
-export const cookiesFromHeader = (
-  cookieHeader: TescoAuthCookieHeader
-): Effect.Effect<Cookies.Cookies, TescoAuthCookieInvalid> =>
-  Effect.forEach(
-    Object.entries(Cookies.parseHeader(Redacted.value(cookieHeader))),
-    ([name, value]) =>
-      Effect.fromResult(Cookies.makeCookie(name, value)).pipe(
-        Effect.mapError(() => new TescoAuthCookieInvalid())
-      )
-  ).pipe(Effect.map(Cookies.fromIterable));
+export const cookiesFromHeader = (cookieHeader: TescoAuthCookieHeader) => {
+  const checkedResult: Effect.Effect<Cookies.Cookies, TescoAuthCookieInvalid> =
+    Effect.forEach(
+      Object.entries(Cookies.parseHeader(Redacted.value(cookieHeader))),
+      ([name, value]) =>
+        Effect.fromResult(Cookies.makeCookie(name, value)).pipe(
+          Effect.mapError(() => new TescoAuthCookieInvalid())
+        )
+    ).pipe(Effect.map(Cookies.fromIterable));
+  return checkedResult;
+};
 
-export const cookieHeaderFromCookies = (
-  cookies: Cookies.Cookies
-): Effect.Effect<TescoAuthCookieHeader, TescoAuthCookieInvalid> =>
-  Schema.decodeUnknownEffect(TescoAuthCookieHeaderValue)(
+export const cookieHeaderFromCookies = (cookies: Cookies.Cookies) => {
+  const checkedResult: Effect.Effect<
+    TescoAuthCookieHeader,
+    TescoAuthCookieInvalid
+  > = Schema.decodeUnknownEffect(TescoAuthCookieHeaderValue)(
     Cookies.toCookieHeader(cookies)
   ).pipe(
     Effect.map(Redacted.make),
     Effect.mapError(() => new TescoAuthCookieInvalid())
   );
+  return checkedResult;
+};
 
-export const oauthExpiryFromCookies = (
-  cookies: Cookies.Cookies
-): Effect.Effect<
-  Pick<TescoAuthSnapshot, "accessTokenExpiresAt" | "refreshTokenExpiresAt">,
-  TescoAuthCookieInvalid
-> =>
-  Effect.gen(function* () {
+export const oauthExpiryFromCookies = (cookies: Cookies.Cookies) => {
+  const checkedResult: Effect.Effect<
+    Pick<TescoAuthSnapshot, "accessTokenExpiresAt" | "refreshTokenExpiresAt">,
+    TescoAuthCookieInvalid
+  > = Effect.gen(function* () {
     const cookieRecord = Cookies.toRecord(cookies);
     const expiryValue = cookieRecord[OAuthTokensExpiryTimeCookieName];
     if (expiryValue === undefined) {
@@ -56,11 +58,17 @@ export const oauthExpiryFromCookies = (
       refreshTokenExpiresAt: decoded.RefreshToken,
     };
   });
+  return checkedResult;
+};
 
 export const oauthExpiryFromCookieHeader = (
   cookieHeader: TescoAuthCookieHeader
-): Effect.Effect<
-  Pick<TescoAuthSnapshot, "accessTokenExpiresAt" | "refreshTokenExpiresAt">,
-  TescoAuthCookieInvalid
-> =>
-  cookiesFromHeader(cookieHeader).pipe(Effect.flatMap(oauthExpiryFromCookies));
+) => {
+  const checkedResult: Effect.Effect<
+    Pick<TescoAuthSnapshot, "accessTokenExpiresAt" | "refreshTokenExpiresAt">,
+    TescoAuthCookieInvalid
+  > = cookiesFromHeader(cookieHeader).pipe(
+    Effect.flatMap(oauthExpiryFromCookies)
+  );
+  return checkedResult;
+};

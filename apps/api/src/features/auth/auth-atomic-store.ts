@@ -111,7 +111,6 @@ export const makeAuthAtomicStore = (
         replayable: true,
       },
       async () => {
-        // A terminal no-op receipt also excludes a delayed pre-expiry batch from writing.
         await database
           .insert(authMutationReceipt)
           .values({
@@ -273,8 +272,7 @@ export const makeAuthAtomicStore = (
     },
     cancelInvitation: async (input: typeof CancelInvitationMutation.Type) => {
       const database = getDatabase();
-      // Every public command retains a terminal receipt that excludes delayed
-      // writes after settlement; a new command gets its own fence.
+
       const intentKey = await privateOutputKey(
         "auth-invitation-cancel",
         JSON.stringify({
@@ -382,7 +380,7 @@ export const makeAuthAtomicStore = (
             .select()
             .from(authMutationReceipt)
             .where(eq(authMutationReceipt.id, intentKey));
-          // Replaying the retained command also settles an acknowledgement lost after commit.
+
           return receipt?.requestDigest === requestDigest && receipt.applied;
         }
       );

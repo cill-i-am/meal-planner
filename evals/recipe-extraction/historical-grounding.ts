@@ -30,7 +30,7 @@ export const withHistoricalGrounding = async <A>(
       cwd: root,
       encoding: "utf-8",
     });
-  // The historical grounder has one runtime domain dependency. Refuse drift.
+
   if (
     sourceAt(domainPath) !==
       readFileSync(path.join(root, domainPath), "utf-8") ||

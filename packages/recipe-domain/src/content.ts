@@ -262,33 +262,34 @@ export const RecipeContent = Schema.Struct(RecipeContentFields).pipe(
   )
 );
 export type RecipeContent = typeof RecipeContent.Type;
-export const recipeIngredientFromText = (
-  original: string
-): RecipeIngredient => ({
-  group: null,
-  ingredientId: null,
-  localName: null,
-  name: original,
-  note: null,
-  optional: null,
-  original,
-  preparation: null,
-  quantity: null,
-  size: null,
-});
-export const recipeInstructionFromText = (
-  text: string,
-  step: number
-): RecipeInstruction => ({
-  duration: null,
-  equipment: [],
-  group: null,
-  ingredients: [],
-  step,
-  techniques: [],
-  temperature: null,
-  text,
-});
+export const recipeIngredientFromText = (original: string) => {
+  const checkedResult: RecipeIngredient = {
+    group: null,
+    ingredientId: null,
+    localName: null,
+    name: original,
+    note: null,
+    optional: null,
+    original,
+    preparation: null,
+    quantity: null,
+    size: null,
+  };
+  return checkedResult;
+};
+export const recipeInstructionFromText = (text: string, step: number) => {
+  const checkedResult: RecipeInstruction = {
+    duration: null,
+    equipment: [],
+    group: null,
+    ingredients: [],
+    step,
+    techniques: [],
+    temperature: null,
+    text,
+  };
+  return checkedResult;
+};
 export const emptyRecipeDetails = {
   author: null,
   categories: [],
@@ -308,20 +309,23 @@ export const emptyRecipeDetails = {
 export const makeRecipeContent = (
   content: Pick<RecipeContent, "name" | "ingredients" | "instructions"> &
     Partial<RecipeContent>
-): RecipeContent =>
-  Schema.decodeUnknownSync(RecipeContent)({
+) => {
+  const checkedResult: RecipeContent = Schema.decodeUnknownSync(RecipeContent)({
     ...emptyRecipeDetails,
     ...content,
   });
+  return checkedResult;
+};
 
-export const formatRecipeIngredient = (
-  ingredient: RecipeIngredient
-): string => {
+export const formatRecipeIngredient = (ingredient: RecipeIngredient) => {
   const { quantity } = ingredient;
   const amount =
     quantity === null
       ? ""
       : `${quantity.value}${quantity.max === null ? "" : `–${quantity.max}`}${quantity.unit === null ? "" : ` ${quantity.unit}`} `;
   const name = ingredient.localName ?? ingredient.name;
-  return `${amount}${ingredient.size === null ? "" : `${ingredient.size} `}${name}${ingredient.preparation === null ? "" : `, ${ingredient.preparation}`}${ingredient.note === null ? "" : ` (${ingredient.note})`}${ingredient.optional === true ? " (optional)" : ""}`;
+  {
+    const checkedResult = `${amount}${ingredient.size === null ? "" : `${ingredient.size} `}${name}${ingredient.preparation === null ? "" : `, ${ingredient.preparation}`}${ingredient.note === null ? "" : ` (${ingredient.note})`}${ingredient.optional === true ? " (optional)" : ""}`;
+    return checkedResult;
+  }
 };

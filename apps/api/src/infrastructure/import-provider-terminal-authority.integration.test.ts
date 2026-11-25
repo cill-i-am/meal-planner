@@ -6,8 +6,8 @@ import { Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-import { workerObservability } from "../../infrastructure/worker-observability.js";
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { bundleWorkerFixture } from "../test/native-worker.fixture.js";
+import { workerObservability } from "./worker-observability.js";
 
 let runtime: Miniflare;
 let directory: string;
@@ -16,7 +16,7 @@ beforeAll(async () => {
   const manifest = await bundleWorkerFixture(
     fileURLToPath(
       new URL(
-        "import-provider-terminal-authority.test-fixture.ts",
+        "../features/imports/import-provider-terminal-authority.fixture.ts",
         import.meta.url
       )
     ),
@@ -88,4 +88,4 @@ it("persists and replays terminal ownership through native Workflow serializatio
   await expect
     .poll(read, { timeout: 10_000 })
     .toMatchObject({ ...expected, completions: 2 });
-}, 30_000);
+});

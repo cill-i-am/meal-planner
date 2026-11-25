@@ -95,9 +95,7 @@ const factField = (path: string) => {
 };
 
 /** Only populated recipe facts count; absent optional fields never inflate accuracy. */
-export const recipeFacts = (
-  recipe: RecipeDraftContent
-): readonly RecipeFact[] => {
+export const recipeFacts = (recipe: RecipeDraftContent) => {
   const facts: RecipeFact[] = [];
   const visit = (value: Schema.Json, path: string) => {
     if (
@@ -126,10 +124,12 @@ export const recipeFacts = (
     }
   };
   visit(Schema.encodeSync(Schema.Json)(recipe), "");
-  return facts;
+  {
+    const checkedResult: readonly RecipeFact[] = facts;
+    return checkedResult;
+  }
 };
 
-/** Ingredient row correspondence is fixed before scoring its nested values. */
 const identityMatches = (
   actual: string,
   expected: string,
@@ -267,18 +267,19 @@ const metric = (
   truePositive,
 });
 
-/** Qualifier diagnostics may recognize a shortened clause without granting row credit. */
 const shortenedQualifiedClause = (
   item: ExtractionCase,
   actual: RecipeDraftContent,
   path: string
-): RecipeFact | undefined => {
+) => {
   if (!/^instructions\.\d+\.text$/u.test(path)) {
-    return undefined;
+    const checkedResult: RecipeFact | undefined = undefined;
+    return checkedResult;
   }
   const source = recipeFacts(item.expected).find((fact) => fact.path === path);
   if (source === undefined || !Schema.is(Schema.String)(source.value)) {
-    return undefined;
+    const checkedResult: RecipeFact | undefined = undefined;
+    return checkedResult;
   }
   const words = (text: string) =>
     textKey(text)
@@ -290,9 +291,13 @@ const shortenedQualifiedClause = (
     const fragment = words(instruction.text);
     return fragment.length > 0 && clause.includes(` ${fragment} `);
   });
-  return row === undefined
-    ? undefined
-    : { field: "instruction_text", path, value: row.text };
+  {
+    const checkedResult: RecipeFact | undefined =
+      row === undefined
+        ? undefined
+        : { field: "instruction_text", path, value: row.text };
+    return checkedResult;
+  }
 };
 
 export const scoreRecipe = (
@@ -324,7 +329,7 @@ export const scoreRecipe = (
     const target =
       actualFacts.find((fact) => fact.path === qualifier.path) ??
       shortenedQualifiedClause(item, actual, qualifier.path);
-    // Omission is recall loss; a shortened asserted clause is qualifier loss.
+
     if (target === undefined || !Schema.is(Schema.String)(target.value)) {
       return [];
     }
@@ -459,14 +464,15 @@ const acquiredOracleHasRecipeCore = (item: ExtractionCase) => {
     ) === true
   );
 };
-/** Projection of import-recipe-draft's minimum-evidence gate, not an observed routing event. */
-const minimumEvidenceRoute = (
-  recipe: RecipeDraftContent
-): "draft" | "insufficient_evidence" =>
-  (recipe.ingredients?.length ?? 0) > 0 &&
-  (recipe.instructions?.length ?? 0) > 0
-    ? "draft"
-    : "insufficient_evidence";
+
+const minimumEvidenceRoute = (recipe: RecipeDraftContent) => {
+  const checkedResult: "draft" | "insufficient_evidence" =
+    (recipe.ingredients?.length ?? 0) > 0 &&
+    (recipe.instructions?.length ?? 0) > 0
+      ? "draft"
+      : "insufficient_evidence";
+  return checkedResult;
+};
 
 export const scoreOutput = (
   item: ExtractionCase,

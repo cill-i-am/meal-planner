@@ -50,13 +50,16 @@ const downloadResponse = ({
   readonly body?: readonly Uint8Array[];
   readonly location?: string;
   readonly statusCode: number;
-}): SecureMediaDownloadResponse => ({
-  body: Readable.from(body),
-  contentLength: null,
-  destroy: () => null,
-  location,
-  statusCode,
-});
+}) => {
+  const checkedResult: SecureMediaDownloadResponse = {
+    body: Readable.from(body),
+    contentLength: null,
+    destroy: () => null,
+    location,
+    statusCode,
+  };
+  return checkedResult;
+};
 
 const encodeCookieJar = (...records: readonly string[]) =>
   new TextEncoder().encode(

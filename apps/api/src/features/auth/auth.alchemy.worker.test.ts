@@ -20,7 +20,7 @@ import * as authSchema from "./auth.database-schema.js";
 import { makeMealPlannerAuth } from "./auth.js";
 import type { MealPlannerAuthOptions } from "./auth.js";
 import { resolveAuthenticatedOrganization } from "./auth.principal.js";
-import { makeOAuthFlowFixture } from "./oauth-flow.test-fixture.js";
+import { makeOAuthFlowFixture } from "./oauth-flow.fixture.js";
 
 const testEnv = env as unknown as {
   readonly AUTH_TEST_MIGRATIONS: {

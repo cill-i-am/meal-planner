@@ -29,21 +29,24 @@ export interface PlanningContentAuthority {
   readonly today: PlanningDate;
 }
 
-export const emptyPlanningContentSnapshot = (): PlanningContentSnapshot => ({
-  availability: [],
-  configVersion: PlanningContentVersion.make(0),
-  cookingCapacity: {
-    availableEquipment: [],
-    maximumSubstantialCookEventsPerWeek: 0,
-  },
-  fallbacks: [],
-  managedOccasions: [],
-  oneOffRoutines: [],
-  options: [],
-  preparedPortions: [],
-  routines: [],
-  suitabilityReviews: [],
-});
+export const emptyPlanningContentSnapshot = () => {
+  const checkedResult: PlanningContentSnapshot = {
+    availability: [],
+    configVersion: PlanningContentVersion.make(0),
+    cookingCapacity: {
+      availableEquipment: [],
+      maximumSubstantialCookEventsPerWeek: 0,
+    },
+    fallbacks: [],
+    managedOccasions: [],
+    oneOffRoutines: [],
+    options: [],
+    preparedPortions: [],
+    routines: [],
+    suitabilityReviews: [],
+  };
+  return checkedResult;
+};
 
 const sameRef = (left: PlanningOptionRef, right: PlanningOptionRef) =>
   left.kind === right.kind &&
@@ -53,8 +56,12 @@ const sameRef = (left: PlanningOptionRef, right: PlanningOptionRef) =>
 export const currentOptionFor = (
   snapshot: PlanningContentSnapshot,
   reference: PlanningOptionRef
-): MealOption | undefined =>
-  snapshot.options.find((option) => sameRef(option, reference));
+) => {
+  const checkedResult: MealOption | undefined = snapshot.options.find(
+    (option) => sameRef(option, reference)
+  );
+  return checkedResult;
+};
 
 export const currentSuitabilityFor = (
   snapshot: PlanningContentSnapshot,
@@ -75,14 +82,18 @@ export const suitabilityForPlanning = (
   personId: HouseholdPersonId,
   profileVersion: ProfileVersion,
   optionRef: PlanningOptionRef
-): "compatible" | "incompatible" | "unknown" => {
+) => {
   const reviews = currentSuitabilityFor(
     snapshot,
     personId,
     profileVersion,
     optionRef
   );
-  return reviews.length === 1 ? (reviews[0]?.status ?? "unknown") : "unknown";
+  {
+    const checkedResult: "compatible" | "incompatible" | "unknown" =
+      reviews.length === 1 ? (reviews[0]?.status ?? "unknown") : "unknown";
+    return checkedResult;
+  }
 };
 
 export const contentSuitabilityIssue = (
@@ -93,9 +104,14 @@ export const contentSuitabilityIssue = (
     readonly safetyState: "confirmed_none" | "has_constraints" | "unknown";
     readonly optionRef: PlanningOptionRef;
   }
-): "unknown_hard_constraints" | "incompatible" | "unreviewed" | null => {
+) => {
   if (input.safetyState === "unknown") {
-    return "unknown_hard_constraints";
+    const checkedResult:
+      | "unknown_hard_constraints"
+      | "incompatible"
+      | "unreviewed"
+      | null = "unknown_hard_constraints";
+    return checkedResult;
   }
   const status = suitabilityForPlanning(
     snapshot,
@@ -104,43 +120,63 @@ export const contentSuitabilityIssue = (
     input.optionRef
   );
   if (status === "incompatible") {
-    return "incompatible";
+    const checkedResult:
+      | "unknown_hard_constraints"
+      | "incompatible"
+      | "unreviewed"
+      | null = "incompatible";
+    return checkedResult;
   }
   if (input.safetyState === "has_constraints" && status !== "compatible") {
-    return "unreviewed";
+    const checkedResult:
+      | "unknown_hard_constraints"
+      | "incompatible"
+      | "unreviewed"
+      | null = "unreviewed";
+    return checkedResult;
   }
-  return null;
+  {
+    const checkedResult:
+      | "unknown_hard_constraints"
+      | "incompatible"
+      | "unreviewed"
+      | null = null;
+    return checkedResult;
+  }
 };
 
 /** Shopping arithmetic only uses quantities a household adult explicitly reviewed. */
-export const isShoppingResolved = (option: MealOption): boolean => {
+export const isShoppingResolved = (option: MealOption) => {
   switch (option.kind) {
     case "recipe": {
-      return (
+      const checkedResult: boolean =
         option.shoppingStatus === "reviewed" &&
         option.yield._tag === "Known" &&
         option.shoppingComponents.length > 0 &&
         option.shoppingComponents.every(
           (component) => component.quantity._tag === "Known"
-        )
-      );
+        );
+      return checkedResult;
     }
     case "assembled": {
-      return (
+      const checkedResult: boolean =
         option.yield._tag === "Known" &&
         option.components.every(
           (component) => component.quantity._tag === "Known"
-        )
-      );
+        );
+      return checkedResult;
     }
     case "packaged": {
-      return option.quantity._tag === "Known";
+      const checkedResult: boolean = option.quantity._tag === "Known";
+      return checkedResult;
     }
     case "external": {
-      return true;
+      const checkedResult = true;
+      return checkedResult;
     }
     default: {
-      return casesHandled(option);
+      const checkedResult: boolean = casesHandled(option);
+      return checkedResult;
     }
   }
 };
@@ -149,17 +185,24 @@ export const optionPreparationIssue = (
   option: MealOption,
   availability: Availability | undefined,
   capacity: CookingCapacity
-):
-  | "availability_unknown"
-  | "preparation_unknown"
-  | "missing_equipment"
-  | "preparation_window_conflict"
-  | null => {
+) => {
   if (option.kind === "external") {
-    return null;
+    const checkedResult:
+      | "availability_unknown"
+      | "preparation_unknown"
+      | "missing_equipment"
+      | "preparation_window_conflict"
+      | null = null;
+    return checkedResult;
   }
   if (availability === undefined) {
-    return "availability_unknown";
+    const checkedResult:
+      | "availability_unknown"
+      | "preparation_unknown"
+      | "missing_equipment"
+      | "preparation_window_conflict"
+      | null = "availability_unknown";
+    return checkedResult;
   }
   const { preparation } = option;
   const equipment = new Set(
@@ -170,7 +213,13 @@ export const optionPreparationIssue = (
       (name) => !equipment.has(name.toLocaleLowerCase())
     )
   ) {
-    return "missing_equipment";
+    const checkedResult:
+      | "availability_unknown"
+      | "preparation_unknown"
+      | "missing_equipment"
+      | "preparation_window_conflict"
+      | null = "missing_equipment";
+    return checkedResult;
   }
   if (
     preparation.substantialCookEvent === "unknown" ||
@@ -178,40 +227,77 @@ export const optionPreparationIssue = (
     preparation.handsOnTime._tag === "Unknown" ||
     preparation.elapsedTime._tag === "Unknown"
   ) {
-    return "preparation_unknown";
+    const checkedResult:
+      | "availability_unknown"
+      | "preparation_unknown"
+      | "missing_equipment"
+      | "preparation_window_conflict"
+      | null = "preparation_unknown";
+    return checkedResult;
   }
   if (preparation.handsOnTime.minutes > availability.preparationWindowMinutes) {
-    return "preparation_window_conflict";
+    const checkedResult:
+      | "availability_unknown"
+      | "preparation_unknown"
+      | "missing_equipment"
+      | "preparation_window_conflict"
+      | null = "preparation_window_conflict";
+    return checkedResult;
   }
   if (preparation.startRequirement === "advance_start") {
-    return availability.handsOffStart === "available"
-      ? null
-      : "preparation_window_conflict";
+    const checkedResult:
+      | "availability_unknown"
+      | "preparation_unknown"
+      | "missing_equipment"
+      | "preparation_window_conflict"
+      | null =
+      availability.handsOffStart === "available"
+        ? null
+        : "preparation_window_conflict";
+    return checkedResult;
   }
   if (
     preparation.startRequirement === "during_window" &&
     preparation.elapsedTime.minutes > availability.preparationWindowMinutes
   ) {
-    return "preparation_window_conflict";
+    const checkedResult:
+      | "availability_unknown"
+      | "preparation_unknown"
+      | "missing_equipment"
+      | "preparation_window_conflict"
+      | null = "preparation_window_conflict";
+    return checkedResult;
   }
-  return null;
+  {
+    const checkedResult:
+      | "availability_unknown"
+      | "preparation_unknown"
+      | "missing_equipment"
+      | "preparation_window_conflict"
+      | null = null;
+    return checkedResult;
+  }
 };
 
-const refsForChoice = (choice: RoutineChoice): readonly PlanningOptionRef[] => {
+const refsForChoice = (choice: RoutineChoice) => {
   switch (choice._tag) {
     case "Options": {
-      return choice.optionRefs;
+      const checkedResult: readonly PlanningOptionRef[] = choice.optionRefs;
+      return checkedResult;
     }
     case "External": {
-      return [choice.optionRef];
+      const checkedResult: readonly PlanningOptionRef[] = [choice.optionRef];
+      return checkedResult;
     }
     case "Leftover":
     case "Skip":
     case "Flexible": {
-      return [];
+      const checkedResult: readonly PlanningOptionRef[] = [];
+      return checkedResult;
     }
     default: {
-      return casesHandled(choice);
+      const checkedResult: readonly PlanningOptionRef[] = casesHandled(choice);
+      return checkedResult;
     }
   }
 };
@@ -221,12 +307,20 @@ const putVersioned = <
 >(
   entries: readonly T[],
   value: T
-): readonly T[] | PlanningContentRejected => {
+) => {
   const current = entries.find((entry) => entry.id === value.id);
   if (value.version !== (current?.version ?? 0) + 1) {
-    return rejected("stale_version");
+    const checkedResult: readonly T[] | PlanningContentRejected =
+      rejected("stale_version");
+    return checkedResult;
   }
-  return [...entries.filter((entry) => entry.id !== value.id), value];
+  {
+    const checkedResult: readonly T[] | PlanningContentRejected = [
+      ...entries.filter((entry) => entry.id !== value.id),
+      value,
+    ];
+    return checkedResult;
+  }
 };
 
 const isRejection = (
@@ -242,26 +336,34 @@ const sameList = <T>(
   left: readonly T[],
   right: readonly T[],
   same: (a: T, b: T) => boolean
-): boolean =>
-  left.length === right.length &&
-  left.every(
-    (item, index) => right[index] !== undefined && same(item, right[index])
-  );
+) => {
+  const checkedResult: boolean =
+    left.length === right.length &&
+    left.every(
+      (item, index) => right[index] !== undefined && same(item, right[index])
+    );
+  return checkedResult;
+};
 
-const sameChoice = (left: RoutineChoice, right: RoutineChoice): boolean => {
+const sameChoice = (left: RoutineChoice, right: RoutineChoice) => {
   if (left._tag !== right._tag) {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
   if (left._tag === "Options" && right._tag === "Options") {
-    return (
+    const checkedResult: boolean =
       left.selection === right.selection &&
-      sameList(left.optionRefs, right.optionRefs, sameRef)
-    );
+      sameList(left.optionRefs, right.optionRefs, sameRef);
+    return checkedResult;
   }
   if (left._tag === "External" && right._tag === "External") {
-    return sameRef(left.optionRef, right.optionRef);
+    const checkedResult: boolean = sameRef(left.optionRef, right.optionRef);
+    return checkedResult;
   }
-  return true;
+  {
+    const checkedResult = true;
+    return checkedResult;
+  }
 };
 
 const managedFor = (
@@ -269,14 +371,16 @@ const managedFor = (
   authority: PlanningContentAuthority,
   occasionId: string,
   personId?: HouseholdPersonId
-): boolean =>
-  current.managedOccasions.some(
+) => {
+  const checkedResult: boolean = current.managedOccasions.some(
     (entry) =>
       entry.state === "managed" &&
       entry.occasionId === occasionId &&
       authority.activePersonIds.has(entry.personId) &&
       (personId === undefined || entry.personId === personId)
   );
+  return checkedResult;
+};
 
 type Command<Tag extends PlanningContentCommand["_tag"]> = Extract<
   PlanningContentCommand,
@@ -288,13 +392,14 @@ const setManagedOccasions = (
   current: PlanningContentSnapshot,
   command: Command<"SetManagedOccasions">,
   authority: PlanningContentAuthority
-): Result => {
+) => {
   if (
     command.entries.some(
       (entry) => !authority.activePersonIds.has(entry.personId)
     )
   ) {
-    return rejected("missing_person");
+    const checkedResult: Result = rejected("missing_person");
+    return checkedResult;
   }
   const keys = command.entries.flatMap((entry) =>
     entry.weekdays.map(
@@ -302,21 +407,29 @@ const setManagedOccasions = (
     )
   );
   if (new Set(keys).size !== keys.length) {
-    return rejected("invalid_transition");
+    const checkedResult: Result = rejected("invalid_transition");
+    return checkedResult;
   }
-  return { ...current, managedOccasions: command.entries };
+  {
+    const checkedResult: Result = {
+      ...current,
+      managedOccasions: command.entries,
+    };
+    return checkedResult;
+  }
 };
 
 const setPersonManagedOccasions = (
   current: PlanningContentSnapshot,
   command: Command<"SetPersonManagedOccasions">,
   authority: PlanningContentAuthority
-): Result => {
+) => {
   if (
     !authority.activePersonIds.has(command.personId) ||
     command.entries.some((entry) => entry.personId !== command.personId)
   ) {
-    return rejected("missing_person");
+    const checkedResult: Result = rejected("missing_person");
+    return checkedResult;
   }
   const scoped = setManagedOccasions(
     current,
@@ -327,30 +440,35 @@ const setPersonManagedOccasions = (
     authority
   );
   if ("_tag" in scoped) {
-    return scoped;
+    const checkedResult: Result = scoped;
+    return checkedResult;
   }
-  return {
-    ...current,
-    managedOccasions: [
-      ...current.managedOccasions.filter(
-        (entry) => entry.personId !== command.personId
-      ),
-      ...command.entries,
-    ],
-  };
+  {
+    const checkedResult: Result = {
+      ...current,
+      managedOccasions: [
+        ...current.managedOccasions.filter(
+          (entry) => entry.personId !== command.personId
+        ),
+        ...command.entries,
+      ],
+    };
+    return checkedResult;
+  }
 };
 
 const setAvailability = (
   current: PlanningContentSnapshot,
   command: Command<"SetAvailability">,
   authority: PlanningContentAuthority
-): Result => {
+) => {
   if (
     command.entries.some(
       (entry) => !authority.activePersonIds.has(entry.personId)
     )
   ) {
-    return rejected("missing_person");
+    const checkedResult: Result = rejected("missing_person");
+    return checkedResult;
   }
   const keys = command.entries.flatMap((entry) =>
     entry.weekdays.map(
@@ -358,21 +476,26 @@ const setAvailability = (
     )
   );
   if (new Set(keys).size !== keys.length) {
-    return rejected("invalid_transition");
+    const checkedResult: Result = rejected("invalid_transition");
+    return checkedResult;
   }
-  return { ...current, availability: command.entries };
+  {
+    const checkedResult: Result = { ...current, availability: command.entries };
+    return checkedResult;
+  }
 };
 
 const setPersonAvailability = (
   current: PlanningContentSnapshot,
   command: Command<"SetPersonAvailability">,
   authority: PlanningContentAuthority
-): Result => {
+) => {
   if (
     !authority.activePersonIds.has(command.personId) ||
     command.entries.some((entry) => entry.personId !== command.personId)
   ) {
-    return rejected("missing_person");
+    const checkedResult: Result = rejected("missing_person");
+    return checkedResult;
   }
   const scoped = setAvailability(
     current,
@@ -383,24 +506,28 @@ const setPersonAvailability = (
     authority
   );
   if ("_tag" in scoped) {
-    return scoped;
+    const checkedResult: Result = scoped;
+    return checkedResult;
   }
-  return {
-    ...current,
-    availability: [
-      ...current.availability.filter(
-        (entry) => entry.personId !== command.personId
-      ),
-      ...command.entries,
-    ],
-  };
+  {
+    const checkedResult: Result = {
+      ...current,
+      availability: [
+        ...current.availability.filter(
+          (entry) => entry.personId !== command.personId
+        ),
+        ...command.entries,
+      ],
+    };
+    return checkedResult;
+  }
 };
 
 const putRoutine = (
   current: PlanningContentSnapshot,
   command: Command<"PutRoutine">,
   authority: PlanningContentAuthority
-): Result => {
+) => {
   const { value } = command;
   const previous = current.routines.find((entry) => entry.id === value.id);
   if (value.state === "paused") {
@@ -414,16 +541,23 @@ const putRoutine = (
       !sameChoice(previous.choice, value.choice) ||
       !sameList(previous.weekdays, value.weekdays, (a, b) => a === b)
     ) {
-      return rejected("invalid_transition");
+      const checkedResult: Result = rejected("invalid_transition");
+      return checkedResult;
     }
     const routines = putVersioned(current.routines, value);
-    return isRejection(routines) ? routines : { ...current, routines };
+    {
+      const checkedResult: Result = isRejection(routines)
+        ? routines
+        : { ...current, routines };
+      return checkedResult;
+    }
   }
   if (
     value.scope._tag === "Person" &&
     !authority.activePersonIds.has(value.scope.personId)
   ) {
-    return rejected("missing_person");
+    const checkedResult: Result = rejected("missing_person");
+    return checkedResult;
   }
   if (
     !managedFor(
@@ -433,37 +567,49 @@ const putRoutine = (
       value.scope._tag === "Person" ? value.scope.personId : undefined
     )
   ) {
-    return rejected("invalid_transition");
+    const checkedResult: Result = rejected("invalid_transition");
+    return checkedResult;
   }
   if (!allRefsExist(current, refsForChoice(value.choice))) {
-    return rejected("stale_option");
+    const checkedResult: Result = rejected("stale_option");
+    return checkedResult;
   }
   const routines = putVersioned(current.routines, value);
-  return isRejection(routines) ? routines : { ...current, routines };
+  {
+    const checkedResult: Result = isRejection(routines)
+      ? routines
+      : { ...current, routines };
+    return checkedResult;
+  }
 };
 
 const putOneOffRoutine = (
   current: PlanningContentSnapshot,
   command: Command<"PutOneOffRoutine">,
   authority: PlanningContentAuthority
-): Result => {
+) => {
   if (!authority.activePersonIds.has(command.value.personId)) {
-    return rejected("missing_person");
+    const checkedResult: Result = rejected("missing_person");
+    return checkedResult;
   }
   if (!allRefsExist(current, refsForChoice(command.value.choice))) {
-    return rejected("stale_option");
+    const checkedResult: Result = rejected("stale_option");
+    return checkedResult;
   }
   const oneOffRoutines = putVersioned(current.oneOffRoutines, command.value);
-  return isRejection(oneOffRoutines)
-    ? oneOffRoutines
-    : { ...current, oneOffRoutines };
+  {
+    const checkedResult: Result = isRejection(oneOffRoutines)
+      ? oneOffRoutines
+      : { ...current, oneOffRoutines };
+    return checkedResult;
+  }
 };
 
 const putFallback = (
   current: PlanningContentSnapshot,
   command: Command<"PutFallback">,
   authority: PlanningContentAuthority
-): Result => {
+) => {
   const { value } = command;
   const previous = current.fallbacks.find((entry) => entry.id === value.id);
   if (value.state !== "active") {
@@ -476,13 +622,20 @@ const putFallback = (
       !sameList(previous.locations, value.locations, (a, b) => a === b) ||
       !sameList(previous.occasionIds, value.occasionIds, (a, b) => a === b)
     ) {
-      return rejected("invalid_transition");
+      const checkedResult: Result = rejected("invalid_transition");
+      return checkedResult;
     }
     const fallbacks = putVersioned(current.fallbacks, value);
-    return isRejection(fallbacks) ? fallbacks : { ...current, fallbacks };
+    {
+      const checkedResult: Result = isRejection(fallbacks)
+        ? fallbacks
+        : { ...current, fallbacks };
+      return checkedResult;
+    }
   }
   if (!authority.activePersonIds.has(value.personId)) {
-    return rejected("missing_person");
+    const checkedResult: Result = rejected("missing_person");
+    return checkedResult;
   }
   if (
     !current.managedOccasions.some(
@@ -497,61 +650,79 @@ const putFallback = (
         !managedFor(current, authority, occasionId, value.personId)
     )
   ) {
-    return rejected("invalid_transition");
+    const checkedResult: Result = rejected("invalid_transition");
+    return checkedResult;
   }
   if (!currentOptionFor(current, value.optionRef)) {
-    return rejected("stale_option");
+    const checkedResult: Result = rejected("stale_option");
+    return checkedResult;
   }
   const fallbacks = putVersioned(current.fallbacks, value);
-  return isRejection(fallbacks) ? fallbacks : { ...current, fallbacks };
+  {
+    const checkedResult: Result = isRejection(fallbacks)
+      ? fallbacks
+      : { ...current, fallbacks };
+    return checkedResult;
+  }
 };
 
 const putOption = (
   current: PlanningContentSnapshot,
   command: Command<"PutOption">
-): Result => {
+) => {
   const option = command.value;
   if (
     option.kind === "recipe" &&
     option.shoppingStatus === "reviewed" &&
     !isShoppingResolved(option)
   ) {
-    return rejected("invalid_transition");
+    const checkedResult: Result = rejected("invalid_transition");
+    return checkedResult;
   }
   const previous = current.options.find(
     (entry) => entry.optionId === option.optionId
   );
   if (previous && previous.kind !== option.kind) {
-    return rejected("invalid_transition");
+    const checkedResult: Result = rejected("invalid_transition");
+    return checkedResult;
   }
   if (option.optionVersion !== (previous?.optionVersion ?? 0) + 1) {
-    return rejected("stale_version");
+    const checkedResult: Result = rejected("stale_version");
+    return checkedResult;
   }
-  return {
-    ...current,
-    options: [
-      ...current.options.filter((entry) => entry.optionId !== option.optionId),
-      option,
-    ],
-  };
+  {
+    const checkedResult: Result = {
+      ...current,
+      options: [
+        ...current.options.filter(
+          (entry) => entry.optionId !== option.optionId
+        ),
+        option,
+      ],
+    };
+    return checkedResult;
+  }
 };
 
 const putSuitabilityReview = (
   current: PlanningContentSnapshot,
   command: Command<"PutSuitabilityReview">,
   authority: PlanningContentAuthority
-): Result => {
+) => {
   const review = command.value;
   if (!authority.activePersonIds.has(review.personId)) {
-    return rejected("missing_person");
+    const checkedResult: Result = rejected("missing_person");
+    return checkedResult;
   }
   if (
     authority.profileVersions.get(review.personId) !== review.profileVersion
   ) {
-    return rejected("stale_profile");
+    const checkedResult: Result = rejected("stale_profile");
+    return checkedResult;
   }
   if (!currentOptionFor(current, review.optionRef)) {
-    return rejected("stale_option");
+    const checkedResult: Result = rejected("stale_option");
+    return checkedResult;
   }
   if (
     currentSuitabilityFor(
@@ -561,28 +732,33 @@ const putSuitabilityReview = (
       review.optionRef
     ).some((prior) => prior.id !== review.id)
   ) {
-    return rejected("invalid_transition");
+    const checkedResult: Result = rejected("invalid_transition");
+    return checkedResult;
   }
   const { confirmation: _confirmation, ...reviewFacts } = review;
   const suitabilityReviews = putVersioned(current.suitabilityReviews, {
     ...reviewFacts,
     confirmedByActorId: authority.actorId,
   });
-  return isRejection(suitabilityReviews)
-    ? suitabilityReviews
-    : { ...current, suitabilityReviews };
+  {
+    const checkedResult: Result = isRejection(suitabilityReviews)
+      ? suitabilityReviews
+      : { ...current, suitabilityReviews };
+    return checkedResult;
+  }
 };
 
 const putPreparedPortion = (
   current: PlanningContentSnapshot,
   command: Command<"PutPreparedPortion">
-): Result => {
+) => {
   const write = command.value;
   if (
     write.sourceOptionRef !== null &&
     !currentOptionFor(current, write.sourceOptionRef)
   ) {
-    return rejected("stale_option");
+    const checkedResult: Result = rejected("stale_option");
+    return checkedResult;
   }
   const previous = current.preparedPortions.find(
     (item) => item.id === write.id
@@ -593,7 +769,8 @@ const putPreparedPortion = (
     reserved > write.remainingAmount ||
     write.remainingAmount > write.quantity.amount
   ) {
-    return rejected("quantity_exceeded");
+    const checkedResult: Result = rejected("quantity_exceeded");
+    return checkedResult;
   }
   if (
     reservations.length > 0 &&
@@ -602,14 +779,16 @@ const putPreparedPortion = (
       JSON.stringify(write.sourceOptionRef) !==
         JSON.stringify(previous?.sourceOptionRef))
   ) {
-    return rejected("invalid_transition");
+    const checkedResult: Result = rejected("invalid_transition");
+    return checkedResult;
   }
   if (
     previous &&
     (previous.quantity.unit !== write.quantity.unit ||
       previous.sourceCookEventId !== write.sourceCookEventId)
   ) {
-    return rejected("invalid_transition");
+    const checkedResult: Result = rejected("invalid_transition");
+    return checkedResult;
   }
   const { reason, ...fields } = write;
   const portion = {
@@ -619,25 +798,30 @@ const putPreparedPortion = (
     state: reservations.length > 0 ? ("reserved" as const) : write.state,
   };
   const preparedPortions = putVersioned(current.preparedPortions, portion);
-  return isRejection(preparedPortions)
-    ? preparedPortions
-    : { ...current, preparedPortions };
+  {
+    const checkedResult: Result = isRejection(preparedPortions)
+      ? preparedPortions
+      : { ...current, preparedPortions };
+    return checkedResult;
+  }
 };
 
 const confirmPreparedCarryOver = (
   current: PlanningContentSnapshot,
   command: Command<"ConfirmPreparedCarryOver">,
   authority: PlanningContentAuthority
-): Result => {
+) => {
   const confirmation = command.value;
   const portion = current.preparedPortions.find(
     (item) => item.id === confirmation.id
   );
   if (!portion) {
-    return rejected("invalid_transition");
+    const checkedResult: Result = rejected("invalid_transition");
+    return checkedResult;
   }
   if (portion.version !== confirmation.expectedPortionVersion) {
-    return rejected("stale_version");
+    const checkedResult: Result = rejected("stale_version");
+    return checkedResult;
   }
   if (
     confirmation.confirmedForWeekStart > authority.today ||
@@ -647,10 +831,12 @@ const confirmPreparedCarryOver = (
       (reservation) => reservation.date >= authority.today
     )
   ) {
-    return rejected("invalid_transition");
+    const checkedResult: Result = rejected("invalid_transition");
+    return checkedResult;
   }
   if (confirmation.remainingAmount > portion.quantity.amount) {
-    return rejected("quantity_exceeded");
+    const checkedResult: Result = rejected("quantity_exceeded");
+    return checkedResult;
   }
   const updated = {
     ...portion,
@@ -664,12 +850,15 @@ const confirmPreparedCarryOver = (
         : ("consumed" as const),
     version: portion.version + 1,
   };
-  return {
-    ...current,
-    preparedPortions: current.preparedPortions.map((item) =>
-      item.id === portion.id ? updated : item
-    ),
-  };
+  {
+    const checkedResult: Result = {
+      ...current,
+      preparedPortions: current.preparedPortions.map((item) =>
+        item.id === portion.id ? updated : item
+      ),
+    };
+    return checkedResult;
+  }
 };
 
 /** Pure, version-guarded change. The adapter supplies current people/profile authority. */
@@ -677,9 +866,11 @@ export const applyPlanningContentCommand = (
   current: PlanningContentSnapshot,
   payload: MutatePlanningContentPayload,
   authority: PlanningContentAuthority
-): PlanningContentSnapshot | PlanningContentRejected => {
+) => {
   if (current.configVersion !== payload.expectedVersion) {
-    return rejected("stale_version");
+    const checkedResult: PlanningContentSnapshot | PlanningContentRejected =
+      rejected("stale_version");
+    return checkedResult;
   }
   const { command } = payload;
   let next: Result;
@@ -733,14 +924,21 @@ export const applyPlanningContentCommand = (
       break;
     }
     default: {
-      return casesHandled(command);
+      const checkedResult: PlanningContentSnapshot | PlanningContentRejected =
+        casesHandled(command);
+      return checkedResult;
     }
   }
   if ("_tag" in next) {
-    return next;
+    const checkedResult: PlanningContentSnapshot | PlanningContentRejected =
+      next;
+    return checkedResult;
   }
-  return {
-    ...next,
-    configVersion: PlanningContentVersion.make(current.configVersion + 1),
-  };
+  {
+    const checkedResult: PlanningContentSnapshot | PlanningContentRejected = {
+      ...next,
+      configVersion: PlanningContentVersion.make(current.configVersion + 1),
+    };
+    return checkedResult;
+  }
 };

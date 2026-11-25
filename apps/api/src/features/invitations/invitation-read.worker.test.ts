@@ -8,8 +8,8 @@ import { HttpRouter } from "effect/http";
 import { beforeAll, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
+import { makeNativeAuthTestService } from "../auth/auth.fixture.js";
 import { makeMealPlannerAuth } from "../auth/auth.js";
-import { makeNativeAuthTestService } from "../auth/auth.test-fixture.js";
 import { invitationReadHttpApiLayer } from "./http.js";
 
 const testEnv = env as unknown as {

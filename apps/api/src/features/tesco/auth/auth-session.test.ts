@@ -48,23 +48,27 @@ const makeSnapshot = (
   authorization: string,
   accessTokenExpiresAt: number,
   refreshTokenExpiresAt: number
-): TescoAuthSnapshot => ({
-  accessTokenExpiresAt: Schema.decodeUnknownSync(OAuthTokenExpiryEpochMs)(
-    accessTokenExpiresAt
-  ),
-  authorization: makeAuthorization(authorization),
-  cookieHeader: makeCookieHeader(accessTokenExpiresAt, refreshTokenExpiresAt),
-  refreshTokenExpiresAt: Schema.decodeUnknownSync(OAuthTokenExpiryEpochMs)(
-    refreshTokenExpiresAt
-  ),
-});
+) => {
+  const checkedResult: TescoAuthSnapshot = {
+    accessTokenExpiresAt: Schema.decodeUnknownSync(OAuthTokenExpiryEpochMs)(
+      accessTokenExpiresAt
+    ),
+    authorization: makeAuthorization(authorization),
+    cookieHeader: makeCookieHeader(accessTokenExpiresAt, refreshTokenExpiresAt),
+    refreshTokenExpiresAt: Schema.decodeUnknownSync(OAuthTokenExpiryEpochMs)(
+      refreshTokenExpiresAt
+    ),
+  };
+  return checkedResult;
+};
 
-const bootstrapConfig = (
-  snapshot: TescoAuthSnapshot
-): TescoAuthBootstrapConfig => ({
-  initialAuthorization: snapshot.authorization,
-  initialCookieHeader: snapshot.cookieHeader,
-});
+const bootstrapConfig = (snapshot: TescoAuthSnapshot) => {
+  const checkedResult: TescoAuthBootstrapConfig = {
+    initialAuthorization: snapshot.authorization,
+    initialCookieHeader: snapshot.cookieHeader,
+  };
+  return checkedResult;
+};
 
 describe("TescoAuthSessionLive", () => {
   it("preserves interruption from soft-login refresh", async () => {

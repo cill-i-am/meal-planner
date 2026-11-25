@@ -116,7 +116,7 @@ export const makeTescoMcpHttpHandler =
           status: 401,
         });
       }
-      // Both principals are machine clients. Browser origins cannot use either credential.
+
       if (request.headers.has("origin")) {
         return response(403, "browser_origin_not_allowed");
       }

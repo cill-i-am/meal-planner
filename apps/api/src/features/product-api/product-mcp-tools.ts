@@ -20,10 +20,13 @@ export interface ProductMcpDispatch {
   readonly state: ProductMcpState;
 }
 
-const toolFailure = (message: string): CallToolResult => ({
-  content: [{ text: message, type: "text" }],
-  isError: true,
-});
+const toolFailure = (message: string) => {
+  const checkedResult: CallToolResult = {
+    content: [{ text: message, type: "text" }],
+    isError: true,
+  };
+  return checkedResult;
+};
 
 export const toolDefinitions = (dispatch: ProductMcpDispatch) =>
   ProductOperations.filter((operation) =>
@@ -100,15 +103,18 @@ export const callProductTool = (
   input: Schema.Json,
   request: Request,
   dispatch: ProductMcpDispatch
-): Effect.Effect<CallToolResult> => {
+) => {
   const operation = ProductOperations.find(
     (candidate) => candidate.name === name
   );
   if (operation === undefined) {
-    return Effect.succeed(toolFailure("Unknown Meal Planner operation."));
+    const checkedResult: Effect.Effect<CallToolResult> = Effect.succeed(
+      toolFailure("Unknown Meal Planner operation.")
+    );
+    return checkedResult;
   }
   if (!dispatch.permits(operation.scopes)) {
-    return Effect.succeed({
+    const checkedResult: Effect.Effect<CallToolResult> = Effect.succeed({
       ...toolFailure(
         "This connection needs additional permission for this operation."
       ),
@@ -118,16 +124,24 @@ export const callProductTool = (
         ],
       },
     });
+    return checkedResult;
   }
-  return productToolRequest(operation, input, request).pipe(
-    Effect.flatMap((applicationRequest) =>
-      dispatch.call(applicationRequest, operation.scopes)
-    ),
-    Effect.flatMap(readToolResult),
-    Effect.orElseSucceed(() =>
-      toolFailure(
-        "Invalid input or unavailable operation. Keep the original request identity if the outcome is uncertain."
+  {
+    const checkedResult: Effect.Effect<CallToolResult> = productToolRequest(
+      operation,
+      input,
+      request
+    ).pipe(
+      Effect.flatMap((applicationRequest) =>
+        dispatch.call(applicationRequest, operation.scopes)
+      ),
+      Effect.flatMap(readToolResult),
+      Effect.orElseSucceed(() =>
+        toolFailure(
+          "Invalid input or unavailable operation. Keep the original request identity if the outcome is uncertain."
+        )
       )
-    )
-  );
+    );
+    return checkedResult;
+  }
 };

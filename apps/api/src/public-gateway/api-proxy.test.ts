@@ -49,10 +49,11 @@ describe("same-origin API proxy", () => {
       },
       status: 204,
     });
-    const fetch = vi.fn(() => response);
+    const binding = { fetch: () => response };
+    const fetch = vi.spyOn(binding, "fetch");
 
     const proxied = await worker.fetch(request, {
-      MEAL_PLANNER_API: { fetch },
+      MEAL_PLANNER_API: binding,
     });
 
     expect(fetch).toHaveBeenCalledOnce();

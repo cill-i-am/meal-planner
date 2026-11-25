@@ -4,7 +4,6 @@ import { HistoryInput } from "./history.js";
 import { SmartLoadInput, SmartLoad } from "./loads.js";
 import { Timestamp } from "./model.js";
 
-// Read unknown provider codes and numeric/string representations without treating them as write permissions.
 export const LoadSettingValue = Schema.NullOr(
   Schema.Union([Schema.Finite, Schema.String.check(Schema.isMaxLength(64))])
 );

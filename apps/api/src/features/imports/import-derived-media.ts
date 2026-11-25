@@ -135,8 +135,11 @@ const frameKey = (
     `imports/${importId}/generations/${generation}/provider-frame-${index}.jpg`
   );
 
-const derivedFailure = (): RetryableAcquisitionFailure =>
-  new RetryableAcquisitionError({ stage: "store" });
+const derivedFailure = () => {
+  const checkedResult: RetryableAcquisitionFailure =
+    new RetryableAcquisitionError({ stage: "store" });
+  return checkedResult;
+};
 
 const hash = Effect.fn("ImportDerivedMedia.hash")(function* hashEffect(
   bytes: Uint8Array
@@ -377,84 +380,86 @@ const readBytes = Effect.fn("ImportDerivedMedia.readBytes")(
 );
 
 /** Private-R2 audio adapter for the real workflow. */
-export const makeR2SpeechAudioExtractor = (
-  bucket: AcquisitionBucketLike
-): SpeechAudioExtractor => ({
-  extract: Effect.fn("ImportDerivedMedia.extractAudio")((input) =>
-    Effect.gen(function* extractAudioEffect() {
-      const manifest = yield* readManifest(
-        bucket,
-        input.importId,
-        input.generation,
-        input.sourceMediaSha256
-      );
-      if ("status" in manifest.audio) {
-        return { _tag: "NoAudioStream" as const };
-      }
-      const bytes = yield* readBytes(bucket, manifest.audio.key);
-      const actualHash = yield* hash(bytes);
-      if (
-        bytes.byteLength !== manifest.audio.bytes ||
-        actualHash !== manifest.audio.sha256
-      ) {
-        return yield* Effect.fail(readFailure("verifyObject"));
-      }
-      return {
-        bytes,
-        durationMilliseconds: manifest.audio.durationMilliseconds,
-        mimeType: "audio/wav" as const,
-        sha256: actualHash,
-      };
-    }).pipe(
-      Effect.mapError(() => ({
-        _tag: "SpeechAudioExtractionFailure" as const,
-        code: "audio_extraction_failed" as const,
-      }))
-    )
-  ),
-});
+export const makeR2SpeechAudioExtractor = (bucket: AcquisitionBucketLike) => {
+  const checkedResult: SpeechAudioExtractor = {
+    extract: Effect.fn("ImportDerivedMedia.extractAudio")((input) =>
+      Effect.gen(function* extractAudioEffect() {
+        const manifest = yield* readManifest(
+          bucket,
+          input.importId,
+          input.generation,
+          input.sourceMediaSha256
+        );
+        if ("status" in manifest.audio) {
+          return { _tag: "NoAudioStream" as const };
+        }
+        const bytes = yield* readBytes(bucket, manifest.audio.key);
+        const actualHash = yield* hash(bytes);
+        if (
+          bytes.byteLength !== manifest.audio.bytes ||
+          actualHash !== manifest.audio.sha256
+        ) {
+          return yield* Effect.fail(readFailure("verifyObject"));
+        }
+        return {
+          bytes,
+          durationMilliseconds: manifest.audio.durationMilliseconds,
+          mimeType: "audio/wav" as const,
+          sha256: actualHash,
+        };
+      }).pipe(
+        Effect.mapError(() => ({
+          _tag: "SpeechAudioExtractionFailure" as const,
+          code: "audio_extraction_failed" as const,
+        }))
+      )
+    ),
+  };
+  return checkedResult;
+};
 
 /** Private-R2 ordered frame adapter for the real workflow. */
-export const makeR2VisualFrameSampler = (
-  bucket: AcquisitionBucketLike
-): VisualFrameSampler => ({
-  sample: Effect.fn("ImportDerivedMedia.sampleFrames")((input) =>
-    Effect.gen(function* sampleFramesEffect() {
-      const manifest = yield* readManifest(
-        bucket,
-        input.importId,
-        input.generation,
-        input.sourceMediaSha256
-      );
-      return yield* Effect.forEach(
-        manifest.frames,
-        Effect.fn("ImportDerivedMedia.readFrame")(
-          function* readFrameEffect(frame) {
-            const bytes = yield* readBytes(bucket, frame.key);
-            const actualHash = yield* hash(bytes);
-            if (
-              bytes.byteLength !== frame.bytes ||
-              actualHash !== frame.sha256
-            ) {
-              return yield* Effect.fail(readFailure("verifyObject"));
+export const makeR2VisualFrameSampler = (bucket: AcquisitionBucketLike) => {
+  const checkedResult: VisualFrameSampler = {
+    sample: Effect.fn("ImportDerivedMedia.sampleFrames")((input) =>
+      Effect.gen(function* sampleFramesEffect() {
+        const manifest = yield* readManifest(
+          bucket,
+          input.importId,
+          input.generation,
+          input.sourceMediaSha256
+        );
+        return yield* Effect.forEach(
+          manifest.frames,
+          Effect.fn("ImportDerivedMedia.readFrame")(
+            function* readFrameEffect(frame) {
+              const bytes = yield* readBytes(bucket, frame.key);
+              const actualHash = yield* hash(bytes);
+              if (
+                bytes.byteLength !== frame.bytes ||
+                actualHash !== frame.sha256
+              ) {
+                return yield* Effect.fail(readFailure("verifyObject"));
+              }
+              return {
+                bytes,
+                height: frame.height,
+                mimeType: "image/jpeg" as const,
+                sha256: actualHash,
+                timestampMilliseconds: frame.timestampMilliseconds,
+                width: frame.width,
+              };
             }
-            return {
-              bytes,
-              height: frame.height,
-              mimeType: "image/jpeg" as const,
-              sha256: actualHash,
-              timestampMilliseconds: frame.timestampMilliseconds,
-              width: frame.width,
-            };
-          }
-        ),
-        { concurrency: 1 }
-      );
-    }).pipe(
-      Effect.mapError(() => ({
-        _tag: "VisualFrameSamplingFailure" as const,
-        code: "frame_sampling_failed" as const,
-      }))
-    )
-  ),
-});
+          ),
+          { concurrency: 1 }
+        );
+      }).pipe(
+        Effect.mapError(() => ({
+          _tag: "VisualFrameSamplingFailure" as const,
+          code: "frame_sampling_failed" as const,
+        }))
+      )
+    ),
+  };
+  return checkedResult;
+};

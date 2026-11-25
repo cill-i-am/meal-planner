@@ -15,7 +15,7 @@ export default class SigenApi extends Cloudflare.Worker<SigenApi>()(
     compatibility: { date: "2026-10-19", flags: ["nodejs_compat"] },
     main: import.meta.url,
     name: "sigen-api",
-    // Automatic request logging could retain credentials. Add only sanitized operation metrics after acceptance.
+
     observability: { enabled: false },
     workersDev: true,
   },

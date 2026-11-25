@@ -13,7 +13,7 @@ const expectInvalidDefinition = (
   define: () => unknown,
   reason: InvalidReadOnlyGraphQlOperationError["reason"],
   operationName: string
-): void => {
+) => {
   try {
     define();
   } catch (error) {

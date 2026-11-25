@@ -109,14 +109,23 @@ export class TescoConfigError {
 const optionalSchemaConfig = <A, I>(
   schema: Schema.Codec<A, I>,
   name: string
-): Config.Config<A | null> =>
-  Config.option(Config.schema(schema, name)).pipe(Config.map(Option.getOrNull));
+) => {
+  const checkedResult: Config.Config<A | null> = Config.option(
+    Config.schema(schema, name)
+  ).pipe(Config.map(Option.getOrNull));
+  return checkedResult;
+};
 
 const redactedSchemaConfig = <A, I>(
   schema: Schema.Codec<A, I>,
   name: string
-): Config.Config<Redacted.Redacted<A>> =>
-  Config.schema(schema, name).pipe(Config.map(Redacted.make));
+) => {
+  const checkedResult: Config.Config<Redacted.Redacted<A>> = Config.schema(
+    schema,
+    name
+  ).pipe(Config.map(Redacted.make));
+  return checkedResult;
+};
 
 const RawTescoConfigDefinition = Config.all({
   authCookieHeader: redactedSchemaConfig(
@@ -143,31 +152,34 @@ const RawTescoConfigDefinition = Config.all({
 
 const TescoConfigDefinition: Config.Config<TescoConfig> =
   RawTescoConfigDefinition.pipe(
-    Config.map((raw): TescoConfig => ({
-      authBootstrap: {
-        initialAuthorization: raw.authorization,
-        initialCookieHeader: raw.authCookieHeader,
-      },
-      catalogue: {
-        locale: raw.locale,
-        mangoApiKey: raw.mangoApiKey,
-        mangoUrl: raw.mangoUrl,
-        region: raw.region,
-        releaseBranch: raw.releaseBranch,
-        suggestionUrl: raw.suggestionUrl,
-        transactionPurpose: raw.transactionPurpose,
-      },
-      softLogin: {
-        locale: raw.locale,
-        refreshFromUrl: raw.authRefreshFromUrl,
-        signInUrl: raw.softRefreshSignInUrl,
-      },
-    }))
+    Config.map((raw) => {
+      const checkedResult: TescoConfig = {
+        authBootstrap: {
+          initialAuthorization: raw.authorization,
+          initialCookieHeader: raw.authCookieHeader,
+        },
+        catalogue: {
+          locale: raw.locale,
+          mangoApiKey: raw.mangoApiKey,
+          mangoUrl: raw.mangoUrl,
+          region: raw.region,
+          releaseBranch: raw.releaseBranch,
+          suggestionUrl: raw.suggestionUrl,
+          transactionPurpose: raw.transactionPurpose,
+        },
+        softLogin: {
+          locale: raw.locale,
+          refreshFromUrl: raw.authRefreshFromUrl,
+          signInUrl: raw.softRefreshSignInUrl,
+        },
+      };
+      return checkedResult;
+    })
   );
 
-const issueEnvironmentVariable = (
+const issueEnvironmentVariable: (
   issue: SchemaIssue.Issue
-): TescoEnvironmentVariable | undefined => {
+) => TescoEnvironmentVariable | undefined = (issue) => {
   if (issue._tag === "Pointer") {
     const environmentVariable = issue.path.find(
       (segment): segment is TescoEnvironmentVariable =>
@@ -175,66 +187,92 @@ const issueEnvironmentVariable = (
         tescoEnvironmentVariables.has(segment)
     );
 
-    return environmentVariable ?? issueEnvironmentVariable(issue.issue);
+    {
+      const checkedResult: TescoEnvironmentVariable | undefined =
+        environmentVariable ?? issueEnvironmentVariable(issue.issue);
+      return checkedResult;
+    }
   }
 
   if (issue._tag === "Filter" || issue._tag === "Encoding") {
-    return issueEnvironmentVariable(issue.issue);
+    const checkedResult: TescoEnvironmentVariable | undefined =
+      issueEnvironmentVariable(issue.issue);
+    return checkedResult;
   }
 
   if (issue._tag === "Composite" || issue._tag === "AnyOf") {
-    return issue.issues
+    const checkedResult: TescoEnvironmentVariable | undefined = issue.issues
       .map(issueEnvironmentVariable)
       .find((environmentVariable) => environmentVariable !== undefined);
+    return checkedResult;
   }
 
-  return undefined;
+  {
+    const checkedResult: TescoEnvironmentVariable | undefined = undefined;
+    return checkedResult;
+  }
 };
 
-const issueReason = (issue: SchemaIssue.Issue): TescoConfigIssue["reason"] => {
+const issueReason: (issue: SchemaIssue.Issue) => TescoConfigIssue["reason"] = (
+  issue
+) => {
   if (
     issue._tag === "Pointer" ||
     issue._tag === "Filter" ||
     issue._tag === "Encoding"
   ) {
-    return issueReason(issue.issue);
+    const checkedResult: TescoConfigIssue["reason"] = issueReason(issue.issue);
+    return checkedResult;
   }
 
   if (issue._tag === "Composite" || issue._tag === "AnyOf") {
-    return issue.issues.some((child) => issueReason(child) === "missing")
+    const checkedResult: TescoConfigIssue["reason"] = issue.issues.some(
+      (child) => issueReason(child) === "missing"
+    )
       ? "missing"
       : "invalid";
+    return checkedResult;
   }
 
   if (issue._tag === "MissingKey") {
-    return "missing";
+    const checkedResult: TescoConfigIssue["reason"] = "missing";
+    return checkedResult;
   }
 
   if (issue._tag === "InvalidType" && !SchemaIssue.hasInput(issue)) {
-    return "missing";
+    const checkedResult: TescoConfigIssue["reason"] = "missing";
+    return checkedResult;
   }
 
-  return SchemaIssue.hasInput(issue) && issue.input === undefined
-    ? "missing"
-    : "invalid";
+  {
+    const checkedResult: TescoConfigIssue["reason"] =
+      SchemaIssue.hasInput(issue) && issue.input === undefined
+        ? "missing"
+        : "invalid";
+    return checkedResult;
+  }
 };
 
-const toTescoConfigError = (error: Config.ConfigError): TescoConfigError => {
+const toTescoConfigError = (error: Config.ConfigError) => {
   if (!Schema.isSchemaError(error.cause)) {
-    return new TescoConfigError([]);
+    const checkedResult: TescoConfigError = new TescoConfigError([]);
+    return checkedResult;
   }
 
   const environmentVariable = issueEnvironmentVariable(error.cause.issue);
-  return new TescoConfigError(
-    environmentVariable === undefined
-      ? []
-      : [
-          {
-            environmentVariable,
-            reason: issueReason(error.cause.issue),
-          },
-        ]
-  );
+  {
+    const checkedResult: TescoConfigError = new TescoConfigError(
+      environmentVariable === undefined
+        ? []
+        : [
+            {
+              environmentVariable,
+              reason: issueReason(error.cause.issue),
+            },
+          ]
+    );
+    return checkedResult;
+  }
 };
 
 export const loadTescoConfig: Effect.Effect<TescoConfig, TescoConfigError> =

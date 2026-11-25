@@ -2,7 +2,7 @@ import { Effect, Exit, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { makeImportSystemAuthorizer } from "./import-system.auth.js";
-import { TestImportPrincipal } from "./import.test-fixtures.js";
+import { TestImportPrincipal } from "./import.fixture.js";
 
 describe("import system authorization", () => {
   it("accepts only the configured internal bearer credential", async () => {

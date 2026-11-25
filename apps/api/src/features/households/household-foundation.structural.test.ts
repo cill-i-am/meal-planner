@@ -16,7 +16,7 @@ const readProductionHouseholdSources = async () => {
         (relativePath) =>
           relativePath.endsWith(".ts") &&
           !relativePath.endsWith(".test.ts") &&
-          !relativePath.endsWith(".test-fixture.ts") &&
+          !relativePath.endsWith(".fixture.ts") &&
           relativePath !== "shared-kernel/authority-services.live.ts"
       )
       .map(async (relativePath) => ({
@@ -34,7 +34,7 @@ const readProductionFeatureSources = async () => {
         (relativePath) =>
           relativePath.endsWith(".ts") &&
           !relativePath.endsWith(".test.ts") &&
-          !relativePath.endsWith(".test-fixture.ts")
+          !relativePath.endsWith(".fixture.ts")
       )
       .map(async (relativePath) => ({
         path: relativePath,
@@ -135,8 +135,7 @@ describe("household foundation structural boundaries", () => {
     expect(`${composition}\n${controlPlane}`).not.toContain(
       "getAcceptedInvitationMember"
     );
-    // Email is valid for checking the organiser's original invitation intent;
-    // acceptance and profile linking must still use authenticated subject proof.
+
     const recipientProof = composition
       .split("export const makeHouseholdInvitationRecipientVerifier =")[1]
       ?.split("const persistenceFailure")[0];

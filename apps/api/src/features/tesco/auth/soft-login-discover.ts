@@ -17,10 +17,11 @@ const TescoDiscoverAuthConfig = Schema.Struct({
 const DiscoverScriptPattern =
   /<script[^>]*type=["']application\/discover\+json["'][^>]*>(?<json>[\s\S]*?)<\/script>/u;
 
-export const authorizationFromDiscoverHtml = (
-  html: string
-): Effect.Effect<TescoAuthorization, TescoSoftLoginResponseInvalid> =>
-  Effect.gen(function* () {
+export const authorizationFromDiscoverHtml = (html: string) => {
+  const checkedResult: Effect.Effect<
+    TescoAuthorization,
+    TescoSoftLoginResponseInvalid
+  > = Effect.gen(function* () {
     const match = DiscoverScriptPattern.exec(html);
     const jsonText = match?.groups?.["json"];
     if (jsonText === undefined) {
@@ -38,3 +39,5 @@ export const authorizationFromDiscoverHtml = (
       )
     );
   });
+  return checkedResult;
+};

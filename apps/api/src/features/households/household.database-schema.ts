@@ -531,8 +531,6 @@ export const householdRecipeImports = sqliteTable(
     uniqueIndex("household_recipe_imports_live_source_unique")
       .on(table.canonicalSourceId)
       .where(
-        // The object is already one household, so canonical source ownership
-        // is physically tenant-local.
         sql`${table.canonicalSourceId} IS NOT NULL AND ${table.status} IN ('processing', 'requires_action', 'succeeded')`
       ),
   ]

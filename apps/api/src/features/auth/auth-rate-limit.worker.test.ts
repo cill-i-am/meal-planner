@@ -23,7 +23,6 @@ const makeAuth = () =>
     secret: "local-rate-limit-fixture-secret-at-least-32-characters",
   });
 
-// Invalid bodies exercise the real limiter without creating users or hashing passwords.
 const signIn = (headers: HeadersInit) =>
   new Request(`${baseURL}/api/auth/sign-in/email`, {
     body: JSON.stringify({}),
@@ -67,7 +66,6 @@ describe("Better Auth shared D1 rate limiting", () => {
     });
     expect(row?.count).toBe(3);
 
-    // Expiry is persisted in D1, so a reconstructed instance can admit a new window.
     await context.adapter.update({
       model: "rateLimit",
       update: { lastRequest: 0 },

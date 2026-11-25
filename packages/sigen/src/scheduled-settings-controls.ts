@@ -93,46 +93,52 @@ export const scheduledSettingsMatch = (
   change: ScheduledSettingsChange,
   snapshot: ScheduledSettingsSnapshot,
   reviewed?: ScheduledSettingsSnapshot
-): boolean => {
+) => {
   if (change.operation === "set_energy_saving_settings") {
     if (snapshot.kind !== "energy_saving") {
-      return false;
+      const checkedResult = false;
+      return checkedResult;
     }
     const expected = savingValues(
       change,
       reviewed?.kind === "energy_saving" ? reviewed.settings : undefined
     );
-    return (
-      snapshot.settings.providerOnGridMode === expected.onGridMode &&
-      snapshot.settings.providerOffGridMode === expected.offGridMode &&
-      snapshot.settings.providerValue === expected.value
-    );
+    {
+      const checkedResult: boolean =
+        snapshot.settings.providerOnGridMode === expected.onGridMode &&
+        snapshot.settings.providerOffGridMode === expected.offGridMode &&
+        snapshot.settings.providerValue === expected.value;
+      return checkedResult;
+    }
   }
   if (snapshot.kind !== "preheating") {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
   const value = snapshot.settings;
-  return (
-    !value.industrial &&
-    value.providerMode === null &&
-    value.providerEnableSwitch === null &&
-    value.timezone === change.timezone &&
-    value.providerSwitch === (change.enabled ? 1 : 0) &&
-    value.slots.length === change.windows.length &&
-    value.slots.every((slot, index) => {
-      const expected = change.windows[index];
-      return (
-        expected !== undefined &&
-        isUnusedResidentialPreheatingPower(slot.providerChargingPower) &&
-        isUnusedResidentialPreheatingPower(slot.providerDischargePower) &&
-        Number(slot.providerStartTime) === minutes(expected.startTime) &&
-        Number(slot.providerDuration) ===
-          minutes(expected.endTime) - minutes(expected.startTime) &&
-        JSON.stringify(slot.providerPeriods) ===
-          JSON.stringify(expected.providerDays.split(",").map(Number))
-      );
-    })
-  );
+  {
+    const checkedResult: boolean =
+      !value.industrial &&
+      value.providerMode === null &&
+      value.providerEnableSwitch === null &&
+      value.timezone === change.timezone &&
+      value.providerSwitch === (change.enabled ? 1 : 0) &&
+      value.slots.length === change.windows.length &&
+      value.slots.every((slot, index) => {
+        const expected = change.windows[index];
+        return (
+          expected !== undefined &&
+          isUnusedResidentialPreheatingPower(slot.providerChargingPower) &&
+          isUnusedResidentialPreheatingPower(slot.providerDischargePower) &&
+          Number(slot.providerStartTime) === minutes(expected.startTime) &&
+          Number(slot.providerDuration) ===
+            minutes(expected.endTime) - minutes(expected.startTime) &&
+          JSON.stringify(slot.providerPeriods) ===
+            JSON.stringify(expected.providerDays.split(",").map(Number))
+        );
+      });
+    return checkedResult;
+  }
 };
 export const makeScheduledSettingsControls = (
   read: ProviderRead,
@@ -187,8 +193,11 @@ export const makeScheduledSettingsControls = (
     stationId: StationId,
     change: ScheduledSettingsChange,
     token: Redacted.Redacted<string>
-  ): Effect.Effect<ScheduledSettingsSnapshot, SigenFailure> =>
-    Effect.gen(function* inspectScheduledSettings() {
+  ) => {
+    const checkedResult: Effect.Effect<
+      ScheduledSettingsSnapshot,
+      SigenFailure
+    > = Effect.gen(function* inspectScheduledSettings() {
       if (change.operation === "set_energy_saving_settings") {
         return {
           kind: "energy_saving",
@@ -211,7 +220,9 @@ export const makeScheduledSettingsControls = (
           timezone: DateTime.zoneToString(zone),
         },
       };
-    }),
+    });
+    return checkedResult;
+  },
   validate: (
     change: ScheduledSettingsChange,
     snapshot: ScheduledSettingsSnapshot
@@ -243,14 +254,14 @@ export const makeScheduledSettingsControls = (
       return failure("UnsupportedCapability");
     }
     const proposed = savingValues(change, current);
-    // offGridEnable is the app's capability gate, not a switch we may change through this operation.
+
     if (
       !current.offGridEnabled &&
       proposed.offGridMode !== current.providerOffGridMode
     ) {
       return failure("UnsupportedCapability");
     }
-    // The app preserves the threshold outside deep saving mode.
+
     if (
       proposed.onGridMode !== "2" &&
       proposed.value !== current.providerValue

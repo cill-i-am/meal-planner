@@ -73,8 +73,8 @@ const discoverHtml = (authorization: string) => `
   })}</script>
 `;
 
-const listen = (server: Server): Promise<string> =>
-  new Promise((resolve, reject) => {
+const listen = (server: Server) => {
+  const checkedResult = new Promise<string>((resolve, reject) => {
     const onError = (error: Error) => reject(error);
     server.once("error", onError);
     server.listen(0, "127.0.0.1", () => {
@@ -87,9 +87,11 @@ const listen = (server: Server): Promise<string> =>
       resolve(`http://${address.address}:${address.port}`);
     });
   });
+  return checkedResult;
+};
 
-const close = (server: Server): Promise<void> =>
-  new Promise((resolve, reject) => {
+const close = (server: Server) => {
+  const checkedResult = new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error === undefined) {
         resolve();
@@ -98,6 +100,8 @@ const close = (server: Server): Promise<void> =>
       }
     });
   });
+  return checkedResult;
+};
 
 const sendRedirect = (
   response: ServerResponse,

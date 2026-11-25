@@ -75,22 +75,31 @@ interface RecipeRecoveryLoopDependencies<Requirements = never> {
   >;
 }
 
-const failedRecoveryCheckpoint = (code: string): RecoveryCheckpoint => ({
-  _tag: "Failed",
-  code,
-  stage: "recipe",
-});
+const failedRecoveryCheckpoint = (code: string) => {
+  const checkedResult: RecoveryCheckpoint = {
+    _tag: "Failed",
+    code,
+    stage: "recipe",
+  };
+  return checkedResult;
+};
 
 const nextRecoveryOrdinal = (ordinal: RecipeRecoveryOrdinal) =>
   Schema.decodeUnknownOption(RecipeRecoveryOrdinal)(ordinal + 1);
 
 const normalizeDurableRecoveryAuthorization = (
   input: typeof RecipeRecoveryAuthorization.Encoded
-): typeof RecipeRecoveryAuthorization.Encoded | undefined => {
+) => {
   try {
-    return structuredClone(input);
+    const checkedResult:
+      | typeof RecipeRecoveryAuthorization.Encoded
+      | undefined = structuredClone(input);
+    return checkedResult;
   } catch {
-    return undefined;
+    const checkedResult:
+      | typeof RecipeRecoveryAuthorization.Encoded
+      | undefined = undefined;
+    return checkedResult;
   }
 };
 

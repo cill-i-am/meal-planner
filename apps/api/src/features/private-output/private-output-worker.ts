@@ -280,9 +280,7 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
       await privateOutputKey("session", input.binding.sessionReference)
     ).settleConfirmation(input);
   }
-  override async fetch(
-    request: Request | NativeCloudflare.Request
-  ): Promise<NativeCloudflare.Response> {
+  override async fetch(request: Request | NativeCloudflare.Request) {
     const url = new URL(request.url);
     if (
       url.origin === "https://private-output.internal" &&
@@ -293,9 +291,15 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
       const session = Schema.decodeUnknownSync(Session)({
         sessionReference: request.headers.get("private-output-session"),
       });
-      return this.env.PrivateInterviewSession.getByName(
-        await privateOutputKey("session", session.sessionReference)
-      ).fetch(request);
+      {
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> =
+          this.env.PrivateInterviewSession.getByName(
+            await privateOutputKey("session", session.sessionReference)
+          ).fetch(request);
+        return checkedResult;
+      }
     }
     if (
       url.origin !== "https://private-output.internal" ||
@@ -303,7 +307,12 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
       request.method !== "GET" ||
       request.headers.get("Upgrade")?.toLowerCase() !== "websocket"
     ) {
-      return new Response(null, { status: 404 });
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = new Response(null, {
+        status: 404,
+      });
+      return checkedResult;
     }
     const directoryKey = request.headers.get("private-output-directory");
     if (directoryKey !== null) {
@@ -311,9 +320,20 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
         directoryKey
       );
       if (request.headers.has("private-output-session")) {
-        return new Response(null, { status: 404 });
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> = new Response(null, {
+          status: 404,
+        });
+        return checkedResult;
       }
-      return this.env.PrivateInterviewDirectory.getByName(key).fetch(request);
+      {
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> =
+          this.env.PrivateInterviewDirectory.getByName(key).fetch(request);
+        return checkedResult;
+      }
     }
     const session = Schema.decodeUnknownSync(Session)({
       sessionReference: request.headers.get("private-output-session"),
@@ -321,7 +341,12 @@ export class PrivateOutputApi extends WorkerEntrypoint<OutputWorkerEnvironment> 
     const child = this.env.PrivateInterviewSession.getByName(
       await privateOutputKey("session", session.sessionReference)
     );
-    return child.fetch(request);
+    {
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = child.fetch(request);
+      return checkedResult;
+    }
   }
 }
 

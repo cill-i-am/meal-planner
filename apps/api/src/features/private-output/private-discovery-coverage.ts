@@ -87,15 +87,20 @@ export type PrivateDiscoveryCoverageUpdates =
   typeof PrivateDiscoveryCoverageUpdates.Type;
 export type PrivateDiscoveryTopic = keyof PrivateDiscoveryCoverage;
 
-export const emptyPrivateDiscoveryCoverage = (): PrivateDiscoveryCoverage => ({
-  foodRestrictions: { _tag: "Unanswered" },
-  usualMeals: { _tag: "Unanswered" },
-});
-export const emptyPrivateDiscoveryCoverageUpdates =
-  (): PrivateDiscoveryCoverageUpdates => ({
+export const emptyPrivateDiscoveryCoverage = () => {
+  const checkedResult: PrivateDiscoveryCoverage = {
+    foodRestrictions: { _tag: "Unanswered" },
+    usualMeals: { _tag: "Unanswered" },
+  };
+  return checkedResult;
+};
+export const emptyPrivateDiscoveryCoverageUpdates = () => {
+  const checkedResult: PrivateDiscoveryCoverageUpdates = {
     foodRestrictions: null,
     usualMeals: null,
-  });
+  };
+  return checkedResult;
+};
 
 export class PrivateDiscoveryCoverageFailure extends Data.TaggedError(
   "PrivateDiscoveryCoverageFailure"
@@ -108,13 +113,18 @@ const applyTopicUpdate = <T>(
   previous: TopicState<T>,
   update: TopicUpdate<T>,
   participant: PrivateDiscoveryEvidenceMessage
-): TopicState<T> => {
+) => {
   if (update === null) {
-    return previous;
+    const checkedResult: TopicState<T> = previous;
+    return checkedResult;
   }
   assertCurrentParticipantEvidence(update.evidence, participant);
   if (update._tag === "RecordDecline") {
-    return { _tag: "Declined", evidence: update.evidence };
+    const checkedResult: TopicState<T> = {
+      _tag: "Declined",
+      evidence: update.evidence,
+    };
+    return checkedResult;
   }
   const wasDeclined = previous._tag === "Declined";
   if (wasDeclined !== (update.revisit !== null)) {
@@ -128,14 +138,18 @@ const applyTopicUpdate = <T>(
     (previous._tag === "Answered" || previous._tag === "NoInformation"
       ? previous.reopenedBy
       : null);
-  return update._tag === "RecordAnswer"
-    ? {
-        _tag: "Answered",
-        evidence: update.evidence,
-        reopenedBy,
-        value: update.value,
-      }
-    : { _tag: "NoInformation", evidence: update.evidence, reopenedBy };
+  {
+    const checkedResult: TopicState<T> =
+      update._tag === "RecordAnswer"
+        ? {
+            _tag: "Answered",
+            evidence: update.evidence,
+            reopenedBy,
+            value: update.value,
+          }
+        : { _tag: "NoInformation", evidence: update.evidence, reopenedBy };
+    return checkedResult;
+  }
 };
 
 /** Provenance and legal transitions are enforced before any private state is written. */
@@ -143,18 +157,21 @@ export const applyPrivateDiscoveryCoverageUpdates = (
   current: PrivateDiscoveryCoverage,
   updates: PrivateDiscoveryCoverageUpdates,
   participant: PrivateDiscoveryEvidenceMessage
-): PrivateDiscoveryCoverage => ({
-  foodRestrictions: applyTopicUpdate(
-    current.foodRestrictions,
-    updates.foodRestrictions,
-    participant
-  ),
-  usualMeals: applyTopicUpdate(
-    current.usualMeals,
-    updates.usualMeals,
-    participant
-  ),
-});
+) => {
+  const checkedResult: PrivateDiscoveryCoverage = {
+    foodRestrictions: applyTopicUpdate(
+      current.foodRestrictions,
+      updates.foodRestrictions,
+      participant
+    ),
+    usualMeals: applyTopicUpdate(
+      current.usualMeals,
+      updates.usualMeals,
+      participant
+    ),
+  };
+  return checkedResult;
+};
 
 export const privateDiscoveryTopicQuestion = (topic: PrivateDiscoveryTopic) => {
   switch (topic) {
@@ -173,10 +190,12 @@ export const privateDiscoveryTopicQuestion = (topic: PrivateDiscoveryTopic) => {
 /** Saved own-profile safety facts satisfy discovery coverage, never the reverse. */
 export const profileAddressesFoodRestrictions = (
   facts: readonly Pick<ProfileFact, "value" | "standing">[]
-): boolean =>
-  facts.some(
+) => {
+  const checkedResult: boolean = facts.some(
     ({ value, standing }) =>
       standing._tag === "confirmed" &&
       (value._tag === "HardConstraint" ||
         value._tag === "NoKnownHardConstraints")
   );
+  return checkedResult;
+};

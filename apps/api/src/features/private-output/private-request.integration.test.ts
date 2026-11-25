@@ -15,11 +15,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ReleasedConfirmation } from "./private-confirmation.contract.js";
 import { emptyPrivateDiscoveryContinuityUpdates } from "./private-discovery-continuity.js";
-import { encodeKimiCompletion } from "./private-discovery-kimi-stream.test-fixtures.js";
+import { encodeKimiCompletion } from "./private-discovery-kimi-stream.fixture.js";
 import {
   makePrivateOutputHarness,
   syntheticPrivateDiscoveryConfiguration,
-} from "./private-output-native.test-fixture.js";
+} from "./private-output-native.fixture.js";
 import type { PrivateSessionBinding } from "./private-output.contract.js";
 
 const harness = makePrivateOutputHarness();
@@ -343,14 +343,14 @@ describe("native private request transport", () => {
     const session = await openSession(await harness.binding());
     const input = turnInput(session);
     const first = await startTurn(input);
-    await expect.poll(() => harness.calls.length).toBe(1);
+    await harness.calls.waitForCount(1);
+    expect(harness.calls).toHaveLength(1);
     const duplicate = await startTurn(input);
     expect(duplicate).toMatchObject({
       id: first.id,
       sourceMessageId: first.sourceMessageId,
     });
     for (let poll = 0; poll < 3; poll += 1) {
-      // Each poll goes through admission again, as independent HTTP requests do.
       // eslint-disable-next-line no-await-in-loop
       const generation = await harness.successful<string>({
         ...context(session),
@@ -446,10 +446,10 @@ describe("native private request transport", () => {
     });
     const browserTurn = await harness.startTurn(browserSession);
     try {
-      await expect.poll(() => harness.calls.length).toBe(1);
+      await harness.calls.waitForCount(1);
+      expect(harness.calls).toHaveLength(1);
       /* eslint-disable no-await-in-loop -- Each complete admission must preserve both browser grants before the next poll. */
       for (let poll = 0; poll < 3; poll += 1) {
-        // Independent API calls renew only their own lease, while the browser retains its grant.
         const directory = await openDirectory(binding);
         const session = await openSession(binding);
         expect(directory.generation).not.toBe(browserDirectory.generation);
@@ -513,7 +513,8 @@ describe("native private request transport", () => {
     const session = await openSession(binding);
     const input = turnInput(session);
     await startTurn(input);
-    await expect.poll(() => harness.calls.length).toBe(1);
+    await harness.calls.waitForCount(1);
+    expect(harness.calls).toHaveLength(1);
     const browserDirectory = await openBrowserDirectory(binding);
     const browserSession = await harness.open(binding);
     const reconnectedDirectory = await openBrowserDirectory(binding);
@@ -694,7 +695,8 @@ describe("native private request transport", () => {
     const session = await openSession(await harness.binding());
     const input = turnInput(session);
     await startTurn(input);
-    await expect.poll(() => harness.calls.length).toBe(1);
+    await harness.calls.waitForCount(1);
+    expect(harness.calls).toHaveLength(1);
     expect(
       await harness.successful({
         ...context(session),
@@ -748,7 +750,8 @@ describe("native private request transport", () => {
       ).toBe(1);
       const input = turnInput(session);
       await startTurn(input);
-      await expect.poll(() => harness.calls.length).toBe(1);
+      await harness.calls.waitForCount(1);
+      expect(harness.calls).toHaveLength(1);
       const mutation = {
         intentKey: "c".repeat(64),
         key: scope === "account" ? binding.accountKey : binding.householdKey,
@@ -763,9 +766,7 @@ describe("native private request transport", () => {
         action: "mutation-prepare",
         operationId,
       });
-      // Miniflare's in-memory client does not forward close events from cross-object RPC.
-      // Verify both physical server sockets are gone, exact grants are invalidated,
-      // and later browser commands cannot release output.
+
       expect(
         await harness.successful({
           action: "directory-lifecycle",
@@ -865,7 +866,8 @@ describe("native private request transport", () => {
     const session = await openSession(binding);
     const input = turnInput(session);
     await startTurn(input);
-    await expect.poll(() => harness.calls.length).toBe(1);
+    await harness.calls.waitForCount(1);
+    expect(harness.calls).toHaveLength(1);
     await harness.restart();
     release.resolve(modelResponse());
     await expectDenied({ ...context(session), action: "read-request" });

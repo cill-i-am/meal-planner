@@ -72,20 +72,23 @@ const currentCheckpoint = () =>
 
 const currentEvidence = (
   overrides: Partial<HouseholdImportEvidenceCurrent> = {}
-): HouseholdImportEvidenceCurrent => ({
-  acquisitionGeneration: generation,
-  canonicalSourceId: Schema.decodeUnknownSync(SourceCanonicalId)(
-    "synthetic-canonical-id"
-  ),
-  importId,
-  sourceKind: "tiktok",
-  status: {
-    code: "transcription_failed",
-    kind: "failed",
-    recovery: "retry_later",
-  },
-  ...overrides,
-});
+) => {
+  const checkedResult: HouseholdImportEvidenceCurrent = {
+    acquisitionGeneration: generation,
+    canonicalSourceId: Schema.decodeUnknownSync(SourceCanonicalId)(
+      "synthetic-canonical-id"
+    ),
+    importId,
+    sourceKind: "tiktok",
+    status: {
+      code: "transcription_failed",
+      kind: "failed",
+      recovery: "retry_later",
+    },
+    ...overrides,
+  };
+  return checkedResult;
+};
 
 describe("acquisition checkpoint boundary", () => {
   it("decodes the current schema-encoded checkpoint", () => {

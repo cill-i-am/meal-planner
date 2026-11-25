@@ -22,7 +22,7 @@ import {
   sourceMediaSha256,
   statuses,
   transcriptKey,
-} from "./transcript-evidence.test-fixture.js";
+} from "./transcript-evidence.fixture.js";
 
 const writeRead = (document: TranscriptEvidenceDocument) =>
   Effect.gen(function* writeAndReadEvidence() {

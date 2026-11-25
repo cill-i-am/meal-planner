@@ -16,11 +16,11 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
+import { makeNativeAuthTestService } from "../auth/auth.fixture.js";
 import { makeMealPlannerAuth } from "../auth/auth.js";
 import { resolveAuthenticatedOrganization } from "../auth/auth.principal.js";
-import { makeNativeAuthTestService } from "../auth/auth.test-fixture.js";
 import { DelegatedAccess } from "../auth/delegated-access.js";
-import { makeOAuthFlowFixture } from "../auth/oauth-flow.test-fixture.js";
+import { makeOAuthFlowFixture } from "../auth/oauth-flow.fixture.js";
 import { FamilyStoreLive } from "../families/family-store.d1.js";
 import { familyHttpApiLayer } from "../families/http.js";
 import { handleProductHttp } from "./product-api.http.js";
@@ -61,16 +61,14 @@ const makeFixture = (
     Layer.provide(services),
     HttpRouter.provideRequest(services)
   );
-  // Capture dependencies before authorization, including the absent reference.
-  // The production dispatcher restores the verified grant inside this context.
+
   const capturedDependencies = Context.make(DelegatedAccess, undefined);
   let calls = 0;
   const dispatch = (request: Request) =>
     Effect.gen(function* dispatchNativeFamilyRequest() {
       calls += 1;
       const grant = yield* DelegatedAccess;
-      // This probe exercises the same native resolver used by ambient import and
-      // household handlers; business responses below use the real family API.
+
       const operation =
         new URL(request.url).pathname === "/v1/household"
           ? resolveAuthenticatedOrganization({

@@ -26,35 +26,42 @@ export type ProviderTaskFailure =
   | CodedProviderTaskFailure
   | ImportTransitionError;
 
-const providerTaskFailureCode = (error: ProviderTaskFailure): string =>
-  "code" in error ? error.code : "stage_failed";
+const providerTaskFailureCode = (error: ProviderTaskFailure) => {
+  const checkedResult: string = "code" in error ? error.code : "stage_failed";
+  return checkedResult;
+};
 
-const providerTaskFailureReasonCode = (
-  error: ProviderTaskFailure
-): ProviderTaskFailureCheckpoint["reasonCode"] =>
-  "reasonCode" in error ? error.reasonCode : undefined;
+const providerTaskFailureReasonCode = (error: ProviderTaskFailure) => {
+  const checkedResult: ProviderTaskFailureCheckpoint["reasonCode"] =
+    "reasonCode" in error ? error.reasonCode : undefined;
+  return checkedResult;
+};
 
 const isRetryableProviderTaskFailure = (
   code: string
 ): code is "provider_unavailable" | "throttled" | "timeout" =>
   code === "provider_unavailable" || code === "throttled" || code === "timeout";
 
-const retryExhaustedCheckpoint = (
-  stage: ProviderTaskStage
-): ProviderTaskFailureCheckpoint => ({
-  _tag: "Failed",
-  code: "retry_exhausted",
-  stage,
-});
+const retryExhaustedCheckpoint = (stage: ProviderTaskStage) => {
+  const checkedResult: ProviderTaskFailureCheckpoint = {
+    _tag: "Failed",
+    code: "retry_exhausted",
+    stage,
+  };
+  return checkedResult;
+};
 
 const terminalFailureCheckpoint = (
   stage: ProviderTaskStage,
   code: string,
   reasonCode?: ProviderTaskFailureCheckpoint["reasonCode"]
-): ProviderTaskFailureCheckpoint =>
-  reasonCode === undefined
-    ? { _tag: "Failed", code, stage }
-    : { _tag: "Failed", code, reasonCode, stage };
+) => {
+  const checkedResult: ProviderTaskFailureCheckpoint =
+    reasonCode === undefined
+      ? { _tag: "Failed", code, stage }
+      : { _tag: "Failed", code, reasonCode, stage };
+  return checkedResult;
+};
 
 const terminalFailureEvent = (
   trace: ImportTraceContext,

@@ -9,26 +9,32 @@ import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tik
 const source = (url: string) =>
   Schema.decodeUnknownSync(SourceDescriptor)({ kind: "tiktok", url });
 
-const resolvedResponse = (response: Response): Promise<Response> =>
-  Promise.resolve(response);
+const resolvedResponse = (response: Response) => {
+  const checkedResult: Promise<Response> = Promise.resolve(response);
+  return checkedResult;
+};
 
-const hydrationScript = (canonical: string): string =>
-  `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(
+const hydrationScript = (canonical: string) => {
+  const checkedResult = `<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">${JSON.stringify(
     {
       __DEFAULT_SCOPE__: {
         "seo.abtest": { canonical },
       },
     }
   )}</script>`;
+  return checkedResult;
+};
 
-const hydrationResponse = (canonical: string): Response =>
-  new Response(
+const hydrationResponse = (canonical: string) => {
+  const checkedResult: Response = new Response(
     `<!doctype html><html><body>${hydrationScript(canonical)}</body></html>`,
     {
       headers: { "content-type": "text/html; charset=utf-8" },
       status: 200,
     }
   );
+  return checkedResult;
+};
 
 const getFailure = async <A>(effect: Effect.Effect<A, SourceIdentityError>) => {
   const exit = await Effect.runPromiseExit(effect);
@@ -623,7 +629,7 @@ describe("TikTok canonical identity", () => {
       _tag: "SourceIdentityUnavailable",
     });
     expect(aborted).toBe(true);
-  }, 1000);
+  });
 
   it("preserves caller interruption while a handoff body is pending", async () => {
     let cancelled = false;

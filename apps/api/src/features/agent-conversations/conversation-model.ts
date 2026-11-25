@@ -92,7 +92,7 @@ const failure = (reason: ConversationModelFailure["reason"]) =>
 export const selectConversationModelAdapterConfig = (
   environment: ConversationModelEnvironment,
   config: WorkersAIConversationModelConfig
-): CloudflareTextConfig | undefined => {
+) => {
   const gateway =
     config.gatewayId === null
       ? undefined
@@ -104,20 +104,27 @@ export const selectConversationModelAdapterConfig = (
           skipCache: true,
         };
   if (environment.ConversationAI !== undefined) {
-    return gateway === undefined
-      ? undefined
-      : { binding: environment.ConversationAI, gateway };
+    const checkedResult: CloudflareTextConfig | undefined =
+      gateway === undefined
+        ? undefined
+        : { binding: environment.ConversationAI, gateway };
+    return checkedResult;
   }
   const credentials = restCredentials({
     accountId: environment.CLOUDFLARE_ACCOUNT_ID,
     apiKey: environment.CLOUDFLARE_API_TOKEN,
   });
   if (Option.isNone(credentials)) {
-    return undefined;
+    const checkedResult: CloudflareTextConfig | undefined = undefined;
+    return checkedResult;
   }
-  return gateway === undefined
-    ? credentials.value
-    : { ...credentials.value, gateway };
+  {
+    const checkedResult: CloudflareTextConfig | undefined =
+      gateway === undefined
+        ? credentials.value
+        : { ...credentials.value, gateway };
+    return checkedResult;
+  }
 };
 
 const instructions = (
@@ -178,7 +185,6 @@ const providerRequest = (
     : { max_tokens: config.maxOutputTokens, top_p: 1 }),
 });
 
-/** Uses the published adapter hook to retain Effect Schema's closed tool shape. */
 class ConversationTextAdapter extends CloudflareTextAdapter<
   WorkersAIConversationModelConfig["model"]
 > {
@@ -197,12 +203,11 @@ class ConversationTextAdapter extends CloudflareTextAdapter<
   }
 
   // oxlint-disable-next-line class-methods-use-this -- Reasoning must not enter shared or private message history.
-  protected override extractReasoning(): undefined {
-    // Deliberately omit provider reasoning from stored messages.
-  }
+  protected override extractReasoning: () => undefined = () => {
+    // WARNING: Provider reasoning must not enter the persisted conversation.
+  };
 }
 
-/** Uses TanStack's public Responses adapter with Cloudflare's compatible endpoint. */
 class ConversationResponsesAdapter extends OpenAIBaseResponsesTextAdapter<"openai/gpt-6-luna"> {
   readonly #config: CloudflareResponsesConversationModelConfig;
   readonly #instructions: string;
@@ -252,19 +257,22 @@ class ConversationResponsesAdapter extends OpenAIBaseResponsesTextAdapter<"opena
   }
 }
 
-const replyChunks = (reply: ConversationModelReply): StreamChunk[] => [
-  {
-    messageId: reply.messageId,
-    role: "assistant",
-    type: EventType.TEXT_MESSAGE_START,
-  },
-  {
-    delta: reply.text,
-    messageId: reply.messageId,
-    type: EventType.TEXT_MESSAGE_CONTENT,
-  },
-  { messageId: reply.messageId, type: EventType.TEXT_MESSAGE_END },
-];
+const replyChunks = (reply: ConversationModelReply) => {
+  const checkedResult: StreamChunk[] = [
+    {
+      messageId: reply.messageId,
+      role: "assistant",
+      type: EventType.TEXT_MESSAGE_START,
+    },
+    {
+      delta: reply.text,
+      messageId: reply.messageId,
+      type: EventType.TEXT_MESSAGE_CONTENT,
+    },
+    { messageId: reply.messageId, type: EventType.TEXT_MESSAGE_END },
+  ];
+  return checkedResult;
+};
 
 export const streamConversationTurn = (input: {
   readonly environment: ConversationModelEnvironment;
@@ -286,7 +294,7 @@ export const streamConversationTurn = (input: {
     value: typeof SubmitConversationTurn.Type
   ) => ConversationModelReply;
   readonly fail: (failure: ConversationModelFailure) => void;
-}): AsyncIterable<StreamChunk> => {
+}) => {
   const selected = configured(input.environment.AGENT_CONVERSATION_CONFIG);
   if (Option.isNone(selected)) {
     throw failure("not_configured");
@@ -518,15 +526,18 @@ export const streamConversationTurn = (input: {
     settled = true;
     return accepted;
   });
-  return chat({
-    abortController: input.controller,
-    adapter,
-    agentLoopStrategy: maxIterations(1),
-    debug: false,
-    messages: [...input.messages],
-    middleware: [guard],
-    runId: input.runId,
-    threadId: input.threadId,
-    tools: [submit],
-  });
+  {
+    const checkedResult: AsyncIterable<StreamChunk> = chat({
+      abortController: input.controller,
+      adapter,
+      agentLoopStrategy: maxIterations(1),
+      debug: false,
+      messages: [...input.messages],
+      middleware: [guard],
+      runId: input.runId,
+      threadId: input.threadId,
+      tools: [submit],
+    });
+    return checkedResult;
+  }
 };

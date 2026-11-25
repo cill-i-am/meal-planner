@@ -65,7 +65,6 @@ export const ProfileTemplates = Schema.Struct({
   ).check(Schema.isMaxLength(256)),
 });
 
-// A path retains group nesting and provider order without exposing an unbounded recursive schema.
 export const SolarPriorityEntry = Schema.Struct({
   group: Schema.Boolean,
   groupPath: Schema.Array(

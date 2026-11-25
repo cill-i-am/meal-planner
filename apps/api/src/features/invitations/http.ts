@@ -69,8 +69,7 @@ export const invitationReadHttpApiLayer = (auth: InvitationAuthHttp) => {
             const source = yield* HttpServerRequest.toWeb(request).pipe(
               Effect.orDie
             );
-            // Keep account binding, rate limits and recipient checks at the
-            // same native HTTP boundary used by Better Auth's own client.
+
             const native = yield* auth.fetchHttpEffect(
               new Request(
                 new URL(

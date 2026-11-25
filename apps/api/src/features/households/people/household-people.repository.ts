@@ -292,7 +292,7 @@ export const makeHouseholdPeopleRepository = (
     readonly digest: HouseholdDigestService;
     readonly identity: HouseholdIdentityGeneratorService;
   }
-): HouseholdPeopleRepository => {
+) => {
   const intentDigest = (intent: Schema.Json) =>
     services.canonical
       .encode(intent)
@@ -2838,190 +2838,198 @@ export const makeHouseholdPeopleRepository = (
       );
     }).pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
 
-  return {
-    archive: (input) =>
-      transition({
-        ...input,
-        command: "archive",
-        nextLifecycle: "archived",
-        previousLifecycle: "active",
-      }),
-    associateAdultInvitation,
-    bootstrapCreator: (input) =>
-      createPerson({
-        ...input,
-        command: "bootstrap_creator",
-        displayName: input.payload.displayName,
-        kind: "adult",
-        mutationId: input.payload.mutationId,
-      }),
-    cancelMemberDeparture,
-    completeAcceptedAdultLink,
-    confirmAdultInvitationRecipient: (input) =>
-      database
-        .transaction((transaction) =>
-          Effect.gen(function* confirmInvitationRecipient() {
-            const [association] = yield* transaction
-              .select({
-                recipientLinkageSubject:
-                  householdPersonInvitationAssociations.recipientLinkageSubject,
-                state: householdPersonInvitationAssociations.state,
-                version: householdPersonInvitationAssociations.version,
-              })
-              .from(householdPersonInvitationAssociations)
-              .where(
-                eq(
-                  householdPersonInvitationAssociations.invitationDigest,
-                  input.invitationDigest
-                )
-              )
-              .limit(1)
-              .pipe(queryFailure);
-            if (association === undefined || association.state !== "pending") {
-              return yield* Effect.fail(
-                HouseholdPersonAssociationConflict.make({})
-              );
-            }
-            if (association.recipientLinkageSubject !== null) {
-              return association.recipientLinkageSubject ===
-                input.linkageSubject
-                ? undefined
-                : yield* Effect.fail(
-                    HouseholdPersonAssociationConflict.make({})
-                  );
-            }
-            const updated = yield* transaction
-              .update(householdPersonInvitationAssociations)
-              .set({
-                recipientLinkageSubject: input.linkageSubject,
-                version: association.version + 1,
-              })
-              .where(
-                and(
+  {
+    const checkedResult: HouseholdPeopleRepository = {
+      archive: (input) =>
+        transition({
+          ...input,
+          command: "archive",
+          nextLifecycle: "archived",
+          previousLifecycle: "active",
+        }),
+      associateAdultInvitation,
+      bootstrapCreator: (input) =>
+        createPerson({
+          ...input,
+          command: "bootstrap_creator",
+          displayName: input.payload.displayName,
+          kind: "adult",
+          mutationId: input.payload.mutationId,
+        }),
+      cancelMemberDeparture,
+      completeAcceptedAdultLink,
+      confirmAdultInvitationRecipient: (input) =>
+        database
+          .transaction((transaction) =>
+            Effect.gen(function* confirmInvitationRecipient() {
+              const [association] = yield* transaction
+                .select({
+                  recipientLinkageSubject:
+                    householdPersonInvitationAssociations.recipientLinkageSubject,
+                  state: householdPersonInvitationAssociations.state,
+                  version: householdPersonInvitationAssociations.version,
+                })
+                .from(householdPersonInvitationAssociations)
+                .where(
                   eq(
                     householdPersonInvitationAssociations.invitationDigest,
                     input.invitationDigest
-                  ),
-                  eq(
-                    householdPersonInvitationAssociations.version,
-                    association.version
                   )
                 )
-              )
-              .returning({
-                invitationDigest:
-                  householdPersonInvitationAssociations.invitationDigest,
-              })
-              .pipe(queryFailure);
-            if (updated.length !== 1) {
-              return yield* Effect.fail(
-                HouseholdPersonAssociationConflict.make({})
-              );
-            }
-          })
-        )
-        .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable()))),
-    confirmMemberAccessRevoked,
-    create: (input) =>
-      createPerson({
-        ...input,
-        command: "create",
-        displayName: input.payload.displayName,
-        kind: input.payload.kind,
-        mutationId: input.payload.mutationId,
-      }),
-    finalizeMemberDeparture,
-    get: (input) =>
-      Effect.gen(function* getPerson() {
-        const linked = yield* currentPersonId(input.linkageSubject);
-        const [row] = yield* database
-          .select()
-          .from(householdPeople)
-          .where(eq(householdPeople.personId, input.personId))
-          .limit(1)
-          .pipe(queryFailure);
-        return row === undefined
-          ? yield* Effect.fail(HouseholdPersonNotFound.make({}))
-          : yield* projectPerson(
-              row,
-              linked,
-              yield* personAssociation(database, row.personId)
-            );
-      }),
-    getMemberDeparture,
-    getMemberDepartureByMutation,
-    getMemberDepartureSystem,
-    list: (input) =>
-      Effect.gen(function* listPeople() {
-        const association = yield* creatorAssociation();
-        const linked = yield* currentPersonId(input.linkageSubject);
-        const rows = yield* (
-          input.includeArchived
-            ? database
-                .select()
-                .from(householdPeople)
-                .orderBy(
-                  asc(householdPeople.createdAtEpochMs),
-                  asc(householdPeople.personId)
+                .limit(1)
+                .pipe(queryFailure);
+              if (
+                association === undefined ||
+                association.state !== "pending"
+              ) {
+                return yield* Effect.fail(
+                  HouseholdPersonAssociationConflict.make({})
+                );
+              }
+              if (association.recipientLinkageSubject !== null) {
+                return association.recipientLinkageSubject ===
+                  input.linkageSubject
+                  ? undefined
+                  : yield* Effect.fail(
+                      HouseholdPersonAssociationConflict.make({})
+                    );
+              }
+              const updated = yield* transaction
+                .update(householdPersonInvitationAssociations)
+                .set({
+                  recipientLinkageSubject: input.linkageSubject,
+                  version: association.version + 1,
+                })
+                .where(
+                  and(
+                    eq(
+                      householdPersonInvitationAssociations.invitationDigest,
+                      input.invitationDigest
+                    ),
+                    eq(
+                      householdPersonInvitationAssociations.version,
+                      association.version
+                    )
+                  )
                 )
-            : database
-                .select()
-                .from(householdPeople)
-                .where(eq(householdPeople.lifecycle, "active"))
-                .orderBy(
-                  asc(householdPeople.createdAtEpochMs),
-                  asc(householdPeople.personId)
-                )
-        ).pipe(queryFailure);
-        const entries = yield* Effect.all(
-          rows.map((row) =>
-            Effect.gen(function* projectRosterPerson() {
-              const state = yield* personAssociation(database, row.personId);
-              const person = yield* projectPerson(row, linked, state);
-              return {
-                invitationDigest:
-                  "invitationDigest" in state
-                    ? state.invitationDigest
-                    : undefined,
-                person,
-              };
+                .returning({
+                  invitationDigest:
+                    householdPersonInvitationAssociations.invitationDigest,
+                })
+                .pipe(queryFailure);
+              if (updated.length !== 1) {
+                return yield* Effect.fail(
+                  HouseholdPersonAssociationConflict.make({})
+                );
+              }
             })
           )
-        );
-        return yield* Schema.decodeUnknownEffect(HouseholdPeoplePrivateRoster)({
-          pendingInvitations: entries.flatMap((entry) =>
-            entry.invitationDigest
-              ? [
-                  {
-                    invitationDigest: entry.invitationDigest,
-                    personId: entry.person.id,
-                  },
-                ]
-              : []
-          ),
-          roster: {
-            creatorSlot: association === undefined ? "available" : "occupied",
-            currentPersonId: linked,
-            people: entries.map((entry) => entry.person),
-          },
-        }).pipe(Effect.mapError(unavailable));
-      }),
-    markMemberDepartureRepairRequired,
-    prepareMemberDeparture,
-    prepareRemoval,
-    rename,
-    repairAdultAccountLink,
-    restore: (input) =>
-      transition({
-        ...input,
-        command: "restore",
-        nextLifecycle: "active",
-        previousLifecycle: "archived",
-      }),
-    restoreReturningAdultLink,
-    retryMemberDeparture,
-    startMemberDeparture,
-  };
+          .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable()))),
+      confirmMemberAccessRevoked,
+      create: (input) =>
+        createPerson({
+          ...input,
+          command: "create",
+          displayName: input.payload.displayName,
+          kind: input.payload.kind,
+          mutationId: input.payload.mutationId,
+        }),
+      finalizeMemberDeparture,
+      get: (input) =>
+        Effect.gen(function* getPerson() {
+          const linked = yield* currentPersonId(input.linkageSubject);
+          const [row] = yield* database
+            .select()
+            .from(householdPeople)
+            .where(eq(householdPeople.personId, input.personId))
+            .limit(1)
+            .pipe(queryFailure);
+          return row === undefined
+            ? yield* Effect.fail(HouseholdPersonNotFound.make({}))
+            : yield* projectPerson(
+                row,
+                linked,
+                yield* personAssociation(database, row.personId)
+              );
+        }),
+      getMemberDeparture,
+      getMemberDepartureByMutation,
+      getMemberDepartureSystem,
+      list: (input) =>
+        Effect.gen(function* listPeople() {
+          const association = yield* creatorAssociation();
+          const linked = yield* currentPersonId(input.linkageSubject);
+          const rows = yield* (
+            input.includeArchived
+              ? database
+                  .select()
+                  .from(householdPeople)
+                  .orderBy(
+                    asc(householdPeople.createdAtEpochMs),
+                    asc(householdPeople.personId)
+                  )
+              : database
+                  .select()
+                  .from(householdPeople)
+                  .where(eq(householdPeople.lifecycle, "active"))
+                  .orderBy(
+                    asc(householdPeople.createdAtEpochMs),
+                    asc(householdPeople.personId)
+                  )
+          ).pipe(queryFailure);
+          const entries = yield* Effect.all(
+            rows.map((row) =>
+              Effect.gen(function* projectRosterPerson() {
+                const state = yield* personAssociation(database, row.personId);
+                const person = yield* projectPerson(row, linked, state);
+                return {
+                  invitationDigest:
+                    "invitationDigest" in state
+                      ? state.invitationDigest
+                      : undefined,
+                  person,
+                };
+              })
+            )
+          );
+          return yield* Schema.decodeUnknownEffect(
+            HouseholdPeoplePrivateRoster
+          )({
+            pendingInvitations: entries.flatMap((entry) =>
+              entry.invitationDigest
+                ? [
+                    {
+                      invitationDigest: entry.invitationDigest,
+                      personId: entry.person.id,
+                    },
+                  ]
+                : []
+            ),
+            roster: {
+              creatorSlot: association === undefined ? "available" : "occupied",
+              currentPersonId: linked,
+              people: entries.map((entry) => entry.person),
+            },
+          }).pipe(Effect.mapError(unavailable));
+        }),
+      markMemberDepartureRepairRequired,
+      prepareMemberDeparture,
+      prepareRemoval,
+      rename,
+      repairAdultAccountLink,
+      restore: (input) =>
+        transition({
+          ...input,
+          command: "restore",
+          nextLifecycle: "active",
+          previousLifecycle: "archived",
+        }),
+      restoreReturningAdultLink,
+      retryMemberDeparture,
+      startMemberDeparture,
+    };
+    return checkedResult;
+  }
 };
 
 /** Receipt presence permits safe command replay; the command still checks its original intent digest. */

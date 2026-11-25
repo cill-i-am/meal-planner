@@ -52,7 +52,6 @@ export const makeAlarmsClient = (read: ProviderRead) => ({
         stationId: input.stationId,
       });
       if (input.state === "history") {
-        // Provider ranges are inclusive UTC epoch seconds. Round inward so a millisecond range never widens.
         query.set("startTimestamp", String(Math.ceil(input.startAt / 1000)));
         query.set("endTimestamp", String(Math.floor(input.endAt / 1000)));
       }
@@ -80,7 +79,7 @@ export const makeAlarmsClient = (read: ProviderRead) => ({
         page: data.current,
         pageSize: data.size,
         pages: data.pages,
-        // Provider IDs exceed JavaScript's safe integer range. They are deliberately not exposed or used as identities.
+
         records: data.records.map((record) => ({
           aioSerialNumber: record.aioSnCode === "" ? null : record.aioSnCode,
           code: record.alarmCode,

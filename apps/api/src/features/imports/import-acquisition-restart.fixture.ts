@@ -92,7 +92,7 @@ const mediaSha256 =
 const retryableR2Failure = (stage: "store" | "verify") =>
   new RetryableAcquisitionError({ reason: "container_rpc", stage });
 
-const r2Object = (object: WorkerTestR2Object): R2ObjectLike => {
+const r2Object = (object: WorkerTestR2Object) => {
   let projected: R2ObjectLike = {
     checksums: object.checksums,
     size: object.size,
@@ -103,83 +103,93 @@ const r2Object = (object: WorkerTestR2Object): R2ObjectLike => {
   if (object.httpMetadata !== undefined) {
     projected = { ...projected, httpMetadata: object.httpMetadata };
   }
-  return projected;
+  {
+    const checkedResult: R2ObjectLike = projected;
+    return checkedResult;
+  }
 };
 
-const r2ObjectBody = (object: WorkerTestR2ObjectBody): R2ObjectBodyLike => ({
-  ...r2Object(object),
-  arrayBuffer: () =>
-    Effect.tryPromise({
-      catch: () => retryableR2Failure("verify"),
-      try: () => object.arrayBuffer(),
-    }),
-  text: () =>
-    Effect.tryPromise({
-      catch: () => retryableR2Failure("verify"),
-      try: () => object.text(),
-    }),
-});
+const r2ObjectBody = (object: WorkerTestR2ObjectBody) => {
+  const checkedResult: R2ObjectBodyLike = {
+    ...r2Object(object),
+    arrayBuffer: () =>
+      Effect.tryPromise({
+        catch: () => retryableR2Failure("verify"),
+        try: () => object.arrayBuffer(),
+      }),
+    text: () =>
+      Effect.tryPromise({
+        catch: () => retryableR2Failure("verify"),
+        try: () => object.text(),
+      }),
+  };
+  return checkedResult;
+};
 
-const acquisitionBucket = (raw: WorkerTestR2Bucket): AcquisitionBucketLike => ({
-  get: (key) =>
-    Effect.tryPromise({
-      catch: () => retryableR2Failure("verify"),
-      try: () => raw.get(key),
-    }).pipe(
-      Effect.map((object) => (object === null ? null : r2ObjectBody(object)))
-    ),
-  head: (key) =>
-    Effect.tryPromise({
-      catch: () => retryableR2Failure("verify"),
-      try: () => raw.head(key),
-    }).pipe(
-      Effect.map((object) => (object === null ? null : r2Object(object)))
-    ),
-  put: (key, value, options) =>
-    Effect.gen(function* putR2Object() {
-      const body = yield* workerTestR2PutBody(value, options.contentLength);
-      return yield* Effect.tryPromise({
-        catch: () => retryableR2Failure("store"),
-        try: () => raw.put(key, body, options),
-      });
-    }).pipe(
-      Effect.map((object) => (object === null ? null : r2Object(object)))
-    ),
-});
+const acquisitionBucket = (raw: WorkerTestR2Bucket) => {
+  const checkedResult: AcquisitionBucketLike = {
+    get: (key) =>
+      Effect.tryPromise({
+        catch: () => retryableR2Failure("verify"),
+        try: () => raw.get(key),
+      }).pipe(
+        Effect.map((object) => (object === null ? null : r2ObjectBody(object)))
+      ),
+    head: (key) =>
+      Effect.tryPromise({
+        catch: () => retryableR2Failure("verify"),
+        try: () => raw.head(key),
+      }).pipe(
+        Effect.map((object) => (object === null ? null : r2Object(object)))
+      ),
+    put: (key, value, options) =>
+      Effect.gen(function* putR2Object() {
+        const body = yield* workerTestR2PutBody(value, options.contentLength);
+        return yield* Effect.tryPromise({
+          catch: () => retryableR2Failure("store"),
+          try: () => raw.put(key, body, options),
+        });
+      }).pipe(
+        Effect.map((object) => (object === null ? null : r2Object(object)))
+      ),
+  };
+  return checkedResult;
+};
 
-const mediaObject = (
-  canonicalId: SourceCanonicalId
-): AcquisitionMediaSource => ({
-  cleanup: () => Effect.void,
-  prepare: () =>
-    Effect.succeed({
-      artifactId: "native-acquisition-artifact",
-      audioStreams: [{ codec: "aac", index: 0 }],
-      bytes: mediaBytes.byteLength,
-      durationSeconds: 12,
-      metadata: {
-        canonicalId,
-        canonicalUrl: `https://www.tiktok.com/@mealplanner/video/${canonicalId}`,
-        caption: "Native restart tracer",
-        creator: { displayName: null, handle: "mealplanner", id: null },
-        observedAt: "2026-08-25T00:00:00.000Z",
-        provenance: {
-          canonicalUrl: "provider_observed",
-          caption: "creator_provided",
-          creator: {
-            displayName: null,
-            handle: "provider_observed",
-            id: null,
+const mediaObject = (canonicalId: SourceCanonicalId) => {
+  const checkedResult: AcquisitionMediaSource = {
+    cleanup: () => Effect.void,
+    prepare: () =>
+      Effect.succeed({
+        artifactId: "native-acquisition-artifact",
+        audioStreams: [{ codec: "aac", index: 0 }],
+        bytes: mediaBytes.byteLength,
+        durationSeconds: 12,
+        metadata: {
+          canonicalId,
+          canonicalUrl: `https://www.tiktok.com/@mealplanner/video/${canonicalId}`,
+          caption: "Native restart tracer",
+          creator: { displayName: null, handle: "mealplanner", id: null },
+          observedAt: "2026-08-25T00:00:00.000Z",
+          provenance: {
+            canonicalUrl: "provider_observed",
+            caption: "creator_provided",
+            creator: {
+              displayName: null,
+              handle: "provider_observed",
+              id: null,
+            },
+            publishedAt: null,
           },
           publishedAt: null,
         },
-        publishedAt: null,
-      },
-      sha256: mediaSha256,
-      videoStreams: [{ codec: "h264", index: 0 }],
-    }),
-  readArtifact: () => Stream.succeed(mediaBytes),
-});
+        sha256: mediaSha256,
+        videoStreams: [{ codec: "h264", index: 0 }],
+      }),
+    readArtifact: () => Stream.succeed(mediaBytes),
+  };
+  return checkedResult;
+};
 
 const stateKey = (instanceId: string, name: string) => `${instanceId}:${name}`;
 
@@ -269,7 +279,7 @@ const acquisitionWorkflowExport = {
               admission,
               expectedGeneration: input.executionGeneration,
               intentId: input.intentId,
-              // The same committed R2 evidence always has the same mutation identity.
+
               mutationId: Schema.decodeUnknownSync(HouseholdImportMutationId)(
                 outcome.evidence.manifestSha256
               ),
@@ -332,12 +342,17 @@ const AcquisitionRestartWorkflowBridge = makeWorkflowBridge(
 
 export class AcquisitionRestartWorkflow extends AcquisitionRestartWorkflowBridge {}
 
-const waitForResolutions = async (
+const waitForResolutions: (
   environment: TestEnvironment,
   instanceId: string,
   expected: number,
+  remaining?: number
+) => Promise<void> = async (
+  environment,
+  instanceId,
+  expected,
   remaining = 2000
-): Promise<void> => {
+) => {
   const actual = Number(
     (await environment.ACQUISITION_RESTART_STATE.get(
       stateKey(instanceId, "resolutions")
@@ -355,18 +370,31 @@ const waitForResolutions = async (
     );
   }
   await Effect.runPromise(Effect.sleep(10));
-  return waitForResolutions(environment, instanceId, expected, remaining - 1);
+  {
+    const checkedResult: Awaited<Promise<void>> | Promise<void> =
+      waitForResolutions(environment, instanceId, expected, remaining - 1);
+    return checkedResult;
+  }
 };
 
-const waitForTerminal = async (
+const waitForTerminal: (
   instance: NativeWorkflowInstance,
-  remaining = 2000
-): Promise<{
+  remaining?: number
+) => Promise<{
   readonly status: string;
-}> => {
+}> = async (instance, remaining = 2000) => {
   const status = await instance.status();
   if (status.status === "complete" || status.status === "errored") {
-    return status;
+    const checkedResult:
+      | Awaited<
+          Promise<{
+            readonly status: string;
+          }>
+        >
+      | Promise<{
+          readonly status: string;
+        }> = status;
+    return checkedResult;
   }
   if (remaining === 0) {
     throw new Error(
@@ -374,7 +402,18 @@ const waitForTerminal = async (
     );
   }
   await Effect.runPromise(Effect.sleep(10));
-  return waitForTerminal(instance, remaining - 1);
+  {
+    const checkedResult:
+      | Awaited<
+          Promise<{
+            readonly status: string;
+          }>
+        >
+      | Promise<{
+          readonly status: string;
+        }> = waitForTerminal(instance, remaining - 1);
+    return checkedResult;
+  }
 };
 
 export default {

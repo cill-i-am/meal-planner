@@ -42,7 +42,7 @@ const plan = {
   socList: [{ ...point, value: 45 }],
   wholesalePrice: [],
 };
-// This fixture deliberately supplies malformed provider data to the adapter boundary.
+
 const fixture = (data: Schema.Json = plan, stationId = 12_345) =>
   makeTariffsClient((path) => {
     if (path.includes("/home?")) {

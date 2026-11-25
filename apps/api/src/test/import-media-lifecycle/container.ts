@@ -16,7 +16,7 @@ import {
   LifecycleFixtureByteCount,
   LifecycleFixtureDurationSeconds,
   lifecycleFixtureProbe,
-} from "./fixture.js";
+} from "./lifecycle.fixture.js";
 
 const bytes = new Uint8Array(LifecycleFixtureByteCount).fill(77);
 const runtime = makeTikTokMediaContainerRuntime({
@@ -81,7 +81,7 @@ const runtime = makeTikTokMediaContainerRuntime({
       }),
   },
 });
-// Constrain the fixture's transport speed so real readers remain observable.
+
 const fetch = runtime.fetch.pipe(
   Effect.map((response) => {
     if (response.body._tag !== "Stream") {

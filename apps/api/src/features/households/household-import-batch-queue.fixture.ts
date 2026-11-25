@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Effect, Option, Schema } from "effect";
 
 import { decodeHouseholdBatchQueueMessage } from "../imports/household-import-batch-transport.js";
 
@@ -16,10 +16,26 @@ interface Environment {
   };
 }
 
+const DeliveryBarrier = Schema.Struct({
+  _tag: Schema.Literal("BatchDeliveryBarrier"),
+  id: Schema.String,
+});
+
 export default {
   async queue(batch: TestMessageBatch, environment: Environment) {
     await Promise.all(
       batch.messages.map(async (transportMessage) => {
+        const barrier = Schema.decodeUnknownOption(DeliveryBarrier)(
+          transportMessage.body
+        );
+        if (Option.isSome(barrier)) {
+          await environment.BATCH_QUEUE_RESULTS.put(
+            `barrier:${barrier.value.id}`,
+            "observed"
+          );
+          transportMessage.ack();
+          return;
+        }
         const message = await Effect.runPromise(
           decodeHouseholdBatchQueueMessage(transportMessage.body)
         );

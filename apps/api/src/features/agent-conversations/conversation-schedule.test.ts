@@ -151,16 +151,18 @@ const contextFor = (weeks: number) => {
   });
 };
 
-const proposalFor = (
-  rows: readonly Record<string, unknown>[]
-): PlanScheduleProposal =>
-  Schema.decodeUnknownSync(PlanScheduleProposal)({
+const proposalFor = (rows: readonly Record<string, unknown>[]) => {
+  const checkedResult: PlanScheduleProposal = Schema.decodeUnknownSync(
+    PlanScheduleProposal
+  )({
     _tag: "PlanScheduleProposal",
     expectedRevision: 1,
     explanation: "A shared weekly schedule for the family.",
     planId: "plan-one",
     rows,
   });
+  return checkedResult;
+};
 
 const sharedOptionRows = occasionIndexes.map((occasionIndex) => ({
   key: `meal-${occasionIndex + 1}`,

@@ -7,8 +7,9 @@ import { Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { workerObservability } from "../../infrastructure/worker-observability.js";
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import type { HouseholdBatchQueueMessage } from "../features/households/batches/household-import-batch.contract.js";
+import { bundleWorkerFixture } from "../test/native-worker.fixture.js";
+import { workerObservability } from "./worker-observability.js";
 
 const { date: compatibilityDate, flags: compatibilityFlags } =
   workerObservability.compatibility;
@@ -20,17 +21,38 @@ const readEventually = async (
   binding: "RESULTS" | "DLQ_RESULTS",
   key: string,
   remaining = 200
-): Promise<unknown> => {
+) => {
   const namespace = await runtime.getKVNamespace(binding, worker);
   const value = await namespace.get(key, "json");
   if (value !== null) {
-    return value;
+    const checkedResult: Awaited<Promise<unknown>> | Promise<unknown> = value;
+    return checkedResult;
   }
   if (remaining === 0) {
     throw new Error(`Queue result ${key} was not recorded.`);
   }
   await delay(25);
-  return readEventually(worker, binding, key, remaining - 1);
+  {
+    const checkedResult: Awaited<Promise<unknown>> | Promise<unknown> =
+      readEventually(worker, binding, key, remaining - 1);
+    return checkedResult;
+  }
+};
+
+const replayCompletedMessage = async (
+  message: typeof HouseholdBatchQueueMessage.Encoded
+) => {
+  const results = await runtime.getKVNamespace("RESULTS", "consumer");
+  const completedBefore = Number(
+    (await results.get("completed-deliveries")) ?? "0"
+  );
+  const queue = await runtime.getQueueProducer("BATCHES", "consumer");
+  await queue.send(message);
+  await expect
+    .poll(async () =>
+      Number((await results.get("completed-deliveries")) ?? "0")
+    )
+    .toBe(completedBefore + 1);
 };
 
 describe("household batch Queue transport", () => {
@@ -47,20 +69,7 @@ describe("household batch Queue transport", () => {
       bundleWorkerFixture(
         fileURLToPath(
           new URL(
-            "household-import-batch-queue.test-fixture.ts",
-            import.meta.url
-          )
-        )
-      ),
-      bundleWorkerFixture(
-        fileURLToPath(
-          new URL("household-import-batch-dlq.test-fixture.ts", import.meta.url)
-        )
-      ),
-      bundleWorkerFixture(
-        fileURLToPath(
-          new URL(
-            "../households/household-domain-service.test-fixture.js",
+            "../features/imports/household-import-batch-queue.fixture.ts",
             import.meta.url
           )
         )
@@ -68,7 +77,23 @@ describe("household batch Queue transport", () => {
       bundleWorkerFixture(
         fileURLToPath(
           new URL(
-            "household-import-batch-queue-loss.test-fixture.js",
+            "../features/imports/household-import-batch-dlq.fixture.ts",
+            import.meta.url
+          )
+        )
+      ),
+      bundleWorkerFixture(
+        fileURLToPath(
+          new URL(
+            "../features/households/household-domain-service.fixture.js",
+            import.meta.url
+          )
+        )
+      ),
+      bundleWorkerFixture(
+        fileURLToPath(
+          new URL(
+            "../features/imports/household-import-batch-queue-loss.fixture.js",
             import.meta.url
           )
         )
@@ -281,6 +306,8 @@ describe("household batch Queue transport", () => {
       status: "running",
     });
 
+    const retry = await runtime.getQueueProducer("BATCHES", "consumer");
+    await retry.send(message);
     await expect
       .poll(
         async () => {
@@ -304,7 +331,7 @@ describe("household batch Queue transport", () => {
       items: [{ id: message.itemId, status: "succeeded" }],
       status: "completed",
     });
-    await delay(5500);
+    await replayCompletedMessage(message);
     const settledWorkflow = await runtime.dispatchFetch(
       `http://localhost/workflow?workflowId=${encodeURIComponent(workflowId)}`
     );
@@ -313,7 +340,7 @@ describe("household batch Queue transport", () => {
       runs: 2,
       status: { status: "complete" },
     });
-  }, 25_000);
+  });
 
   it("preserves a live deterministic Workflow when every accepted Queue response is lost", async () => {
     const results = await runtime.getKVNamespace("RESULTS", "consumer");
@@ -345,6 +372,10 @@ describe("household batch Queue transport", () => {
     const { message } = admitted;
     const workflowId = `household-batch-v1-${message.itemId}-g1`;
 
+    const acceptedQueue = await runtime.getQueueProducer("BATCHES", "consumer");
+    await Promise.all(
+      Array.from({ length: 3 }, () => acceptedQueue.send(message))
+    );
     await expect
       .poll(async () => Number((await results.get("attempts")) ?? "0"), {
         timeout: 20_000,
@@ -364,6 +395,11 @@ describe("household batch Queue transport", () => {
       status: "failed",
     });
 
+    const release = await runtime.dispatchFetch(
+      `http://localhost/release-workflow?workflowId=${encodeURIComponent(workflowId)}`,
+      { method: "POST" }
+    );
+    expect(release.status).toBe(204);
     await expect
       .poll(
         async () => {
@@ -387,12 +423,16 @@ describe("household batch Queue transport", () => {
       items: [{ id: message.itemId, status: "succeeded" }],
       status: "completed",
     });
-    const attemptsAtSettlement = Number((await results.get("attempts")) ?? "0");
-    await delay(5500);
-    expect(Number((await results.get("attempts")) ?? "0")).toBe(
-      attemptsAtSettlement
+    await replayCompletedMessage(message);
+    const settledWorkflow = await runtime.dispatchFetch(
+      `http://localhost/workflow?workflowId=${encodeURIComponent(workflowId)}`
     );
-  }, 35_000);
+    await expect(settledWorkflow.json()).resolves.toMatchObject({
+      attempts: 1,
+      runs: 1,
+      status: { status: "complete" },
+    });
+  });
 
   it("retries three times and moves the unchanged closed envelope to DLQ", async () => {
     const results = await runtime.getKVNamespace("RESULTS", "consumer");
@@ -450,7 +490,7 @@ describe("household batch Queue transport", () => {
     const attemptsAfter = Number((await results.get("attempts")) ?? "0");
     expect(attemptsAfter - attemptsBefore).toBe(4);
     expect(await results.get(`workflow-runs:${workflowId}`)).toBeNull();
-  }, 20_000);
+  });
 
   it("preserves a committed batch Workflow through unavailable Queue and DLQ probes", async () => {
     const results = await runtime.getKVNamespace("RESULTS", "consumer");
@@ -509,5 +549,5 @@ describe("household batch Queue transport", () => {
       items: [{ id: message.itemId, status: "succeeded" }],
       status: "completed",
     });
-  }, 20_000);
+  });
 });

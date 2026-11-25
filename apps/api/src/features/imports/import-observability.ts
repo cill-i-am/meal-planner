@@ -205,15 +205,24 @@ const decodeEvent = Schema.decodeUnknownSync(ImportObservabilityEvent, {
   onExcessProperty: "error",
 });
 
-export const makeImportCorrelationId = (): ImportCorrelationId =>
-  Schema.decodeUnknownSync(ImportCorrelationId)(crypto.randomUUID());
+export const makeImportCorrelationId = () => {
+  const checkedResult: ImportCorrelationId = Schema.decodeUnknownSync(
+    ImportCorrelationId
+  )(crypto.randomUUID());
+  return checkedResult;
+};
 
 export const makeImportTraceContext = (
   newCorrelationId: () => ImportCorrelationId = makeImportCorrelationId
-): ImportTraceContext =>
-  Schema.decodeUnknownSync(ImportTraceContext, {
-    onExcessProperty: "error",
-  })({ correlationId: newCorrelationId() });
+) => {
+  const checkedResult: ImportTraceContext = Schema.decodeUnknownSync(
+    ImportTraceContext,
+    {
+      onExcessProperty: "error",
+    }
+  )({ correlationId: newCorrelationId() });
+  return checkedResult;
+};
 
 const eventAnnotations = (event: ImportObservabilityEvent) => {
   const annotations: Record<string, number | string> = {
@@ -284,9 +293,6 @@ export const emitImportObservabilityEvent = (
       Effect.withSpan(`import.${event.event}`, { attributes: annotations })
     );
   }).pipe(
-    // Logs, spans and trace persistence are diagnostic only. Preserve caller
-    // interruption, but prevent any telemetry failure or defect from changing
-    // provider, retry or settlement behavior.
     Effect.catchCauseIf(
       (cause) => !Cause.hasInterrupts(cause),
       () => Effect.void

@@ -14,7 +14,7 @@ import {
   createArguments,
   intentId,
   makeImportTransportFixture,
-} from "./product-mcp-interactions.test-fixture.js";
+} from "./product-mcp-interactions.fixture.js";
 import type { ProductMcpDispatch } from "./product-mcp-tools.js";
 import { handleProductMcp } from "./product-mcp.js";
 
@@ -35,7 +35,6 @@ const Reply = Schema.Struct({
 type Fixture = ReturnType<typeof makeImportTransportFixture>;
 type Connection = Parameters<Fixture["dispatch"]>[0];
 
-/** A fresh server and signed-state service per HTTP request, as in production. */
 const rpc = async (
   fixture: Fixture,
   method: string,
@@ -244,8 +243,7 @@ describe("MCP import HTTP transport with schema-validated domain responses", () 
     const first = await pollWhileAdvancing();
     const second = await pollWhileAdvancing();
     const third = await pollWhileAdvancing();
-    // Each response was current when its independent read completed. Progress
-    // never requires a failed poll or another import creation to recover.
+
     const later = await readTask(fixture, task.taskId);
     expect(later.status).toBe("completed");
     expect(fixture.creationReceipts.size).toBe(1);

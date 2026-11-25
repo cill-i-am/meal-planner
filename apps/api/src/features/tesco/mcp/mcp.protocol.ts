@@ -17,38 +17,51 @@ export class TescoMcpTransportFailure extends Data.TaggedError(
   "TescoMcpTransportFailure"
 ) {}
 
-const toolFailure = (message: string): CallToolResult => ({
-  content: [{ text: message, type: "text" }],
-  isError: true,
-});
-const callTool = (
-  message: CallToolRequest
-): Effect.Effect<CallToolResult, never, TescoMcpCapabilities> => {
+const toolFailure = (message: string) => {
+  const checkedResult: CallToolResult = {
+    content: [{ text: message, type: "text" }],
+    isError: true,
+  };
+  return checkedResult;
+};
+const callTool = (message: CallToolRequest) => {
   const tool = TescoMcpTools.find(({ name }) => name === message.params.name);
   if (tool === undefined) {
-    return Effect.succeed(toolFailure("Unknown Tesco tool."));
+    const checkedResult: Effect.Effect<
+      CallToolResult,
+      never,
+      TescoMcpCapabilities
+    > = Effect.succeed(toolFailure("Unknown Tesco tool."));
+    return checkedResult;
   }
-  return tool.execute(message.params.arguments ?? {}).pipe(
-    Effect.map((encoded) => ({
-      content: [{ text: JSON.stringify(encoded), type: "text" as const }],
-      structuredContent: encoded,
-    })),
-    Effect.orElseSucceed((failure) => {
-      if (failure._tag === "SchemaError") {
-        return toolFailure("Invalid Tesco tool input or response.");
-      }
-      if (failure.reason === "authentication") {
+  {
+    const checkedResult: Effect.Effect<
+      CallToolResult,
+      never,
+      TescoMcpCapabilities
+    > = tool.execute(message.params.arguments ?? {}).pipe(
+      Effect.map((encoded) => ({
+        content: [{ text: JSON.stringify(encoded), type: "text" as const }],
+        structuredContent: encoded,
+      })),
+      Effect.orElseSucceed((failure) => {
+        if (failure._tag === "SchemaError") {
+          return toolFailure("Invalid Tesco tool input or response.");
+        }
+        if (failure.reason === "authentication") {
+          return toolFailure(
+            "Tesco needs an operator to sign in again. Check connection_status; agents cannot supply or read Tesco credentials."
+          );
+        }
         return toolFailure(
-          "Tesco needs an operator to sign in again. Check connection_status; agents cannot supply or read Tesco credentials."
+          failure.reason === "invalid_input"
+            ? "Invalid Tesco tool input."
+            : "Tesco is temporarily unavailable."
         );
-      }
-      return toolFailure(
-        failure.reason === "invalid_input"
-          ? "Invalid Tesco tool input."
-          : "Tesco is temporarily unavailable."
-      );
-    })
-  );
+      })
+    );
+    return checkedResult;
+  }
 };
 
 const jsonSchema = (schema: Schema.Top) => {

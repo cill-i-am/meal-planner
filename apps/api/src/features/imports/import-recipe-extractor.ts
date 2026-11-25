@@ -163,5 +163,3 @@ export interface RecipeExtractor {
     input: RecipeEvidenceAssembly
   ) => Effect.Effect<Schema.Json, RecipeExtractionFailure>;
 }
-
-/** Replaceable provider-neutral recipe extraction capability. */

@@ -84,16 +84,17 @@ const fixtureAiError = (
     }),
   });
 
-const safeFixtureErrorDescription = (
-  error: Error
-): FixtureAiErrorDescription => {
+const safeFixtureErrorDescription = (error: Error) => {
   switch (error.message) {
     case ProviderNormalizationBodyInvalid:
     case ProviderNormalizationInvalid: {
-      return error.message;
+      const checkedResult: FixtureAiErrorDescription = error.message;
+      return checkedResult;
     }
     default: {
-      return ProviderFixtureResponseInvalid;
+      const checkedResult: FixtureAiErrorDescription =
+        ProviderFixtureResponseInvalid;
+      return checkedResult;
     }
   }
 };
@@ -105,154 +106,192 @@ type NormalizedVisualResponseOutcome =
     }
   | { readonly _tag: "Success"; readonly value: Schema.Json };
 
-const readNormalizedVisualResponse = async (
-  nextResponse: () => Response
-): Promise<NormalizedVisualResponseOutcome> => {
+const readNormalizedVisualResponse = async (nextResponse: () => Response) => {
   try {
-    return {
+    const checkedResult:
+      | Awaited<Promise<NormalizedVisualResponseOutcome>>
+      | Promise<NormalizedVisualResponseOutcome> = {
       _tag: "Success",
       value: await normalizeWorkersAiResponse(nextResponse()).json(),
     };
+    return checkedResult;
   } catch (error) {
-    return {
+    const checkedResult:
+      | Awaited<Promise<NormalizedVisualResponseOutcome>>
+      | Promise<NormalizedVisualResponseOutcome> = {
       _tag: "Failure",
       description:
         error instanceof Error
           ? safeFixtureErrorDescription(error)
           : ProviderFixtureResponseInvalid,
     };
+    return checkedResult;
   }
 };
 
 const toolCallName = (call: ProviderToolCall) =>
   "function" in call ? call.function.name : call.name;
 
-const toolCallArguments = (call: ProviderToolCall): Schema.Json => {
+const toolCallArguments = (call: ProviderToolCall) => {
   const value = "function" in call ? call.function.arguments : call.arguments;
   if (!Schema.is(Schema.String)(value)) {
-    return value ?? null;
+    const checkedResult: Schema.Json = value ?? null;
+    return checkedResult;
   }
   try {
-    return Schema.decodeUnknownSync(Schema.Json)(JSON.parse(value));
+    const checkedResult: Schema.Json = Schema.decodeUnknownSync(Schema.Json)(
+      JSON.parse(value)
+    );
+    return checkedResult;
   } catch {
-    return value;
+    const checkedResult: Schema.Json = value;
+    return checkedResult;
   }
 };
 
-const jsonObject = (
-  value: Schema.Json | undefined
-): Schema.JsonObject | undefined => {
+const jsonObject = (value: Schema.Json | undefined) => {
   const decoded = Schema.decodeUnknownOption(JsonObject)(value);
-  return Option.isSome(decoded) ? decoded.value : undefined;
-};
-
-const decodedProviderToolCalls = (
-  value: Schema.Json | undefined
-): readonly ProviderToolCall[] => {
-  if (!Array.isArray(value)) {
-    return [];
+  {
+    const checkedResult: Schema.JsonObject | undefined = Option.isSome(decoded)
+      ? decoded.value
+      : undefined;
+    return checkedResult;
   }
-  return value.flatMap((call) => {
-    const decoded = Schema.decodeUnknownOption(ProviderToolCall)(call);
-    return Option.isSome(decoded) ? [decoded.value] : [];
-  });
 };
 
-const firstOpenAiChoice = (
-  response: VisualProviderResponse
-): Schema.JsonObject | undefined =>
-  Array.isArray(response.choices) ? jsonObject(response.choices[0]) : undefined;
+const decodedProviderToolCalls = (value: Schema.Json | undefined) => {
+  if (!Array.isArray(value)) {
+    const checkedResult: readonly ProviderToolCall[] = [];
+    return checkedResult;
+  }
+  {
+    const checkedResult: readonly ProviderToolCall[] = value.flatMap((call) => {
+      const decoded = Schema.decodeUnknownOption(ProviderToolCall)(call);
+      return Option.isSome(decoded) ? [decoded.value] : [];
+    });
+    return checkedResult;
+  }
+};
 
-const openAiMessage = (
-  response: VisualProviderResponse
-): Schema.JsonObject | undefined =>
-  jsonObject(firstOpenAiChoice(response)?.["message"]);
+const firstOpenAiChoice = (response: VisualProviderResponse) => {
+  const checkedResult: Schema.JsonObject | undefined = Array.isArray(
+    response.choices
+  )
+    ? jsonObject(response.choices[0])
+    : undefined;
+  return checkedResult;
+};
 
-const providerToolCalls = (
-  response: VisualProviderResponse
-): readonly ProviderToolCall[] => {
+const openAiMessage = (response: VisualProviderResponse) => {
+  const checkedResult: Schema.JsonObject | undefined = jsonObject(
+    firstOpenAiChoice(response)?.["message"]
+  );
+  return checkedResult;
+};
+
+const providerToolCalls = (response: VisualProviderResponse) => {
   const openAiCalls = decodedProviderToolCalls(
     openAiMessage(response)?.["tool_calls"]
   );
-  return openAiCalls.length > 0
-    ? openAiCalls
-    : decodedProviderToolCalls(response.tool_calls);
+  {
+    const checkedResult: readonly ProviderToolCall[] =
+      openAiCalls.length > 0
+        ? openAiCalls
+        : decodedProviderToolCalls(response.tool_calls);
+    return checkedResult;
+  }
 };
 
-const providerText = (response: VisualProviderResponse): string | undefined => {
+const providerText = (response: VisualProviderResponse) => {
   const openAiContent = openAiMessage(response)?.["content"];
   if (Schema.is(Schema.String)(openAiContent) && openAiContent.length > 0) {
-    return openAiContent;
+    const checkedResult: string | undefined = openAiContent;
+    return checkedResult;
   }
   if (response.response === undefined || response.response === null) {
-    return undefined;
+    const checkedResult: string | undefined = undefined;
+    return checkedResult;
   }
-  return Schema.is(
-    Schema.Union([
-      Schema.Array(Schema.Json),
-      Schema.Record(Schema.String, Schema.Json),
-    ])
-  )(response.response)
-    ? JSON.stringify(response.response)
-    : String(response.response);
+  {
+    const checkedResult: string | undefined = Schema.is(
+      Schema.Union([
+        Schema.Array(Schema.Json),
+        Schema.Record(Schema.String, Schema.Json),
+      ])
+    )(response.response)
+      ? JSON.stringify(response.response)
+      : String(response.response);
+    return checkedResult;
+  }
 };
 
-const providerReasoning = (
-  response: VisualProviderResponse
-): string | undefined => {
+const providerReasoning = (response: VisualProviderResponse) => {
   const message = openAiMessage(response);
   const reasoning = message?.["reasoning_content"] ?? message?.["reasoning"];
-  return Schema.is(Schema.String)(reasoning) && reasoning.length > 0
-    ? reasoning
-    : undefined;
+  {
+    const checkedResult: string | undefined =
+      Schema.is(Schema.String)(reasoning) && reasoning.length > 0
+        ? reasoning
+        : undefined;
+    return checkedResult;
+  }
 };
 
 const usageToken = (
   response: VisualProviderResponse,
   key: "completion_tokens" | "prompt_tokens"
-): number | undefined => {
+) => {
   const value = jsonObject(response.usage)?.[key];
-  return Schema.is(Schema.Number)(value) ? value : undefined;
+  {
+    const checkedResult: number | undefined = Schema.is(Schema.Number)(value)
+      ? value
+      : undefined;
+    return checkedResult;
+  }
 };
 
-const providerResponseParts = (
-  response: VisualProviderResponse
-): AiResponse.PartEncoded[] => {
+const providerResponseParts = (response: VisualProviderResponse) => {
   const calls = providerToolCalls(response);
   const text = providerText(response);
   const reasoning = providerReasoning(response);
-  return [
-    ...(reasoning === undefined
-      ? []
-      : [
-          Schema.decodeUnknownSync(VisualReasoningPart)({
-            text: reasoning,
-            type: "reasoning",
-          }),
-        ]),
-    ...(text === undefined
-      ? []
-      : [
-          Schema.decodeUnknownSync(VisualTextPart)({
-            text,
-            type: "text",
-          }),
-        ]),
-    ...calls.map((call): AiResponse.ToolCallPartEncoded => ({
-      id: call.id ?? "provider-fixture-call",
-      name: toolCallName(call),
-      params: toolCallArguments(call),
-      type: "tool-call",
-    })),
-    {
-      reason: calls.length === 0 ? "stop" : "tool-calls",
-      type: "finish",
-      usage: {
-        inputTokens: { total: usageToken(response, "prompt_tokens") },
-        outputTokens: { total: usageToken(response, "completion_tokens") },
+  {
+    const checkedResult: AiResponse.PartEncoded[] = [
+      ...(reasoning === undefined
+        ? []
+        : [
+            Schema.decodeUnknownSync(VisualReasoningPart)({
+              text: reasoning,
+              type: "reasoning",
+            }),
+          ]),
+      ...(text === undefined
+        ? []
+        : [
+            Schema.decodeUnknownSync(VisualTextPart)({
+              text,
+              type: "text",
+            }),
+          ]),
+      ...calls.map((call) => {
+        const nestedResult: AiResponse.ToolCallPartEncoded = {
+          id: call.id ?? "provider-fixture-call",
+          name: toolCallName(call),
+          params: toolCallArguments(call),
+          type: "tool-call",
+        };
+        return nestedResult;
+      }),
+      {
+        reason: calls.length === 0 ? "stop" : "tool-calls",
+        type: "finish",
+        usage: {
+          inputTokens: { total: usageToken(response, "prompt_tokens") },
+          outputTokens: { total: usageToken(response, "completion_tokens") },
+        },
       },
-    },
-  ];
+    ];
+    return checkedResult;
+  }
 };
 
 const makeVisualLanguageModel = (
@@ -295,20 +334,23 @@ export const makeVisualTransport = (
   nextResponse: () => Response,
   onDispatch: (request: LanguageModel.ProviderOptions) => Promise<void> = () =>
     Promise.resolve()
-): WorkersAiTransport["visual"] => ({
-  makeLanguageModel: () =>
-    Effect.gen(function* makeFixtureVisualLanguageModel() {
-      const traceStore = Option.getOrUndefined(
-        yield* Effect.serviceOption(ImportObservabilityTraceStore)
-      );
-      return yield* makeVisualLanguageModel(
-        nextResponse,
-        onDispatch,
-        traceStore
-      );
-    }),
-  model: InstalledVisualModel,
-});
+) => {
+  const checkedResult: WorkersAiTransport["visual"] = {
+    makeLanguageModel: () =>
+      Effect.gen(function* makeFixtureVisualLanguageModel() {
+        const traceStore = Option.getOrUndefined(
+          yield* Effect.serviceOption(ImportObservabilityTraceStore)
+        );
+        return yield* makeVisualLanguageModel(
+          nextResponse,
+          onDispatch,
+          traceStore
+        );
+      }),
+    model: InstalledVisualModel,
+  };
+  return checkedResult;
+};
 
 export const makeRawProviderTransports = (
   response: Response,
@@ -426,15 +468,15 @@ export const speechTranscriptionInput = {
   sourceMediaSha256: "b".repeat(64),
 };
 
-export const nestUnknownMetadata = (
-  leaf: Schema.Json,
-  depth: number
-): Schema.Json => {
+export const nestUnknownMetadata = (leaf: Schema.Json, depth: number) => {
   let value: Schema.Json = leaf;
   for (let index = 0; index < depth; index += 1) {
     value = { nested: value };
   }
-  return value;
+  {
+    const checkedResult: Schema.Json = value;
+    return checkedResult;
+  }
 };
 
 export const localDispatchGate: ProviderDispatchGate = {
@@ -469,17 +511,20 @@ export const testRuntimeContext = RuntimeContext.of({
 export const runFactory = <A>(
   effect: Effect.Effect<A, never, RuntimeContext>,
   traceStore?: ImportObservabilityTraceStore
-): Promise<A> => {
+) => {
   const withRuntime = effect.pipe(
     Effect.provideService(RuntimeContext, testRuntimeContext)
   );
-  return Effect.runPromise(
-    traceStore === undefined
-      ? withRuntime
-      : withRuntime.pipe(
-          Effect.provideService(ImportObservabilityTraceStore, traceStore)
-        )
-  );
+  {
+    const checkedResult: Promise<A> = Effect.runPromise(
+      traceStore === undefined
+        ? withRuntime
+        : withRuntime.pipe(
+            Effect.provideService(ImportObservabilityTraceStore, traceStore)
+          )
+    );
+    return checkedResult;
+  }
 };
 
 export const makeRecordingTraceStore = () => {

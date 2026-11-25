@@ -72,11 +72,12 @@ import {
 } from "./private-request.contract.js";
 
 declare const Response: typeof NativeCloudflare.Response;
-// Agent's ambient DOM declaration and the native Workers declaration describe
-// the same workerd Response. Preserve its native WebSocket instead of rebuilding it.
-const agentResponse = (
-  response: NativeCloudflare.Response
-): globalThis.Response => response as unknown as globalThis.Response;
+
+const agentResponse = (response: NativeCloudflare.Response) => {
+  const checkedResult: globalThis.Response =
+    response as unknown as globalThis.Response;
+  return checkedResult;
+};
 const Authorization = Schema.Struct({
   ...Generation.fields,
   binding: PrivateSessionBinding,
@@ -117,7 +118,15 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
   #database = instrumentDrizzle(drizzle(this.ctx.storage), {
     attributes: { "db.namespace": "private-output" },
   });
-  #socket = new PrivateOutputSocket(this.ctx, this.#database, this.env);
+  #socket = new PrivateOutputSocket(this.ctx, this.#database, this.env, () =>
+    this.outputTime()
+  );
+
+  readonly #clock = Date;
+
+  protected outputTime() {
+    return this.#clock.now();
+  }
   #turns = new PrivateAssistantTurns(this.#database, this.#socket);
   #chat = new PrivateChatPersistence(this.#database);
   #deliveries = new Map<string, Map<AbortController, string | null>>();
@@ -135,7 +144,7 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       return Promise.resolve();
     });
   }
-  initialize(untrusted: typeof InitializePrivateSession.Type): void {
+  initialize(untrusted: typeof InitializePrivateSession.Type) {
     const { binding, scope } = Schema.decodeUnknownSync(
       InitializePrivateSession,
       {
@@ -176,10 +185,13 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       }
     });
   }
-  beginConnection(untrusted: PrivateSessionBinding): Promise<string> {
-    return this.#beginConnection(decodeBinding(untrusted));
+  beginConnection(untrusted: PrivateSessionBinding) {
+    const checkedResult: Promise<string> = this.#beginConnection(
+      decodeBinding(untrusted)
+    );
+    return checkedResult;
   }
-  async beginRequest(untrusted: PrivateSessionBinding): Promise<string> {
+  async beginRequest(untrusted: PrivateSessionBinding) {
     const binding = decodeBinding(untrusted);
     const childName = await privateOutputKey(
       "session",
@@ -194,12 +206,16 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       this.#turns.interrupt("connection_lost", current.generation);
       this.#detachDeliveries(current.generation);
     }
-    return this.#socket.beginRequest(binding, {
-      childName,
-      targetKind: "session",
-    });
+    {
+      const checkedResult: Awaited<Promise<string>> | Promise<string> =
+        this.#socket.beginRequest(binding, {
+          childName,
+          targetKind: "session",
+        });
+      return checkedResult;
+    }
   }
-  async #beginConnection(binding: PrivateSessionBinding): Promise<string> {
+  async #beginConnection(binding: PrivateSessionBinding) {
     const childName = await privateOutputKey(
       "session",
       binding.sessionReference
@@ -237,7 +253,11 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       if (pending !== null) {
         pending.generation = generation;
       }
-      return generation;
+      {
+        const checkedResult: Awaited<Promise<string>> | Promise<string> =
+          generation;
+        return checkedResult;
+      }
     } catch (error) {
       if (this.#reauthorization === pending) {
         if (pending !== null) {
@@ -249,7 +269,7 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       throw error;
     }
   }
-  authorizeConnection(untrusted: typeof Authorization.Type): void {
+  authorizeConnection(untrusted: typeof Authorization.Type) {
     const input = Schema.decodeUnknownSync(Authorization, {
       onExcessProperty: "error",
     })(untrusted);
@@ -262,7 +282,7 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       );
     }
   }
-  authorizeRequest(untrusted: typeof Authorization.Type): void {
+  authorizeRequest(untrusted: typeof Authorization.Type) {
     const input = Schema.decodeUnknownSync(Authorization, {
       onExcessProperty: "error",
     })(untrusted);
@@ -270,22 +290,26 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     this.#socket.authorizeRequest(input.generation, input.expiresAt);
     this.#turns.reauthorize(input.generation, input.generation);
   }
-  #assertRequest(binding: PrivateSessionBinding, generation: string): void {
+  #assertRequest(binding: PrivateSessionBinding, generation: string) {
     this.#binding(binding);
     if (!this.#socket.isRequestCurrent(generation)) {
       throw new PrivateOutputUnavailable({ reason: "output_disabled" });
     }
   }
-  executeSession(untrusted: typeof PrivateSessionRequest.Type): SessionFrame {
+  executeSession(untrusted: typeof PrivateSessionRequest.Type) {
     const input = Schema.decodeUnknownSync(PrivateSessionRequest, {
       onExcessProperty: "error",
     })(untrusted);
     this.#assertRequest(input.binding, input.generation);
-    return this.#execute(input.command, input.generation);
+    {
+      const checkedResult: SessionFrame = this.#execute(
+        input.command,
+        input.generation
+      );
+      return checkedResult;
+    }
   }
-  readSession(
-    untrusted: typeof PrivateSessionRead.Type
-  ): PrivateRequestSessionSnapshot {
+  readSession(untrusted: typeof PrivateSessionRead.Type) {
     const input = Schema.decodeUnknownSync(PrivateSessionRead, {
       onExcessProperty: "error",
     })(untrusted);
@@ -306,17 +330,20 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       input.afterMessageOrdinal,
       input.limit
     );
-    return {
-      assistantTurn: this.#turns.latest(),
-      cards: cards.cards,
-      hasMoreCards: cards.hasMore,
-      hasMoreMessages: history.hasMore,
-      messages: history.messages,
-      pendingConfirmation: cards.pendingConfirmation,
-      state: cards.state,
-    };
+    {
+      const checkedResult: PrivateRequestSessionSnapshot = {
+        assistantTurn: this.#turns.latest(),
+        cards: cards.cards,
+        hasMoreCards: cards.hasMore,
+        hasMoreMessages: history.hasMore,
+        messages: history.messages,
+        pendingConfirmation: cards.pendingConfirmation,
+        state: cards.state,
+      };
+      return checkedResult;
+    }
   }
-  #readTurn(turnId: string): AssistantTurn {
+  #readTurn(turnId: string) {
     const turn = this.#database
       .select()
       .from(privateAssistantTurns)
@@ -325,11 +352,13 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     if (turn === undefined) {
       throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
     }
-    return Schema.decodeUnknownSync(AssistantTurn)(turn);
+    {
+      const checkedResult: AssistantTurn =
+        Schema.decodeUnknownSync(AssistantTurn)(turn);
+      return checkedResult;
+    }
   }
-  async startTurn(
-    untrusted: typeof PrivateRequestTurn.Type
-  ): Promise<AssistantTurn> {
+  async startTurn(untrusted: typeof PrivateRequestTurn.Type) {
     const input = Schema.decodeUnknownSync(PrivateRequestTurn, {
       onExcessProperty: "error",
     })(untrusted);
@@ -360,31 +389,35 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       throw new PrivateOutputUnavailable({ reason: "operation_conflict" });
     }
     if (response.body !== null) {
-      // The native pipeline owns persistence, model execution and cancellation;
-      // request clients read its retained state instead of retaining this stream.
       const { body } = response;
       const drain = async () => {
         try {
           await body.pipeTo(new WritableStream());
         } catch {
-          // Revocation/cancellation closes delivery; the native turn owns its outcome.
+          // WARNING: A discarded stream may already be canceled by the caller.
         }
       };
       this.ctx.waitUntil(drain());
     }
     this.#assertRequest(input.binding, input.generation);
-    return this.#readTurn(input.turnId);
+    {
+      const checkedResult:
+        | Awaited<Promise<AssistantTurn>>
+        | Promise<AssistantTurn> = this.#readTurn(input.turnId);
+      return checkedResult;
+    }
   }
-  async cancelTurn(
-    untrusted: typeof PrivateRequestCancel.Type
-  ): Promise<AssistantTurn> {
+  async cancelTurn(untrusted: typeof PrivateRequestCancel.Type) {
     const input = Schema.decodeUnknownSync(PrivateRequestCancel, {
       onExcessProperty: "error",
     })(untrusted);
     this.#assertRequest(input.binding, input.generation);
     const previous = this.#readTurn(input.turnId);
     if (previous.status === "cancelled") {
-      return previous;
+      const checkedResult:
+        | Awaited<Promise<AssistantTurn>>
+        | Promise<AssistantTurn> = previous;
+      return checkedResult;
     }
     const url = new URL("https://private-output.internal/chat");
     url.searchParams.set("runId", input.turnId);
@@ -397,21 +430,39 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       throw new PrivateOutputUnavailable({ reason: "operation_conflict" });
     }
     this.#assertRequest(input.binding, input.generation);
-    return this.#readTurn(input.turnId);
+    {
+      const checkedResult:
+        | Awaited<Promise<AssistantTurn>>
+        | Promise<AssistantTurn> = this.#readTurn(input.turnId);
+      return checkedResult;
+    }
   }
-  override async fetch(
-    request: Request | NativeCloudflare.Request
-  ): Promise<globalThis.Response> {
+  override async fetch(request: Request | NativeCloudflare.Request) {
     const { pathname } = new URL(request.url);
     if (pathname === "/chat") {
-      return agentResponse(await this.#chatRequest(request));
+      const checkedResult:
+        | Awaited<Promise<globalThis.Response>>
+        | Promise<globalThis.Response> = agentResponse(
+        await this.#chatRequest(request)
+      );
+      return checkedResult;
     }
     if (pathname !== "/" && pathname !== "/upgrade") {
-      return agentResponse(new Response(null, { status: 404 }));
+      const checkedResult:
+        | Awaited<Promise<globalThis.Response>>
+        | Promise<globalThis.Response> = agentResponse(
+        new Response(null, { status: 404 })
+      );
+      return checkedResult;
     }
     const binding = this.#database.select().from(privateSessionBinding).get();
     if (binding === undefined) {
-      return agentResponse(new Response(null, { status: 403 }));
+      const checkedResult:
+        | Awaited<Promise<globalThis.Response>>
+        | Promise<globalThis.Response> = agentResponse(
+        new Response(null, { status: 403 })
+      );
+      return checkedResult;
     }
     const bindingKey = await privateDirectoryKey(binding);
     const response = this.#socket.accept(
@@ -434,9 +485,14 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       this.#reauthorization.ready.resolve(null);
       this.#reauthorization = null;
     }
-    return agentResponse(response);
+    {
+      const checkedResult:
+        | Awaited<Promise<globalThis.Response>>
+        | Promise<globalThis.Response> = agentResponse(response);
+      return checkedResult;
+    }
   }
-  #detachDeliveries(generation: string, runId?: string): void {
+  #detachDeliveries(generation: string, runId?: string) {
     const deliveries = this.#deliveries.get(generation);
     if (deliveries === undefined) {
       return;
@@ -451,7 +507,7 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       this.#deliveries.delete(generation);
     }
   }
-  async #waitForAuthorization(signal: AbortSignal): Promise<void> {
+  async #waitForAuthorization(signal: AbortSignal) {
     const pending = this.#reauthorization;
     if (pending === null || signal.aborted) {
       return;
@@ -468,20 +524,22 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       signal.removeEventListener("abort", abort);
     }
   }
-  #turnAwaitingAuthorization(): boolean {
+  #turnAwaitingAuthorization() {
     const pending = this.#reauthorization;
     const generation = this.#turns.pendingGeneration();
-    return (
-      pending !== null &&
-      (generation === pending.previousGeneration ||
-        generation === pending.generation)
-    );
+    {
+      const checkedResult: boolean =
+        pending !== null &&
+        (generation === pending.previousGeneration ||
+          generation === pending.generation);
+      return checkedResult;
+    }
   }
   #deliver(
     response: globalThis.Response,
     generation: string,
     runId: string | null = null
-  ): NativeCloudflare.Response {
+  ) {
     const controller = new AbortController();
     const deliveries =
       this.#deliveries.get(generation) ??
@@ -499,16 +557,25 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
         }
       }
     );
-    return new Response(guarded.body, {
-      headers: guarded.headers,
-      status: guarded.status,
-    });
+    {
+      const checkedResult: NativeCloudflare.Response = new Response(
+        guarded.body,
+        {
+          headers: guarded.headers,
+          status: guarded.status,
+        }
+      );
+      return checkedResult;
+    }
   }
-  async #chatRequest(
-    request: Request | NativeCloudflare.Request
-  ): Promise<NativeCloudflare.Response> {
+  async #chatRequest(request: Request | NativeCloudflare.Request) {
     if (!["GET", "POST", "DELETE"].includes(request.method)) {
-      return new Response(null, { status: 404 });
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = new Response(null, {
+        status: 404,
+      });
+      return checkedResult;
     }
     let body: unknown;
     let input: PrivateChatContext;
@@ -534,10 +601,20 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       }
       this.#binding(input.binding);
       if (!this.#socket.isCurrent(input.generation)) {
-        return new Response(null, { status: 403 });
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> = new Response(null, {
+          status: 403,
+        });
+        return checkedResult;
       }
     } catch {
-      return new Response(null, { status: 403 });
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = new Response(null, {
+        status: 403,
+      });
+      return checkedResult;
     }
     const threadId = input.binding.sessionReference;
     const url = new URL(request.url);
@@ -545,31 +622,66 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       url.searchParams.has("threadId") &&
       url.searchParams.get("threadId") !== threadId
     ) {
-      return new Response(null, { status: 403 });
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = new Response(null, {
+        status: 403,
+      });
+      return checkedResult;
     }
     const persistence = this.#chat.forThread(threadId);
     if (request.method === "GET") {
-      return this.#readChat(request, input, url, persistence);
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = this.#readChat(
+        request,
+        input,
+        url,
+        persistence
+      );
+      return checkedResult;
     }
     if (request.method === "DELETE") {
-      return this.#cancelChat(input, url, persistence);
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = this.#cancelChat(
+        input,
+        url,
+        persistence
+      );
+      return checkedResult;
     }
     if (
       input.profile === null ||
       input.profile.personId !== input.binding.personId
     ) {
-      return new Response(null, { status: 403 });
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = new Response(null, {
+        status: 403,
+      });
+      return checkedResult;
     }
     try {
       const params = await chatParamsFromRequestBody(body);
-      return this.#postChat(
-        request,
-        { ...input, profile: input.profile },
-        params,
-        persistence
-      );
+      {
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> = this.#postChat(
+          request,
+          { ...input, profile: input.profile },
+          params,
+          persistence
+        );
+        return checkedResult;
+      }
     } catch {
-      return new Response(null, { status: 400 });
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = new Response(null, {
+        status: 400,
+      });
+      return checkedResult;
     }
   }
   #replayChat(input: PrivateChatContext, runId: string, offset: string) {
@@ -590,47 +702,73 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     input: PrivateChatContext,
     url: URL,
     persistence: ThreadPersistence
-  ): Promise<NativeCloudflare.Response> {
+  ) {
     const threadId = input.binding.sessionReference;
     try {
       const runId = url.searchParams.get("runId");
       if (runId !== null) {
         Schema.decodeUnknownSync(AssistantTurnId)(runId);
-        return this.#replayChat(
-          input,
-          runId,
-          request.headers.get("Last-Event-ID") ??
-            url.searchParams.get("offset") ??
-            "-1"
-        );
+        {
+          const checkedResult:
+            | Awaited<Promise<NativeCloudflare.Response>>
+            | Promise<NativeCloudflare.Response> = this.#replayChat(
+            input,
+            runId,
+            request.headers.get("Last-Event-ID") ??
+              url.searchParams.get("offset") ??
+              "-1"
+          );
+          return checkedResult;
+        }
       }
       url.searchParams.set("threadId", threadId);
-      return this.#deliver(
-        await reconstructChat(persistence, new globalThis.Request(url), {
-          authorize: (requested) =>
-            requested === threadId && this.#socket.isCurrent(input.generation),
-        }),
-        input.generation
-      );
+      {
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> = this.#deliver(
+          await reconstructChat(persistence, new globalThis.Request(url), {
+            authorize: (requested) =>
+              requested === threadId &&
+              this.#socket.isCurrent(input.generation),
+          }),
+          input.generation
+        );
+        return checkedResult;
+      }
     } catch {
-      return new Response(null, { status: 400 });
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = new Response(null, {
+        status: 400,
+      });
+      return checkedResult;
     }
   }
   async #cancelChat(
     input: PrivateChatContext,
     url: URL,
     persistence: ThreadPersistence
-  ): Promise<NativeCloudflare.Response> {
+  ) {
     try {
       const runId = Schema.decodeUnknownSync(AssistantTurnId)(
         url.searchParams.get("runId")
       );
       if (!this.#turns.canCancel(runId)) {
-        return new Response(null, { status: 409 });
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> = new Response(null, {
+          status: 409,
+        });
+        return checkedResult;
       }
       await requestRunCancel(persistence.stores.runs, runId);
       if (!this.#socket.isCurrent(input.generation)) {
-        return new Response(null, { status: 403 });
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> = new Response(null, {
+          status: 403,
+        });
+        return checkedResult;
       }
       const turn = this.#turns.cancel(runId);
       this.#chat.closeInterruptedStreams();
@@ -643,9 +781,21 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
           type: "AssistantTurnUpdated",
         })
       );
-      return new Response(null, { status: 204 });
+      {
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> = new Response(null, {
+          status: 204,
+        });
+        return checkedResult;
+      }
     } catch {
-      return new Response(null, { status: 400 });
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = new Response(null, {
+        status: 400,
+      });
+      return checkedResult;
     }
   }
   async #postChat(
@@ -653,7 +803,7 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     input: PrivateChatPostContext,
     params: ParsedChatParameters,
     persistence: ThreadPersistence
-  ): Promise<NativeCloudflare.Response> {
+  ) {
     const threadId = input.binding.sessionReference;
     try {
       const runId = Schema.decodeUnknownSync(AssistantTurnId)(params.runId);
@@ -664,11 +814,21 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
         params.threadId !== threadId ||
         !this.#socket.isCurrent(input.generation)
       ) {
-        return new Response(null, { status: 403 });
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> = new Response(null, {
+          status: 403,
+        });
+        return checkedResult;
       }
       const latest = convertMessagesToModelMessages(params.messages).at(-1);
       if (latest?.role !== "user") {
-        return new Response(null, { status: 400 });
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> = new Response(null, {
+          status: 400,
+        });
+        return checkedResult;
       }
       const text = Schema.decodeUnknownSync(ParticipantMessageText)(
         latest.content
@@ -683,16 +843,31 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
           existing.expectedSessionVersion !== expectedVersion + 1 ||
           this.#chat.participant(existing.sourceMessageId)?.text !== text
         ) {
-          return new Response(null, { status: 409 });
+          const checkedResult:
+            | Awaited<Promise<NativeCloudflare.Response>>
+            | Promise<NativeCloudflare.Response> = new Response(null, {
+            status: 409,
+          });
+          return checkedResult;
         }
-        return this.#replayChat(
-          input,
-          runId,
-          request.headers.get("Last-Event-ID") ?? "-1"
-        );
+        {
+          const checkedResult:
+            | Awaited<Promise<NativeCloudflare.Response>>
+            | Promise<NativeCloudflare.Response> = this.#replayChat(
+            input,
+            runId,
+            request.headers.get("Last-Event-ID") ?? "-1"
+          );
+          return checkedResult;
+        }
       }
       if (request.headers.has("Last-Event-ID")) {
-        return new Response(null, { status: 409 });
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> = new Response(null, {
+          status: 409,
+        });
+        return checkedResult;
       }
       const state = this.#state();
       if (
@@ -701,11 +876,16 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
         this.#pending() !== undefined ||
         this.#turns.pending() !== undefined
       ) {
-        return new Response(null, { status: 409 });
+        const checkedResult:
+          | Awaited<Promise<NativeCloudflare.Response>>
+          | Promise<NativeCloudflare.Response> = new Response(null, {
+          status: 409,
+        });
+        return checkedResult;
       }
       const turn = this.#database.transaction(() => {
         const participant = this.#chat.appendParticipant({
-          createdAt: Date.now(),
+          createdAt: this.outputTime(),
           id: crypto.randomUUID(),
           text,
         });
@@ -745,7 +925,6 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
                 this.#turnAwaitingAuthorization() &&
                 !prepared.signal.aborted
               ) {
-                // Each replacement handshake depends on its predecessor; acceptance must recheck the newest one.
                 // eslint-disable-next-line no-await-in-loop
                 await this.#waitForAuthorization(prepared.signal);
               }
@@ -763,18 +942,23 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
           context: prepared.context,
         });
         this.ctx.waitUntil(this.keepAliveWhile(() => prepared.done));
-        return this.#deliver(
-          toServerSentEventsResponse(stream, {
-            abortController: prepared.abortController,
-            durability: {
-              adapter: this.#chat.stream({ offset: null, runId, threadId }),
-              batch: 1,
-            },
-            headers: { "Cache-Control": "no-store" },
-          }),
-          input.generation,
-          runId
-        );
+        {
+          const checkedResult:
+            | Awaited<Promise<NativeCloudflare.Response>>
+            | Promise<NativeCloudflare.Response> = this.#deliver(
+            toServerSentEventsResponse(stream, {
+              abortController: prepared.abortController,
+              durability: {
+                adapter: this.#chat.stream({ offset: null, runId, threadId }),
+                batch: 1,
+              },
+              headers: { "Cache-Control": "no-store" },
+            }),
+            input.generation,
+            runId
+          );
+          return checkedResult;
+        }
       } catch (error) {
         await prepared.fail(
           error instanceof PrivateDiscoveryFailure
@@ -787,10 +971,22 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
               })
         );
         prepared.dispose();
-        return new Response(null, { status: 400 });
+        {
+          const checkedResult:
+            | Awaited<Promise<NativeCloudflare.Response>>
+            | Promise<NativeCloudflare.Response> = new Response(null, {
+            status: 400,
+          });
+          return checkedResult;
+        }
       }
     } catch {
-      return new Response(null, { status: 400 });
+      const checkedResult:
+        | Awaited<Promise<NativeCloudflare.Response>>
+        | Promise<NativeCloudflare.Response> = new Response(null, {
+        status: 400,
+      });
+      return checkedResult;
     }
   }
   #binding(expected: PrivateSessionBinding) {
@@ -822,38 +1018,62 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       .where(eq(privateProfileCards.id, card.id))
       .run();
   }
-  #cardRejection(command: CardMutation):
-    | Extract<
-        SessionFrame,
-        {
-          type: "Rejected";
-        }
-      >["reason"]
-    | undefined {
+  #cardRejection(command: CardMutation) {
     const card = this.#card(command.cardId);
     if (card === undefined) {
-      return "card_not_found";
+      const checkedResult:
+        | Extract<
+            SessionFrame,
+            {
+              type: "Rejected";
+            }
+          >["reason"]
+        | undefined = "card_not_found";
+      return checkedResult;
     }
     if (
       card.revision !== command.cardRevision ||
       (card.status !== "proposed" && card.status !== "conflict") ||
       (command.type === "ConfirmProfileCard" && card.status !== "proposed")
     ) {
-      return "card_conflict";
+      const checkedResult:
+        | Extract<
+            SessionFrame,
+            {
+              type: "Rejected";
+            }
+          >["reason"]
+        | undefined = "card_conflict";
+      return checkedResult;
     }
     if (
       command.type === "ConfirmProfileCard" &&
       card.change._tag === "ConfirmHardConstraintReduction" &&
       command.safetyConfirmation === null
     ) {
-      return "safety_confirmation_required";
+      const checkedResult:
+        | Extract<
+            SessionFrame,
+            {
+              type: "Rejected";
+            }
+          >["reason"]
+        | undefined = "safety_confirmation_required";
+      return checkedResult;
     }
-    return undefined;
+    {
+      const checkedResult:
+        | Extract<
+            SessionFrame,
+            {
+              type: "Rejected";
+            }
+          >["reason"]
+        | undefined = undefined;
+      return checkedResult;
+    }
   }
-  #mutateCard(
-    command: CardMutation,
-    state: typeof SessionState.Type
-  ): SessionFrame {
+  #mutateCard(command: CardMutation, state: typeof SessionState.Type) {
     const card = this.#card(command.cardId);
     if (card === undefined) {
       throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
@@ -900,20 +1120,21 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
         .run();
     }
     this.#saveCard(updated);
-    return {
-      card: updated,
-      mutationId: command.mutationId,
-      state,
-      type:
-        command.type === "ConfirmProfileCard"
-          ? "ConfirmationPending"
-          : "CardUpdated",
-    };
+    {
+      const checkedResult: SessionFrame = {
+        card: updated,
+        mutationId: command.mutationId,
+        state,
+        type:
+          command.type === "ConfirmProfileCard"
+            ? "ConfirmationPending"
+            : "CardUpdated",
+      };
+      return checkedResult;
+    }
   }
   /** Releases only the already-confirmed closed command under fresh API admission. */
-  releaseConfirmation(
-    untrusted: typeof ReleaseConfirmation.Type
-  ): ReleasedConfirmation {
+  releaseConfirmation(untrusted: typeof ReleaseConfirmation.Type) {
     const input = Schema.decodeUnknownSync(ReleaseConfirmation, {
       onExcessProperty: "error",
     })(untrusted);
@@ -927,11 +1148,12 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       pending?.mutationId === input.mutationId &&
       this.#state().status === "open"
     ) {
-      return {
+      const checkedResult: ReleasedConfirmation = {
         generation,
         payload: readStoredProfilePayload(JSON.parse(pending.payloadJson)),
         type: "pending",
       };
+      return checkedResult;
     }
     const receipt = this.#database
       .select()
@@ -944,18 +1166,21 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       )(receipt.frame);
       if (frame.type === "ConfirmationSettled") {
         this.#socket.send(generation, JSON.stringify(frame));
-        return { type: "settled" };
+        {
+          const checkedResult: ReleasedConfirmation = { type: "settled" };
+          return checkedResult;
+        }
       }
     }
     throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
   }
   /** Canonical results may settle after revocation, but may never emit through that old generation. */
-  settleConfirmation(untrusted: typeof SettleConfirmation.Type): void {
+  settleConfirmation(untrusted: typeof SettleConfirmation.Type) {
     const input = Schema.decodeUnknownSync(SettleConfirmation, {
       onExcessProperty: "error",
     })(untrusted);
     this.#binding(input.binding);
-    const frame = this.#database.transaction((): SessionFrame => {
+    const frame = this.#database.transaction(() => {
       const receipt = this.#database
         .select()
         .from(privateReceipts)
@@ -973,7 +1198,10 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
         ) {
           throw new PrivateOutputUnavailable({ reason: "binding_conflict" });
         }
-        return recorded;
+        {
+          const checkedResult: SessionFrame = recorded;
+          return checkedResult;
+        }
       }
       const pending = this.#pending();
       const card =
@@ -1009,7 +1237,10 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
         .set({ frame: JSON.stringify(result) })
         .where(eq(privateReceipts.mutationId, input.mutationId))
         .run();
-      return result;
+      {
+        const checkedResult: SessionFrame = result;
+        return checkedResult;
+      }
     });
     this.#socket.send(input.generation, JSON.stringify(frame));
   }
@@ -1020,22 +1251,24 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     }
     return { status: binding.status, version: binding.version };
   }
-  #turnRejection():
-    | Extract<
-        SessionFrame,
-        {
-          type: "Rejected";
-        }
-      >["reason"]
-    | undefined {
-    return this.#turns.pending() === undefined
-      ? undefined
-      : "assistant_turn_pending";
+  #turnRejection() {
+    const checkedResult:
+      | Extract<
+          SessionFrame,
+          {
+            type: "Rejected";
+          }
+        >["reason"]
+      | undefined =
+      this.#turns.pending() === undefined
+        ? undefined
+        : "assistant_turn_pending";
+    return checkedResult;
   }
   override webSocketMessage(
     socket: NativeCloudflare.WebSocket,
     message: string | ArrayBuffer
-  ): void {
+  ) {
     const generation = this.#socket.admitted(socket);
     if (generation === undefined) {
       socket.close(1008, "Reauthentication required");
@@ -1058,144 +1291,162 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
     const frame = this.#execute(command, generation);
     this.#socket.send(generation, JSON.stringify(frame));
   }
-  #execute(command: SessionCommand, generation: string): SessionFrame {
-    return this.#database.transaction((transaction): SessionFrame => {
-      if (!this.#socket.isCurrent(generation)) {
-        throw new PrivateOutputUnavailable({ reason: "output_disabled" });
-      }
-      const state = this.#state();
-      if (command.type === "ReadCards") {
-        const records = transaction
+  #execute(command: SessionCommand, generation: string) {
+    const checkedResult: SessionFrame = this.#database.transaction(
+      (transaction) => {
+        if (!this.#socket.isCurrent(generation)) {
+          throw new PrivateOutputUnavailable({ reason: "output_disabled" });
+        }
+        const state = this.#state();
+        if (command.type === "ReadCards") {
+          const records = transaction
+            .select()
+            .from(privateProfileCards)
+            .where(gt(privateProfileCards.ordinal, command.afterOrdinal))
+            .orderBy(privateProfileCards.ordinal)
+            .limit(command.limit + 1)
+            .all();
+          const cards = records
+            .slice(0, command.limit)
+            .map((record) =>
+              Schema.decodeUnknownSync(Schema.fromJsonString(ProfileCard))(
+                record.cardJson
+              )
+            );
+          const result = () => ({
+            cards,
+            hasMore: records.length > cards.length,
+            pendingConfirmation: this.#pending()?.mutationId ?? null,
+            requestId: command.requestId,
+            state,
+            type: "CardsRead" as const,
+          });
+          while (
+            new TextEncoder().encode(JSON.stringify(result())).byteLength >
+            MAX_PRIVATE_FRAME_BYTES
+          ) {
+            cards.pop();
+          }
+          {
+            const nestedResult: SessionFrame = result();
+            return nestedResult;
+          }
+        }
+
+        const intent = JSON.stringify(command);
+        const receipt = transaction
           .select()
-          .from(privateProfileCards)
-          .where(gt(privateProfileCards.ordinal, command.afterOrdinal))
-          .orderBy(privateProfileCards.ordinal)
-          .limit(command.limit + 1)
-          .all();
-        const cards = records
-          .slice(0, command.limit)
-          .map((record) =>
-            Schema.decodeUnknownSync(Schema.fromJsonString(ProfileCard))(
-              record.cardJson
-            )
-          );
-        const result = () => ({
-          cards,
-          hasMore: records.length > cards.length,
-          pendingConfirmation: this.#pending()?.mutationId ?? null,
-          requestId: command.requestId,
-          state,
-          type: "CardsRead" as const,
-        });
-        while (
-          new TextEncoder().encode(JSON.stringify(result())).byteLength >
-          MAX_PRIVATE_FRAME_BYTES
-        ) {
-          cards.pop();
+          .from(privateReceipts)
+          .where(eq(privateReceipts.mutationId, command.mutationId))
+          .get();
+        if (receipt !== undefined) {
+          if (receipt.intent !== intent) {
+            const nestedResult2: SessionFrame = {
+              commandId: command.mutationId,
+              reason: "mutation_collision",
+              state,
+              type: "Rejected",
+            };
+            return nestedResult2;
+          }
+          {
+            const nestedResult3: SessionFrame = Schema.decodeUnknownSync(
+              SessionFrame
+            )(JSON.parse(receipt.frame));
+            return nestedResult3;
+          }
         }
-        return result();
-      }
-      // Exact canonical command JSON avoids an asynchronous digest between admission and commit.
-      const intent = JSON.stringify(command);
-      const receipt = transaction
-        .select()
-        .from(privateReceipts)
-        .where(eq(privateReceipts.mutationId, command.mutationId))
-        .get();
-      if (receipt !== undefined) {
-        if (receipt.intent !== intent) {
-          return {
+        if (state.status === "completed") {
+          const nestedResult4: SessionFrame = {
             commandId: command.mutationId,
-            reason: "mutation_collision",
+            reason: "session_completed",
             state,
             type: "Rejected",
           };
+          return nestedResult4;
         }
-        return Schema.decodeUnknownSync(SessionFrame)(
-          JSON.parse(receipt.frame)
-        );
-      }
-      if (state.status === "completed") {
-        return {
-          commandId: command.mutationId,
-          reason: "session_completed",
-          state,
-          type: "Rejected",
-        };
-      }
-      if (this.#pending() !== undefined) {
-        return {
-          commandId: command.mutationId,
-          reason: "confirmation_pending",
-          state,
-          type: "Rejected",
-        };
-      }
-      const turnRejection = this.#turnRejection();
-      if (turnRejection !== undefined) {
-        return {
-          commandId: command.mutationId,
-          reason: turnRejection,
-          state,
-          type: "Rejected",
-        };
-      }
-      if (command.expectedVersion !== state.version) {
-        return {
-          commandId: command.mutationId,
-          reason: "version_conflict",
-          state,
-          type: "Rejected",
-        };
-      }
-      if ("cardId" in command) {
-        const reason = this.#cardRejection(command);
-        if (reason !== undefined) {
-          return {
+        if (this.#pending() !== undefined) {
+          const nestedResult5: SessionFrame = {
             commandId: command.mutationId,
-            reason,
+            reason: "confirmation_pending",
             state,
             type: "Rejected",
           };
+          return nestedResult5;
         }
-      }
-      const next = {
-        status:
+        const turnRejection = this.#turnRejection();
+        if (turnRejection !== undefined) {
+          const nestedResult6: SessionFrame = {
+            commandId: command.mutationId,
+            reason: turnRejection,
+            state,
+            type: "Rejected",
+          };
+          return nestedResult6;
+        }
+        if (command.expectedVersion !== state.version) {
+          const nestedResult7: SessionFrame = {
+            commandId: command.mutationId,
+            reason: "version_conflict",
+            state,
+            type: "Rejected",
+          };
+          return nestedResult7;
+        }
+        if ("cardId" in command) {
+          const reason = this.#cardRejection(command);
+          if (reason !== undefined) {
+            const nestedResult8: SessionFrame = {
+              commandId: command.mutationId,
+              reason,
+              state,
+              type: "Rejected",
+            };
+            return nestedResult8;
+          }
+        }
+        const next = {
+          status:
+            command.type === "CompleteSession"
+              ? ("completed" as const)
+              : ("open" as const),
+          version: state.version + 1,
+        };
+        transaction.update(privateSessionBinding).set(next).run();
+        const result: SessionFrame =
           command.type === "CompleteSession"
-            ? ("completed" as const)
-            : ("open" as const),
-        version: state.version + 1,
-      };
-      transaction.update(privateSessionBinding).set(next).run();
-      const result: SessionFrame =
-        command.type === "CompleteSession"
-          ? {
-              mutationId: command.mutationId,
-              state: next,
-              type: "SessionCompleted",
-            }
-          : this.#mutateCard(command, next);
-      transaction
-        .insert(privateReceipts)
-        .values({
-          frame: JSON.stringify(result),
-          intent,
-          mutationId: command.mutationId,
-        })
-        .run();
-      return result;
-    });
+            ? {
+                mutationId: command.mutationId,
+                state: next,
+                type: "SessionCompleted",
+              }
+            : this.#mutateCard(command, next);
+        transaction
+          .insert(privateReceipts)
+          .values({
+            frame: JSON.stringify(result),
+            intent,
+            mutationId: command.mutationId,
+          })
+          .run();
+        {
+          const nestedResult9: SessionFrame = result;
+          return nestedResult9;
+        }
+      }
+    );
+    return checkedResult;
   }
-  override webSocketClose(socket: NativeCloudflare.WebSocket): void {
+  override webSocketClose(socket: NativeCloudflare.WebSocket) {
     this.#detachDeliveries(
       Schema.decodeUnknownSync(Generation)(socket.deserializeAttachment())
         .generation
     );
   }
-  override webSocketError(socket: NativeCloudflare.WebSocket): void {
+  override webSocketError(socket: NativeCloudflare.WebSocket) {
     this.webSocketClose(socket);
   }
-  invalidateOutput(untrusted: typeof Generation.Type): void {
+  invalidateOutput(untrusted: typeof Generation.Type) {
     const input = Schema.decodeUnknownSync(Generation, {
       onExcessProperty: "error",
     })(untrusted);

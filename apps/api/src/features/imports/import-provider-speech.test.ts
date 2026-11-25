@@ -12,7 +12,7 @@ import {
   localDispatchGate,
   runFactory,
   makeRecordingTraceStore,
-} from "./import-provider-adapters.test-fixture.js";
+} from "./import-provider-adapters.fixture.js";
 import type { ProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledSpeechTranscriber } from "./import-provider-speech.js";
 

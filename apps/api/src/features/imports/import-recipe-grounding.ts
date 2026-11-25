@@ -49,13 +49,12 @@ const recipeQualifier =
 const recipeCondition =
   /\b(?:without|unless|if|when|until|except|only after|only before)\b/u;
 
-/** Check the selected occurrence, retaining its governing polarity and conditions. */
 const preservesRecipeClauseQualifiers = (
   evidence: string,
   span: RecipeEvidenceSpan
 ) => {
   const selected = evidence.slice(span.start, span.end);
-  // Decimal points remain part of the same statement and cannot hide a condition.
+
   const boundaries = [...evidence.matchAll(/[!;\n]|\.(?!\p{N})/gu)];
   const before = boundaries.findLast((boundary) => boundary.index < span.start);
   const after = boundaries.find((boundary) => boundary.index + 1 >= span.end);
@@ -64,8 +63,7 @@ const preservesRecipeClauseQualifiers = (
     span.start
   );
   const suffix = evidence.slice(span.end, after?.index ?? evidence.length);
-  // "Then" alone cannot establish qualifier scope: a trailing condition may
-  // govern both actions. Keep ambiguous partial sentences unresolved.
+
   const normalizedPrefix = normalizeRecipeGroundingText(prefix);
   const normalizedSelected = normalizeRecipeGroundingText(selected);
   const normalizedSuffix = normalizeRecipeGroundingText(suffix);
@@ -80,7 +78,6 @@ const preservesRecipeClauseQualifiers = (
     (qualifier) =>
       qualifier.index >= selectedStart &&
       qualifier.index + qualifier[0].length <= selectedEnd &&
-      // Retaining just "when" or "unless" still drops the actual condition.
       (!recipeCondition.test(qualifier[0]) || normalizedSuffix.length === 0)
   );
 };
@@ -190,12 +187,13 @@ const tokensIntersect = (
 export const projectRecipeEvidenceSpan = (
   evidence: string,
   candidate: string
-): string | null => {
+) => {
   const candidateTokens = positionedGroundingTokens(candidate).filter(
     (token) => !ProjectionStopWords.has(token.value)
   );
   if (candidateTokens.length === 0) {
-    return null;
+    const checkedResult: string | null = null;
+    return checkedResult;
   }
   const evidenceTokens = positionedGroundingTokens(evidence);
   const maximumWindowTokens = Math.max(12, candidateTokens.length * 4 + 4);
@@ -278,9 +276,13 @@ export const projectRecipeEvidenceSpan = (
         left.end - left.start - (right.end - right.start)
     );
   if (best === undefined) {
-    return null;
+    const checkedResult: string | null = null;
+    return checkedResult;
   }
-  return evidence.slice(best.start, best.end);
+  {
+    const checkedResult: string | null = evidence.slice(best.start, best.end);
+    return checkedResult;
+  }
 };
 
 const trustedRecipeCitation = (item: RecipeEvidenceItem) => ({
@@ -326,7 +328,7 @@ const fractionValues: Readonly<Record<string, string>> = {
   "⅝": "5/8",
   "⅞": "7/8",
 };
-const numberValue = (text: string): number => {
+const numberValue = (text: string) => {
   const value = text
     .replaceAll(/[½¼¾⅓⅔⅛⅜⅝⅞]/gu, (fraction) => ` ${fractionValues[fraction]}`)
     .trim();
@@ -338,7 +340,10 @@ const numberValue = (text: string): number => {
         ? (numerator ?? Number.NaN)
         : (numerator ?? Number.NaN) / denominator;
   }
-  return total;
+  {
+    const checkedResult: number = total;
+    return checkedResult;
+  }
 };
 const knownUnits = new Set([
   "g",
@@ -435,7 +440,7 @@ const groundServingAndNutrition = (
       cite("servings", item);
     }
   }
-  // Nutrition needs an explicit source basis; a number near a nutrient is not sufficient.
+
   const { nutrition } = candidate;
   let groundedNutrition: RecipeCandidate["nutrition"] = null;
   if (nutrition !== null) {
@@ -477,7 +482,7 @@ const groundServingAndNutrition = (
 export const groundRecipeCandidate = (
   candidate: RecipeCandidate,
   items: readonly RecipeEvidenceItem[]
-): GroundedRecipeFacts => {
+) => {
   const evidence: GroundedRecipeFacts["evidence"][number][] = [];
   const contentItems = items.filter(
     (item) => item.kind !== "creator" && item.kind !== "source_url"
@@ -489,9 +494,13 @@ export const groundRecipeCandidate = (
     value: string | null,
     path: string,
     sources = contentItems
-  ): { readonly item: RecipeEvidenceItem; readonly span: string } | null => {
+  ) => {
     if (value === null || value.length === 0) {
-      return null;
+      const checkedResult: {
+        readonly item: RecipeEvidenceItem;
+        readonly span: string;
+      } | null = null;
+      return checkedResult;
     }
     for (const item of sources) {
       for (const match of item.value.matchAll(
@@ -506,16 +515,34 @@ export const groundRecipeCandidate = (
           preservesRecipeClauseQualifiers(item.value, position)
         ) {
           cite(path, item);
-          return { item, span: match[0] };
+          {
+            const checkedResult: {
+              readonly item: RecipeEvidenceItem;
+              readonly span: string;
+            } | null = { item, span: match[0] };
+            return checkedResult;
+          }
         }
       }
       const span = projectRecipeEvidenceSpan(item.value, value);
       if (span !== null) {
         cite(path, item);
-        return { item, span };
+        {
+          const checkedResult: {
+            readonly item: RecipeEvidenceItem;
+            readonly span: string;
+          } | null = { item, span };
+          return checkedResult;
+        }
       }
     }
-    return null;
+    {
+      const checkedResult: {
+        readonly item: RecipeEvidenceItem;
+        readonly span: string;
+      } | null = null;
+      return checkedResult;
+    }
   };
   const text = (value: string | null, path: string, sources = contentItems) =>
     matchedText(value, path, sources)?.span ?? null;
@@ -725,29 +752,32 @@ export const groundRecipeCandidate = (
     times,
   });
   const source = items.find((item) => item.kind === "source_url");
-  return {
-    evidence,
-    recipe,
-    sourceUrl:
-      source === undefined
-        ? {
-            citations: [],
-            origin: "unresolved",
-            reason: "not resolved from available evidence",
-            state: "unresolved",
-          }
-        : {
-            citations: [trustedRecipeCitation(source)],
-            origin: source.origin,
-            state: "supported",
-            value: source.value,
-          },
-    unresolvedFields: (Object.keys(recipe) as RecipeUnresolvedField[]).filter(
-      (field) =>
-        recipe[field] === null ||
-        (Array.isArray(recipe[field]) && recipe[field].length === 0) ||
-        (field === "times" &&
-          Object.values(recipe.times).some((value) => value === null))
-    ),
-  };
+  {
+    const checkedResult: GroundedRecipeFacts = {
+      evidence,
+      recipe,
+      sourceUrl:
+        source === undefined
+          ? {
+              citations: [],
+              origin: "unresolved",
+              reason: "not resolved from available evidence",
+              state: "unresolved",
+            }
+          : {
+              citations: [trustedRecipeCitation(source)],
+              origin: source.origin,
+              state: "supported",
+              value: source.value,
+            },
+      unresolvedFields: (Object.keys(recipe) as RecipeUnresolvedField[]).filter(
+        (field) =>
+          recipe[field] === null ||
+          (Array.isArray(recipe[field]) && recipe[field].length === 0) ||
+          (field === "times" &&
+            Object.values(recipe.times).some((value) => value === null))
+      ),
+    };
+    return checkedResult;
+  }
 };

@@ -23,7 +23,7 @@ type SyntheticConversationRequest = typeof SyntheticConversationRequest.Type;
 export class AgentConversation extends ProductionAgentConversation {
   #loseAdvanceStep: number | null = null;
 
-  armLostAdvance(step: number): void {
+  armLostAdvance(step: number) {
     this.#loseAdvanceStep = step;
   }
 

@@ -13,10 +13,10 @@ import {
 } from "../private-output/private-output.contract.js";
 import type { AuthOutputFence } from "./auth-output-fence.js";
 import * as authSchema from "./auth.database-schema.js";
+import { makeNativeAuthTestService } from "./auth.fixture.js";
 import { makeMealPlannerAuth } from "./auth.js";
 import type { MealPlannerAuth } from "./auth.js";
 import { resolveAuthenticatedOrganization } from "./auth.principal.js";
-import { makeNativeAuthTestService } from "./auth.test-fixture.js";
 import { DelegatedAccess } from "./delegated-access.js";
 
 const testEnv = env as unknown as {
@@ -920,9 +920,6 @@ describe("native OAuth delegated access", () => {
   });
 
   it("keeps disconnect outside the native refresh rotation CAS-to-create interval", async () => {
-    // The durable coordinator separately proves one dispatch per intent across
-    // concurrent callers. This fixture holds that same claim while exercising
-    // the native provider's real D1 CAS-to-create interval.
     const initialAuth = makeAuth();
     const account = await createAccount(initialAuth);
     const token = await issueTokens(initialAuth, account.cookie);

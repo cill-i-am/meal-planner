@@ -36,8 +36,13 @@ import { mediaSessionCookieHeader } from "./import-source-session.js";
 
 const terminal = (
   code: "invalid_media" | "limit_exceeded" | "unsupported_streams"
-): TerminalMediaFailure =>
-  new TerminalMediaError({ code, stage: "validation" });
+) => {
+  const checkedResult: TerminalMediaFailure = new TerminalMediaError({
+    code,
+    stage: "validation",
+  });
+  return checkedResult;
+};
 
 const retryableDownload = (reason?: AcquisitionFailureReason) =>
   new RetryableAcquisitionError(
@@ -158,15 +163,18 @@ export interface SecureMediaDownloader {
   >;
 }
 
-const responseContentLength = (
-  value: string | string[] | undefined
-): number | null => {
+const responseContentLength = (value: string | string[] | undefined) => {
   const first = Array.isArray(value) ? value[0] : value;
   if (first === undefined) {
-    return null;
+    const checkedResult: number | null = null;
+    return checkedResult;
   }
   const parsed = Number(first);
-  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+  {
+    const checkedResult: number | null =
+      Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
+    return checkedResult;
+  }
 };
 
 const NodeSecureMediaDownloadClient: SecureMediaDownloadClient = {
@@ -244,14 +252,21 @@ const downloadFailure = (error: MediaDownloadFailure) => {
 
 const isAbortError = (error: Error) => error.name === "AbortError";
 
-const requestSafeMedia = async (
+const requestSafeMedia: (
   client: SecureMediaDownloadClient,
   locator: string,
   redirects: number,
   signal: AbortSignal,
   requestHeaders: MediaRequestHeaders,
   session: MediaSessionCapability | undefined
-): Promise<SecureMediaDownloadResponse> => {
+) => Promise<SecureMediaDownloadResponse> = async (
+  client,
+  locator,
+  redirects,
+  signal,
+  requestHeaders,
+  session
+) => {
   if (!isSafeTikTokMediaLocator(locator)) {
     throw UnsafeMediaDestination;
   }
@@ -294,92 +309,105 @@ const requestSafeMedia = async (
     if (redirects === MaximumSourceRedirects) {
       throw UnsafeMediaDestination;
     }
-    return requestSafeMedia(
-      client,
-      new URL(response.location, locator).toString(),
-      redirects + 1,
-      signal,
-      requestHeaders,
-      session
-    );
+    {
+      const checkedResult:
+        | Awaited<Promise<SecureMediaDownloadResponse>>
+        | Promise<SecureMediaDownloadResponse> = requestSafeMedia(
+        client,
+        new URL(response.location, locator).toString(),
+        redirects + 1,
+        signal,
+        requestHeaders,
+        session
+      );
+      return checkedResult;
+    }
   }
-  return response;
+  {
+    const checkedResult:
+      | Awaited<Promise<SecureMediaDownloadResponse>>
+      | Promise<SecureMediaDownloadResponse> = response;
+    return checkedResult;
+  }
 };
 
 export const makeSecureMediaDownloader = (
   client: SecureMediaDownloadClient
-): SecureMediaDownloader => ({
-  download: Effect.fn("ImportMedia.download")(
-    (locator, destination, maximumBytes, requestHeaders, session) =>
-      Effect.tryPromise({
-        catch: (error) =>
-          downloadFailure(
-            error === UnsafeMediaDestination ||
-              error === MediaDownloadLimitExceeded ||
-              error === MediaDownloadDnsFailure ||
-              error === MediaDownloadHttpResponseFailure ||
-              error === MediaDownloadSourceUnavailable ||
-              error === MediaDownloadTimeout
-              ? error
-              : MediaDownloadStreamOrTlsFailure
-          ),
-        try: async (signal) => {
-          const file = await open(destination, "wx");
-          let completed = false;
-          try {
-            const response = await requestSafeMedia(
-              client,
-              locator,
-              0,
-              signal,
-              requestHeaders ?? {},
-              session
-            );
-            if (response.statusCode !== 200) {
-              response.destroy();
-              throw [401, 403, 404, 410].includes(response.statusCode)
-                ? MediaDownloadSourceUnavailable
-                : MediaDownloadHttpResponseFailure;
-            }
-            if (
-              response.contentLength !== null &&
-              response.contentLength > maximumBytes
-            ) {
-              response.destroy();
-              throw MediaDownloadLimitExceeded;
-            }
-            let bytes = 0;
+) => {
+  const checkedResult: SecureMediaDownloader = {
+    download: Effect.fn("ImportMedia.download")(
+      (locator, destination, maximumBytes, requestHeaders, session) =>
+        Effect.tryPromise({
+          catch: (error) =>
+            downloadFailure(
+              error === UnsafeMediaDestination ||
+                error === MediaDownloadLimitExceeded ||
+                error === MediaDownloadDnsFailure ||
+                error === MediaDownloadHttpResponseFailure ||
+                error === MediaDownloadSourceUnavailable ||
+                error === MediaDownloadTimeout
+                ? error
+                : MediaDownloadStreamOrTlsFailure
+            ),
+          try: async (signal) => {
+            const file = await open(destination, "wx");
+            let completed = false;
             try {
-              for await (const chunk of response.body) {
-                bytes += chunk.byteLength;
-                if (bytes > maximumBytes) {
-                  response.destroy();
-                  throw MediaDownloadLimitExceeded;
+              const response = await requestSafeMedia(
+                client,
+                locator,
+                0,
+                signal,
+                requestHeaders ?? {},
+                session
+              );
+              if (response.statusCode !== 200) {
+                response.destroy();
+                throw [401, 403, 404, 410].includes(response.statusCode)
+                  ? MediaDownloadSourceUnavailable
+                  : MediaDownloadHttpResponseFailure;
+              }
+              if (
+                response.contentLength !== null &&
+                response.contentLength > maximumBytes
+              ) {
+                response.destroy();
+                throw MediaDownloadLimitExceeded;
+              }
+              let bytes = 0;
+              try {
+                for await (const chunk of response.body) {
+                  bytes += chunk.byteLength;
+                  if (bytes > maximumBytes) {
+                    response.destroy();
+                    throw MediaDownloadLimitExceeded;
+                  }
+                  await file.write(chunk);
                 }
-                await file.write(chunk);
+              } catch (error) {
+                if (error === MediaDownloadLimitExceeded) {
+                  throw error;
+                }
+                throw error instanceof Error && isAbortError(error)
+                  ? MediaDownloadTimeout
+                  : MediaDownloadStreamOrTlsFailure;
               }
-            } catch (error) {
-              if (error === MediaDownloadLimitExceeded) {
-                throw error;
+              if (bytes === 0) {
+                throw MediaDownloadLimitExceeded;
               }
-              throw error instanceof Error && isAbortError(error)
-                ? MediaDownloadTimeout
-                : MediaDownloadStreamOrTlsFailure;
+              completed = true;
+            } finally {
+              await file.close();
+              if (!completed) {
+                await rm(destination, { force: true });
+              }
             }
-            if (bytes === 0) {
-              throw MediaDownloadLimitExceeded;
-            }
-            completed = true;
-          } finally {
-            await file.close();
-            if (!completed) {
-              await rm(destination, { force: true });
-            }
-          }
-        },
-      })
-  ),
-});
+          },
+        })
+    ),
+  };
+  return checkedResult;
+};
 
 const checksumFile = Effect.fn("ImportMedia.checksumFile")((filePath: string) =>
   Effect.tryPromise({
@@ -399,132 +427,135 @@ export const makeContainerMediaAcquirer = (
   downloader: SecureMediaDownloader = makeSecureMediaDownloader(
     NodeSecureMediaDownloadClient
   )
-): MediaAcquirer => ({
-  acquire: Effect.fn("ImportMedia.acquire")((source, limits, workspaceRoot) =>
-    Effect.gen(function* acquireMedia() {
-      const deadlineAt =
-        (yield* Clock.currentTimeMillis) + MaximumMediaProcessMilliseconds;
-      const remainingMilliseconds = Clock.currentTimeMillis.pipe(
-        Effect.map((now) => Math.max(1, deadlineAt - now))
-      );
-      yield* scanTemporaryWorkspace(workspaceRoot);
-      const downloadPath = path.join(workspaceRoot, "source.download");
-      yield* downloader
-        .download(
-          source.mediaLocator,
-          downloadPath,
-          limits.maximumMediaBytes,
-          source.requestHeaders,
-          source.session
-        )
-        .pipe(
-          Effect.timeoutOrElse({
-            duration: yield* remainingMilliseconds,
-            orElse: () => Effect.fail(retryableDownload("download_timeout")),
-          })
+) => {
+  const checkedResult: MediaAcquirer = {
+    acquire: Effect.fn("ImportMedia.acquire")((source, limits, workspaceRoot) =>
+      Effect.gen(function* acquireMedia() {
+        const deadlineAt =
+          (yield* Clock.currentTimeMillis) + MaximumMediaProcessMilliseconds;
+        const remainingMilliseconds = Clock.currentTimeMillis.pipe(
+          Effect.map((now) => Math.max(1, deadlineAt - now))
         );
-      yield* scanTemporaryWorkspace(workspaceRoot);
-      const sources = (yield* Effect.tryPromise({
-        catch: () => terminal("invalid_media"),
-        try: () => readdir(workspaceRoot),
-      })).filter((name) => name.startsWith("source."));
-      const [sourceName, ...additionalSources] = sources;
-      if (sourceName === undefined || additionalSources.length !== 0) {
-        return yield* Effect.fail(terminal("invalid_media"));
-      }
-      const mediaPath = path.join(workspaceRoot, "original.mp4");
-      yield* processRunner.run(
-        "ffmpeg",
-        [
-          "-nostdin",
-          "-hide_banner",
-          "-loglevel",
-          "error",
-          "-i",
-          path.join(workspaceRoot, sourceName),
-          "-map",
-          "0:v:0",
-          "-map",
-          "0:a:0?",
-          "-c",
-          "copy",
-          "-movflags",
-          "+faststart",
-          mediaPath,
-        ],
-        {
-          deadlineMilliseconds: yield* remainingMilliseconds,
-          failure: "terminal",
-          workspaceRoot,
-        }
-      );
-      yield* scanTemporaryWorkspace(workspaceRoot);
-      const mediaStats = yield* Effect.tryPromise({
-        catch: () => terminal("invalid_media"),
-        try: () => stat(mediaPath),
-      });
-      const handle = yield* Effect.acquireRelease(
-        Effect.tryPromise({
-          catch: () => terminal("invalid_media"),
-          try: () => open(mediaPath, "r"),
-        }),
-        (file) => Effect.promise(() => file.close()).pipe(Effect.ignore)
-      );
-      const header = new Uint8Array(12);
-      yield* Effect.tryPromise({
-        catch: () => terminal("invalid_media"),
-        try: () => handle.read(header, 0, header.byteLength, 0),
-      });
-      if (!hasIsoBaseMediaFileType(header)) {
-        return yield* Effect.fail(terminal("invalid_media"));
-      }
-      const probe = yield* processRunner.run(
-        "ffprobe",
-        [
-          "-v",
-          "error",
-          "-show_format",
-          "-show_streams",
-          "-of",
-          "json",
-          mediaPath,
-        ],
-        {
-          deadlineMilliseconds: yield* remainingMilliseconds,
-          failure: "terminal",
-          workspaceRoot,
-        }
-      );
-      const parsedProbe = yield* Effect.try({
-        catch: () => terminal("invalid_media"),
-        try: () => JSON.parse(new TextDecoder().decode(probe.stdout)),
-      }).pipe(
-        Effect.flatMap(Schema.decodeUnknownEffect(MediaProbeOutput)),
-        Effect.mapError(() => terminal("invalid_media"))
-      );
-      const validated = yield* validateMediaProbe(parsedProbe, {
-        actualBytes: mediaStats.size,
-        maximumBytes: limits.maximumMediaBytes,
-        maximumDurationSeconds: limits.maximumDurationSeconds,
-      });
-      return {
-        ...validated,
-        filePath: mediaPath,
-        metadata: source.metadata,
-        sha256: yield* checksumFile(mediaPath),
-      };
-    }).pipe(
-      Effect.scoped,
-      Effect.timeoutOrElse({
-        duration: MaximumMediaProcessMilliseconds,
-        orElse: () =>
-          Effect.fail(
-            new RetryableAcquisitionError({
-              reason: "container_process_timeout" as const,
-              stage: "process" as const,
+        yield* scanTemporaryWorkspace(workspaceRoot);
+        const downloadPath = path.join(workspaceRoot, "source.download");
+        yield* downloader
+          .download(
+            source.mediaLocator,
+            downloadPath,
+            limits.maximumMediaBytes,
+            source.requestHeaders,
+            source.session
+          )
+          .pipe(
+            Effect.timeoutOrElse({
+              duration: yield* remainingMilliseconds,
+              orElse: () => Effect.fail(retryableDownload("download_timeout")),
             })
-          ),
-      })
-    )
-  ),
-});
+          );
+        yield* scanTemporaryWorkspace(workspaceRoot);
+        const sources = (yield* Effect.tryPromise({
+          catch: () => terminal("invalid_media"),
+          try: () => readdir(workspaceRoot),
+        })).filter((name) => name.startsWith("source."));
+        const [sourceName, ...additionalSources] = sources;
+        if (sourceName === undefined || additionalSources.length !== 0) {
+          return yield* Effect.fail(terminal("invalid_media"));
+        }
+        const mediaPath = path.join(workspaceRoot, "original.mp4");
+        yield* processRunner.run(
+          "ffmpeg",
+          [
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            path.join(workspaceRoot, sourceName),
+            "-map",
+            "0:v:0",
+            "-map",
+            "0:a:0?",
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            mediaPath,
+          ],
+          {
+            deadlineMilliseconds: yield* remainingMilliseconds,
+            failure: "terminal",
+            workspaceRoot,
+          }
+        );
+        yield* scanTemporaryWorkspace(workspaceRoot);
+        const mediaStats = yield* Effect.tryPromise({
+          catch: () => terminal("invalid_media"),
+          try: () => stat(mediaPath),
+        });
+        const handle = yield* Effect.acquireRelease(
+          Effect.tryPromise({
+            catch: () => terminal("invalid_media"),
+            try: () => open(mediaPath, "r"),
+          }),
+          (file) => Effect.promise(() => file.close()).pipe(Effect.ignore)
+        );
+        const header = new Uint8Array(12);
+        yield* Effect.tryPromise({
+          catch: () => terminal("invalid_media"),
+          try: () => handle.read(header, 0, header.byteLength, 0),
+        });
+        if (!hasIsoBaseMediaFileType(header)) {
+          return yield* Effect.fail(terminal("invalid_media"));
+        }
+        const probe = yield* processRunner.run(
+          "ffprobe",
+          [
+            "-v",
+            "error",
+            "-show_format",
+            "-show_streams",
+            "-of",
+            "json",
+            mediaPath,
+          ],
+          {
+            deadlineMilliseconds: yield* remainingMilliseconds,
+            failure: "terminal",
+            workspaceRoot,
+          }
+        );
+        const parsedProbe = yield* Effect.try({
+          catch: () => terminal("invalid_media"),
+          try: () => JSON.parse(new TextDecoder().decode(probe.stdout)),
+        }).pipe(
+          Effect.flatMap(Schema.decodeUnknownEffect(MediaProbeOutput)),
+          Effect.mapError(() => terminal("invalid_media"))
+        );
+        const validated = yield* validateMediaProbe(parsedProbe, {
+          actualBytes: mediaStats.size,
+          maximumBytes: limits.maximumMediaBytes,
+          maximumDurationSeconds: limits.maximumDurationSeconds,
+        });
+        return {
+          ...validated,
+          filePath: mediaPath,
+          metadata: source.metadata,
+          sha256: yield* checksumFile(mediaPath),
+        };
+      }).pipe(
+        Effect.scoped,
+        Effect.timeoutOrElse({
+          duration: MaximumMediaProcessMilliseconds,
+          orElse: () =>
+            Effect.fail(
+              new RetryableAcquisitionError({
+                reason: "container_process_timeout" as const,
+                stage: "process" as const,
+              })
+            ),
+        })
+      )
+    ),
+  };
+  return checkedResult;
+};

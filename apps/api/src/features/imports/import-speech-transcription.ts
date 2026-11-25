@@ -47,34 +47,40 @@ export interface SpeechPipelineFailure {
 const pipelineFailure = (
   code: SpeechPipelineFailure["code"],
   reasonCode?: ProviderTaskDiagnosticReasonCode
-): SpeechPipelineFailure =>
-  reasonCode === undefined
-    ? { _tag: "SpeechPipelineFailure", code }
-    : { _tag: "SpeechPipelineFailure", code, reasonCode };
+) => {
+  const checkedResult: SpeechPipelineFailure =
+    reasonCode === undefined
+      ? { _tag: "SpeechPipelineFailure", code }
+      : { _tag: "SpeechPipelineFailure", code, reasonCode };
+  return checkedResult;
+};
 
 const completedFromDocument = (
   document: TranscriptEvidenceDocument,
   byteLength: number,
   transcriptSha256: string,
   transcriptKey: string
-): CompletedTranscriptEvidence => ({
-  byteLength,
-  completedAt: document.createdAt,
-  cost: document.cost,
-  deleteAt: document.deleteAt,
-  detectedLanguage: document.detectedLanguage,
-  dispatchId: document.dispatchId,
-  generation: document.acquisitionGeneration,
-  importId: document.importId,
-  model: document.model,
-  provider: document.provider,
-  segmentsCount: document.segments.length,
-  sourceMediaSha256: document.sourceMediaSha256,
-  transcript: transcriptEvidenceStatus(document),
-  transcriptKey,
-  transcriptSha256,
-  usage: document.usage,
-});
+) => {
+  const checkedResult: CompletedTranscriptEvidence = {
+    byteLength,
+    completedAt: document.createdAt,
+    cost: document.cost,
+    deleteAt: document.deleteAt,
+    detectedLanguage: document.detectedLanguage,
+    dispatchId: document.dispatchId,
+    generation: document.acquisitionGeneration,
+    importId: document.importId,
+    model: document.model,
+    provider: document.provider,
+    segmentsCount: document.segments.length,
+    sourceMediaSha256: document.sourceMediaSha256,
+    transcript: transcriptEvidenceStatus(document),
+    transcriptKey,
+    transcriptSha256,
+    usage: document.usage,
+  };
+  return checkedResult;
+};
 
 /** Run one replay-safe provider-free acquired-to-transcript use case. */
 export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(

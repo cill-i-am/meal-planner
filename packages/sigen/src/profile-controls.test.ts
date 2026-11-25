@@ -333,7 +333,7 @@ describe("reviewed energy profile lifecycle", () => {
       note: "Prepared profile",
       profileId: 201,
     };
-    // An existing ID is not proof of creation, even if its data now matches.
+
     expect(controlMatches(create, await f.inspect(), current)).toBe(false);
     const empty = fixture({
       "/device/energy-profile/mode/all/12345": {

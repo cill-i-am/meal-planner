@@ -24,7 +24,7 @@ export const makeHouseholdRecipeDraftLifecycle = (input: {
     semanticKey: string
   ) => Effect.Effect<HouseholdImportMutationId>;
   readonly organizationId: HouseholdOrganizationId;
-}): RecipeDraftLifecycle => {
+}) => {
   const admission = {
     actor: {
       _tag: "System" as const,
@@ -42,23 +42,26 @@ export const makeHouseholdRecipeDraftLifecycle = (input: {
       })
       .pipe(Effect.asVoid, Effect.orDie);
 
-  return {
-    grounding: advanceStage("grounding_recipe"),
-    preparingReview: advanceStage("preparing_review"),
-    reviewAvailable: (_actionId, draft) =>
-      Effect.gen(function* commitHouseholdRecipeDraft() {
-        const mutationId = yield* input.mutationId(
-          `${input.intentId}:${input.executionGeneration}:commit-draft:${draft.extractionFingerprint}`
-        );
-        yield* input.householdDomain.commitRecipeImportDraft({
-          admission,
-          evidenceFingerprint: draft.evidenceFingerprint,
-          expectedGeneration: input.executionGeneration,
-          extractionFingerprint: draft.extractionFingerprint,
-          intentId: input.intentId,
-          mutationId,
-          review: projectRecipeDraftReviewActionView(draft),
-        });
-      }).pipe(Effect.orDie),
-  };
+  {
+    const checkedResult: RecipeDraftLifecycle = {
+      grounding: advanceStage("grounding_recipe"),
+      preparingReview: advanceStage("preparing_review"),
+      reviewAvailable: (_actionId, draft) =>
+        Effect.gen(function* commitHouseholdRecipeDraft() {
+          const mutationId = yield* input.mutationId(
+            `${input.intentId}:${input.executionGeneration}:commit-draft:${draft.extractionFingerprint}`
+          );
+          yield* input.householdDomain.commitRecipeImportDraft({
+            admission,
+            evidenceFingerprint: draft.evidenceFingerprint,
+            expectedGeneration: input.executionGeneration,
+            extractionFingerprint: draft.extractionFingerprint,
+            intentId: input.intentId,
+            mutationId,
+            review: projectRecipeDraftReviewActionView(draft),
+          });
+        }).pipe(Effect.orDie),
+    };
+    return checkedResult;
+  }
 };

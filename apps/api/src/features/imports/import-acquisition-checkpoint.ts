@@ -32,31 +32,35 @@ export type DecodedAcquisitionCheckpoint =
     }
   | AcquisitionCheckpointRejected;
 
-const rejected = (): AcquisitionCheckpointRejected => ({
-  _tag: "AcquisitionCheckpointRejected",
-  code: "acquisition_checkpoint_invalid",
-});
+const rejected = () => {
+  const checkedResult: AcquisitionCheckpointRejected = {
+    _tag: "AcquisitionCheckpointRejected",
+    code: "acquisition_checkpoint_invalid",
+  };
+  return checkedResult;
+};
 
-const normalizeDurableCheckpoint = (
-  raw: Schema.Json
-): Schema.Json | undefined => {
+const normalizeDurableCheckpoint = (raw: Schema.Json) => {
   try {
-    return structuredClone(raw);
+    const checkedResult: Schema.Json | undefined = structuredClone(raw);
+    return checkedResult;
   } catch {
-    return undefined;
+    const checkedResult: Schema.Json | undefined = undefined;
+    return checkedResult;
   }
 };
 
-export const decodeAcquisitionCheckpoint = (
-  raw: Schema.Json
-): DecodedAcquisitionCheckpoint => {
+export const decodeAcquisitionCheckpoint = (raw: Schema.Json) => {
   const decoded = Schema.decodeUnknownOption(AcquisitionTaskOutcome, {
     onExcessProperty: "error",
   })(normalizeDurableCheckpoint(raw));
-  return Option.match(decoded, {
-    onNone: rejected,
-    onSome: (outcome) => ({ _tag: "Accepted", outcome }),
-  });
+  {
+    const checkedResult: DecodedAcquisitionCheckpoint = Option.match(decoded, {
+      onNone: rejected,
+      onSome: (outcome) => ({ _tag: "Accepted", outcome }),
+    });
+    return checkedResult;
+  }
 };
 
 const ownsHouseholdSpeechContinuation = (
@@ -117,16 +121,23 @@ const verifyHouseholdAcquisitionCheckpointContinuation = (input: {
   readonly current: HouseholdImportEvidenceCurrent;
   readonly importId: ImportId;
   readonly outcome: AcquisitionTaskOutcome;
-}): AcquisitionCheckpointContinuation => {
+}) => {
   if (input.outcome._tag !== "VerifiedAcquisition") {
-    return { _tag: "Accepted" };
+    const checkedResult: AcquisitionCheckpointContinuation = {
+      _tag: "Accepted",
+    };
+    return checkedResult;
   }
-  return input.current.importId === input.importId &&
-    input.current.sourceKind === "tiktok" &&
-    input.current.acquisitionGeneration === input.outcome.generation &&
-    ownsHouseholdSpeechContinuation(input.current)
-    ? { _tag: "Accepted" }
-    : rejected();
+  {
+    const checkedResult: AcquisitionCheckpointContinuation =
+      input.current.importId === input.importId &&
+      input.current.sourceKind === "tiktok" &&
+      input.current.acquisitionGeneration === input.outcome.generation &&
+      ownsHouseholdSpeechContinuation(input.current)
+        ? { _tag: "Accepted" }
+        : rejected();
+    return checkedResult;
+  }
 };
 
 /** Continues only after the household-native current result owns acquisition. */
@@ -149,25 +160,30 @@ export const continueHouseholdAcquisitionCheckpoint = <
   readonly outcome: AcquisitionTaskOutcome;
 }) =>
   input.current.pipe(
-    Effect.flatMap(
-      (
-        currentOption
-      ): Effect.Effect<
-        Value | AcquisitionCheckpointRejected,
-        AcceptedError,
-        AcceptedRequirements
-      > => {
-        if (Option.isNone(currentOption)) {
-          return Effect.succeed(rejected());
-        }
-        const continuation = verifyHouseholdAcquisitionCheckpointContinuation({
-          current: currentOption.value,
-          importId: input.importId,
-          outcome: input.outcome,
-        });
-        return continuation._tag === "Accepted"
-          ? input.onAccepted()
-          : Effect.succeed(continuation);
+    Effect.flatMap((currentOption) => {
+      if (Option.isNone(currentOption)) {
+        const checkedResult: Effect.Effect<
+          Value | AcquisitionCheckpointRejected,
+          AcceptedError,
+          AcceptedRequirements
+        > = Effect.succeed(rejected());
+        return checkedResult;
       }
-    )
+      const continuation = verifyHouseholdAcquisitionCheckpointContinuation({
+        current: currentOption.value,
+        importId: input.importId,
+        outcome: input.outcome,
+      });
+      {
+        const checkedResult: Effect.Effect<
+          Value | AcquisitionCheckpointRejected,
+          AcceptedError,
+          AcceptedRequirements
+        > =
+          continuation._tag === "Accepted"
+            ? input.onAccepted()
+            : Effect.succeed(continuation);
+        return checkedResult;
+      }
+    })
   );

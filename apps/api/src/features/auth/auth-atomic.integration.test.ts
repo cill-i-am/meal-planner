@@ -9,13 +9,13 @@ import { Schema } from "effect";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
 import type { PrivateOutputMutationPort } from "../private-output/private-output-binding.js";
 import {
   makeAuthOutputFence,
   runOutputFencedMutation,
 } from "../private-output/private-output-mutation.js";
-import { privateOutputRuntimeWorker } from "../private-output/private-output-runtime.test-fixture.js";
+import { privateOutputRuntimeWorker } from "../private-output/private-output-runtime.fixture.js";
 import { privateOutputKey } from "../private-output/private-output.contract.js";
 import {
   AcceptInvitationMutation,
@@ -33,7 +33,7 @@ beforeAll(async () => {
   const manifest = await bundleWorkerFixture(
     fileURLToPath(
       new URL(
-        "../private-output/private-output-control.test-fixture.ts",
+        "../private-output/private-output-control.fixture.ts",
         import.meta.url
       )
     ),
@@ -101,7 +101,7 @@ const fixture = async () => {
     updatedAt: now,
     userId,
   });
-  const command = async <A>(action: string, input: object): Promise<A> => {
+  const command = async <A>(action: string, input: object) => {
     const response = await runtime.dispatchFetch(
       "https://atomic-fence.test/control",
       {
@@ -117,7 +117,12 @@ const fixture = async () => {
     if (!response.ok) {
       throw new Error(`Durable fence returned ${response.status}`);
     }
-    return ((await response.json()) as { readonly result: A }).result;
+    {
+      const checkedResult: A | Promise<A> = (
+        (await response.json()) as { readonly result: A }
+      ).result;
+      return checkedResult;
+    }
   };
   let unavailableCompletion = false;
   let dispatches = 0;
@@ -430,7 +435,7 @@ describe("atomic auth against the durable output fence", () => {
         .from(schema.session)
         .where(eq(schema.session.userId, f.userId))
     ).toEqual([]);
-    // A later login must survive reconciliation of this already-committed reset.
+
     await database.insert(schema.session).values({
       createdAt: f.now,
       expiresAt: f.expiresAt,

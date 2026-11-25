@@ -48,43 +48,50 @@ const ModeResponse = Schema.Struct({
 const withoutTime = ({
   fetchedAt: _fetchedAt,
   ...profile
-}: ProfileConfiguration & { fetchedAt: number }): ProfileConfiguration =>
-  profile;
-const serializableProfile = (profile: ProfileConfiguration): boolean =>
-  !profile.industrial &&
-  [0, 1].includes(profile.providerActiveStatus) &&
-  [0, 1].includes(profile.peakShaving.providerControlMode) &&
-  profile.peakShaving.slots.every(Schema.is(ScheduleWindow)) &&
-  nonOverlappingWindows(profile.peakShaving.slots) &&
-  writableResidentialPreheating(profile.preheating) &&
-  profile.solarPriority.every(
-    (entry) =>
-      !entry.group &&
-      entry.groupPath.length === 1 &&
-      [0, 1, 2].includes(entry.providerStatus) &&
-      [1, 3, 4].includes(entry.providerLoadType) &&
-      [null, 4].includes(entry.providerDeviceType) &&
-      entry.smartLoadPath === null
-  ) &&
-  profile.batteryDischargeSources.every(
-    (source) => source === "pv" || source === "grid"
-  ) &&
-  profile.batteryGroups.every(
-    (group) =>
-      [0, 1, 3, 6].includes(group.providerMode) &&
-      [0, 1].includes(group.providerActiveStatus) &&
-      group.sourcePriority.every((source) => ["pv", "grid"].includes(source)) &&
-      group.windows.every(Schema.is(ScheduleWindow))
-  ) &&
-  profile.gridGroups.every(
-    (group) =>
-      [0, 1, 2].includes(group.providerMode) &&
-      [0, 1].includes(group.providerActiveStatus) &&
-      group.sourcePriority.every((source) =>
-        ["pv", "battery"].includes(source)
-      ) &&
-      group.windows.every(Schema.is(ScheduleWindow))
-  );
+}: ProfileConfiguration & { fetchedAt: number }) => {
+  const checkedResult: ProfileConfiguration = profile;
+  return checkedResult;
+};
+const serializableProfile = (profile: ProfileConfiguration) => {
+  const checkedResult: boolean =
+    !profile.industrial &&
+    [0, 1].includes(profile.providerActiveStatus) &&
+    [0, 1].includes(profile.peakShaving.providerControlMode) &&
+    profile.peakShaving.slots.every(Schema.is(ScheduleWindow)) &&
+    nonOverlappingWindows(profile.peakShaving.slots) &&
+    writableResidentialPreheating(profile.preheating) &&
+    profile.solarPriority.every(
+      (entry) =>
+        !entry.group &&
+        entry.groupPath.length === 1 &&
+        [0, 1, 2].includes(entry.providerStatus) &&
+        [1, 3, 4].includes(entry.providerLoadType) &&
+        [null, 4].includes(entry.providerDeviceType) &&
+        entry.smartLoadPath === null
+    ) &&
+    profile.batteryDischargeSources.every(
+      (source) => source === "pv" || source === "grid"
+    ) &&
+    profile.batteryGroups.every(
+      (group) =>
+        [0, 1, 3, 6].includes(group.providerMode) &&
+        [0, 1].includes(group.providerActiveStatus) &&
+        group.sourcePriority.every((source) =>
+          ["pv", "grid"].includes(source)
+        ) &&
+        group.windows.every(Schema.is(ScheduleWindow))
+    ) &&
+    profile.gridGroups.every(
+      (group) =>
+        [0, 1, 2].includes(group.providerMode) &&
+        [0, 1].includes(group.providerActiveStatus) &&
+        group.sourcePriority.every((source) =>
+          ["pv", "battery"].includes(source)
+        ) &&
+        group.windows.every(Schema.is(ScheduleWindow))
+    );
+  return checkedResult;
+};
 
 export const makeProfileControlsClient = (
   read: ProviderRead,

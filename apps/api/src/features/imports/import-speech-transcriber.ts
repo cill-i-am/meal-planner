@@ -88,7 +88,6 @@ export const SpeechEvidenceStatus = Schema.Union([
 ]);
 export type SpeechEvidenceStatus = typeof SpeechEvidenceStatus.Type;
 
-/** A settled speech attempt with no usable text; never an unknown provider outcome. */
 const UnavailableSpeechFields = {
   cost: SpeechTranscript.fields.cost,
   detectedLanguage: Schema.Null,
@@ -212,8 +211,6 @@ export interface SpeechTranscriber {
     input: SpeechTranscriptionInput
   ) => Effect.Effect<SpeechTranscriptionResult, SpeechTranscriptionFailure>;
 }
-
-/** Effect service tag for a replaceable speech provider adapter. */
 
 /** Strictly decode a speech adapter's normalized response. */
 export const decodeSpeechTranscript = Schema.decodeUnknownEffect(

@@ -17,8 +17,9 @@ import { Miniflare, Response as LocalResponse } from "miniflare";
 import type { WorkerdStructuredLog } from "miniflare";
 import { expect } from "vitest";
 
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
-import { privateOutputRuntimeWorker } from "./private-output-runtime.test-fixture.js";
+import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
+import { EventLog } from "./event-log.test-utils.js";
+import { privateOutputRuntimeWorker } from "./private-output-runtime.fixture.js";
 import { privateOutputKey } from "./private-output.contract.js";
 import type { PrivateSessionBinding } from "./private-output.contract.js";
 import type { privateAssistantTurns } from "./private-output.database-schema.js";
@@ -123,13 +124,18 @@ export const requestNativePrivateChat = (
   );
 };
 
-const makeNativeBinding = async (): Promise<PrivateSessionBinding> => ({
-  accountKey: await privateOutputKey("account", crypto.randomUUID()),
-  householdKey: await privateOutputKey("household", crypto.randomUUID()),
-  linkageSubject: "a".repeat(64),
-  personId: `person_${crypto.randomUUID()}`,
-  sessionReference: crypto.randomUUID(),
-});
+const makeNativeBinding = async () => {
+  const checkedResult:
+    | Awaited<Promise<PrivateSessionBinding>>
+    | Promise<PrivateSessionBinding> = {
+    accountKey: await privateOutputKey("account", crypto.randomUUID()),
+    householdKey: await privateOutputKey("household", crypto.randomUUID()),
+    linkageSubject: "a".repeat(64),
+    personId: `person_${crypto.randomUUID()}`,
+    sessionReference: crypto.randomUUID(),
+  };
+  return checkedResult;
+};
 
 const exchangeNativeCommand = async (
   connection: Pick<PrivateNativeConnection, "socket"> & {
@@ -171,7 +177,7 @@ export const makePrivateOutputHarness = () => {
   let configuration: string | undefined;
   let modelResponse: () => LocalResponse | Promise<LocalResponse> =
     unavailableModelResponse;
-  const calls: unknown[] = [];
+  const calls = new EventLog<unknown>();
   const logs: WorkerdStructuredLog[] = [];
   const makeRuntime = () => {
     const worker = privateOutputRuntimeWorker(manifest);
@@ -220,14 +226,17 @@ export const makePrivateOutputHarness = () => {
       headers,
     });
   };
-  const successful = async <A>(input: ControlInput): Promise<A> => {
+  const successful = async <A>(input: ControlInput) => {
     const response = await command(input);
     expect(response.status, await response.clone().text()).toBe(200);
-    return (
-      (await response.json()) as {
-        result: A;
-      }
-    ).result;
+    {
+      const checkedResult: A | Promise<A> = (
+        (await response.json()) as {
+          result: A;
+        }
+      ).result;
+      return checkedResult;
+    }
   };
   const metadata = (binding: PrivateSessionBinding) =>
     successful<
@@ -247,7 +256,7 @@ export const makePrivateOutputHarness = () => {
       scope?: PrivateDiscoveryScope | null;
       expiresAt?: number;
     } = {}
-  ): Promise<PrivateNativeConnection> => {
+  ) => {
     await successful({
       action: "initialize",
       binding: selected,
@@ -295,7 +304,18 @@ export const makePrivateOutputHarness = () => {
     await expect
       .poll(() => frames.some((frame) => frame.type === "SessionReady"))
       .toBe(true);
-    return { binding: selected, frames, generation, probes, socket };
+    {
+      const checkedResult:
+        | Awaited<Promise<PrivateNativeConnection>>
+        | Promise<PrivateNativeConnection> = {
+        binding: selected,
+        frames,
+        generation,
+        probes,
+        socket,
+      };
+      return checkedResult;
+    }
   };
   const chatRequest = (
     connection: PrivateNativeConnection,
@@ -379,7 +399,7 @@ export const makePrivateOutputHarness = () => {
       );
       manifest = await bundleWorkerFixture(
         fileURLToPath(
-          new URL("private-output-control.test-fixture.ts", import.meta.url)
+          new URL("private-output-control.fixture.ts", import.meta.url)
         ),
         temporaryDirectory
       );

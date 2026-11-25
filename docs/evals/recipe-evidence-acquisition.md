@@ -40,7 +40,7 @@ One live request used three generated JPEGs containing distinct text. It passed 
 | Reservation | 100,000 microUSD |
 | Token-priced settlement | 650 microUSD: `ceil(2235 × 0.27 + 54 × 0.85)` |
 
-The model omitted confidence. The adapter preserves the observed text, normalizes missing confidence to zero, and reports `low_confidence`; it does not invent certainty. The sanitized response retains both native and OpenAI tool-call envelopes for the [regression fixture](../../apps/api/src/features/imports/import-provider-visual.scout.test-fixture.ts) and [adapter test](../../apps/api/src/features/imports/import-provider-visual.test.ts).
+The model omitted confidence. The adapter preserves the observed text, normalizes missing confidence to zero, and reports `low_confidence`; it does not invent certainty. The sanitized response retains both native and OpenAI tool-call envelopes for the [regression fixture](../../apps/api/src/features/imports/import-provider-visual.scout.fixture.ts) and [adapter test](../../apps/api/src/features/imports/import-provider-visual.test.ts).
 
 This proves three-image acceptance and correct slot attribution for one simple synthetic request. It does not measure recipe accuracy, real-video OCR recall, production latency distribution, holdout scores, or an improvement over another recipe model. Token-priced spend is estimated from provider usage, not a billing invoice. No additional model call was used to make the regression fixture.
 

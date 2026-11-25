@@ -35,7 +35,7 @@ import {
   VerifiedSourceMetadata,
 } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
-import { makeVisualTransport } from "./import-provider-adapters.test-fixture.js";
+import { makeVisualTransport } from "./import-provider-adapters.fixture.js";
 import type { WorkersAiTransport } from "./import-provider-kernel.js";
 import {
   InstalledRecipeModel,
@@ -208,12 +208,12 @@ const waitForNumber = async (
   return waitForNumber(env, instanceId, name, expected, attempt + 1);
 };
 
-const waitForWorkflowTerminal = async (
+const waitForWorkflowTerminal: (
   env: ProviderWorkflowTestEnv,
   instanceId: string,
   instance: RawWorkflowInstance,
-  attempt = 0
-): Promise<Schema.Json> => {
+  attempt?: number
+) => Promise<Schema.Json> = async (env, instanceId, instance, attempt = 0) => {
   if (attempt >= 500) {
     const diagnostics = await Promise.all(
       [
@@ -236,16 +236,22 @@ const waitForWorkflowTerminal = async (
     Schema.is(NativeWorkflowStatus)(status) &&
     (status.status === "complete" || status.status === "errored")
   ) {
-    return status;
+    const checkedResult: Awaited<Promise<Schema.Json>> | Promise<Schema.Json> =
+      status;
+    return checkedResult;
   }
   await Effect.runPromise(Effect.sleep(10));
-  return waitForWorkflowTerminal(env, instanceId, instance, attempt + 1);
+  {
+    const checkedResult: Awaited<Promise<Schema.Json>> | Promise<Schema.Json> =
+      waitForWorkflowTerminal(env, instanceId, instance, attempt + 1);
+    return checkedResult;
+  }
 };
 
 const nativeRecipeRecoveryAttempt = (
   importId: ImportId,
   ordinal: RecipeRecoveryOrdinal
-): RecipeRecoveryAttempt => {
+) => {
   const generation = decodeGeneration(1);
   const executionGeneration = Schema.decodeUnknownSync(
     ImportIntentExecutionGeneration
@@ -255,35 +261,38 @@ const nativeRecipeRecoveryAttempt = (
     `recipe:${importId}:${generation}:${evidenceFingerprint}`
   );
   const rootExtractionFingerprint = decodeSha256("f".repeat(64));
-  return {
-    acquisitionGeneration: generation,
-    createdAt: decodeImportTimestamp("2026-08-16T00:00:00.000Z"),
-    currentDispatchId: decodeHouseholdDispatchId(
-      `${rootDispatchId}:recovery:${ordinal}`
-    ),
-    currentExtractionFingerprint: decodeSha256(String(ordinal).repeat(64)),
-    evidenceFingerprint,
-    executionGeneration,
-    importId,
-    ordinal,
-    predecessorDispatchId: decodeHouseholdDispatchId(
-      ordinal === 1
-        ? rootDispatchId
-        : `${rootDispatchId}:recovery:${ordinal - 1}`
-    ),
-    predecessorExtractionFingerprint:
-      ordinal === 1
-        ? rootExtractionFingerprint
-        : decodeSha256(String(ordinal - 1).repeat(64)),
-    rootDispatchId,
-    rootExtractionFingerprint,
-    sourceMediaSha256: decodeSha256("a".repeat(64)),
-    terminalCheckpointCompletedAt: decodeImportTimestamp(
-      "2026-08-16T00:00:00.000Z"
-    ),
-    transcriptSha256: decodeSha256("b".repeat(64)),
-    visualManifestSha256: decodeSha256("c".repeat(64)),
-  };
+  {
+    const checkedResult: RecipeRecoveryAttempt = {
+      acquisitionGeneration: generation,
+      createdAt: decodeImportTimestamp("2026-08-16T00:00:00.000Z"),
+      currentDispatchId: decodeHouseholdDispatchId(
+        `${rootDispatchId}:recovery:${ordinal}`
+      ),
+      currentExtractionFingerprint: decodeSha256(String(ordinal).repeat(64)),
+      evidenceFingerprint,
+      executionGeneration,
+      importId,
+      ordinal,
+      predecessorDispatchId: decodeHouseholdDispatchId(
+        ordinal === 1
+          ? rootDispatchId
+          : `${rootDispatchId}:recovery:${ordinal - 1}`
+      ),
+      predecessorExtractionFingerprint:
+        ordinal === 1
+          ? rootExtractionFingerprint
+          : decodeSha256(String(ordinal - 1).repeat(64)),
+      rootDispatchId,
+      rootExtractionFingerprint,
+      sourceMediaSha256: decodeSha256("a".repeat(64)),
+      terminalCheckpointCompletedAt: decodeImportTimestamp(
+        "2026-08-16T00:00:00.000Z"
+      ),
+      transcriptSha256: decodeSha256("b".repeat(64)),
+      visualManifestSha256: decodeSha256("c".repeat(64)),
+    };
+    return checkedResult;
+  }
 };
 
 const emptyRecipeProviderSelection = {
@@ -733,24 +742,31 @@ interface ProviderWorkflowSuccess<Evidence> {
 const providerWorkflowSuccess = <Evidence>(
   stage: ProviderTaskStage,
   evidence: Evidence
-): ProviderWorkflowSuccess<Evidence> => ({
-  _tag: "Succeeded",
-  evidence,
-  stage,
-});
+) => {
+  const checkedResult: ProviderWorkflowSuccess<Evidence> = {
+    _tag: "Succeeded",
+    evidence,
+    stage,
+  };
+  return checkedResult;
+};
 
-const recipeRecoverySuccess = (): typeof ProviderTaskCheckpoint.Type => ({
-  _tag: "Succeeded",
-  stage: "recipe",
-});
+const recipeRecoverySuccess = () => {
+  const checkedResult: typeof ProviderTaskCheckpoint.Type = {
+    _tag: "Succeeded",
+    stage: "recipe",
+  };
+  return checkedResult;
+};
 
-const recipeRecoveryFailure = (
-  code: string
-): typeof ProviderTaskCheckpoint.Type => ({
-  _tag: "Failed",
-  code,
-  stage: "recipe",
-});
+const recipeRecoveryFailure = (code: string) => {
+  const checkedResult: typeof ProviderTaskCheckpoint.Type = {
+    _tag: "Failed",
+    code,
+    stage: "recipe",
+  };
+  return checkedResult;
+};
 
 const providerWorkflowExport = {
   kind: "workflow" as const,

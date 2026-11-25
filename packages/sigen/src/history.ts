@@ -61,7 +61,7 @@ export type IncomeInput = typeof IncomeInput.Type;
 
 export const LocalSample = Schema.Struct({
   localTime: Schema.String,
-  // A repeated wall-clock minute has two possible instants; a DST gap has none.
+
   utcCandidates: Schema.Array(Timestamp).check(Schema.isMaxLength(2)),
   value: Schema.NullOr(Schema.Finite),
 });

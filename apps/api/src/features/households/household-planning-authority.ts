@@ -29,8 +29,11 @@ export const readHouseholdPlanningAuthority = (
     readonly digest: HouseholdDigestService;
     readonly identity: HouseholdIdentityGeneratorService;
   }
-): Effect.Effect<PlanningAuthority, ReturnType<typeof unavailable>> =>
-  Effect.gen(function* readPlanningAuthority() {
+) => {
+  const checkedResult: Effect.Effect<
+    PlanningAuthority,
+    ReturnType<typeof unavailable>
+  > = Effect.gen(function* readPlanningAuthority() {
     const content = yield* makeHouseholdMealContentRepository(
       database,
       services.digest
@@ -74,3 +77,5 @@ export const readHouseholdPlanningAuthority = (
     );
     return { content, people };
   });
+  return checkedResult;
+};

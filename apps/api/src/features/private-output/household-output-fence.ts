@@ -28,7 +28,7 @@ export const HouseholdOutputFenceLive = Layer.effect(
   HouseholdOutputFence,
   Effect.gen(function* makeHouseholdOutputFence() {
     const output = yield* privateOutputMutationPort;
-    // One HouseholdObject owns these commands; preserve its canonical stale-version/replay ordering across fence RPC.
+
     const writers = yield* Semaphore.make(1);
     return HouseholdOutputFence.of({
       run: (input, canonical) =>
@@ -45,7 +45,6 @@ export const HouseholdOutputFenceLive = Layer.effect(
           });
           const operation = { key, operationId: retained.operationId, scope };
           if (retained.phase === "dispatched") {
-            // An existing canonical receipt permits only repository replay; it still verifies the exact original intent.
             if (!(yield* input.wasCommitted)) {
               return yield* Effect.fail(unavailable());
             }

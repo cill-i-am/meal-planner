@@ -123,10 +123,8 @@ const makeApp = (options: {
     disableLogger: true,
   });
 
-const gatewayWithList = (
-  list: HouseholdPeopleGateway["list"]
-): HouseholdPeopleGateway =>
-  HouseholdPeopleGateway.of({
+const gatewayWithList = (list: HouseholdPeopleGateway["list"]) => {
+  const checkedResult: HouseholdPeopleGateway = HouseholdPeopleGateway.of({
     archive: () => Effect.die("Unexpected archive"),
     associateInvitation: () => Effect.die("Unexpected invitation association"),
     bootstrapCreator: () => Effect.die("Unexpected bootstrap"),
@@ -150,6 +148,8 @@ const gatewayWithList = (
     retryDeparture: () => Effect.die("Unexpected departure retry"),
     returnAdult: () => Effect.die("Unexpected adult return"),
   });
+  return checkedResult;
+};
 
 describe("household HttpApi boundary", () => {
   const apps: ReturnType<typeof makeApp>[] = [];
@@ -428,10 +428,8 @@ describe("household people identity and owner boundary", () => {
   });
 });
 
-const gatewayWith = (
-  overrides: Partial<HouseholdMealPlanGateway>
-): HouseholdMealPlanGateway =>
-  HouseholdMealPlanGateway.of({
+const gatewayWith = (overrides: Partial<HouseholdMealPlanGateway>) => {
+  const checkedResult: HouseholdMealPlanGateway = HouseholdMealPlanGateway.of({
     acceptRevision: () => Effect.die("Unexpected revision acceptance"),
     approve: () => Effect.die("Unexpected approval"),
     change: () => Effect.die("Unexpected change"),
@@ -442,6 +440,8 @@ const gatewayWith = (
     rejectRevision: () => Effect.die("Unexpected revision rejection"),
     ...overrides,
   });
+  return checkedResult;
+};
 
 describe("household meal-plan HttpApi boundary", () => {
   const apps: { readonly dispose: () => Promise<void> }[] = [];

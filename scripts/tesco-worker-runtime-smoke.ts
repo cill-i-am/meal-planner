@@ -14,8 +14,6 @@ import {
   TescoSessionReport,
 } from "../apps/api/src/features/tesco/mcp/session.model.js";
 
-// This process boundary tests the real Alchemy bundle in workerd with synthetic credentials only.
-// Build it first with `alchemy plan tesco.alchemy.ts --stage prod ...`.
 const directory = path.resolve(".alchemy/bundles/TescoMcp-prod-TescoMcp");
 const files = await readdir(directory);
 const chunks = files.filter(
@@ -96,7 +94,7 @@ const runtime = new Miniflare(
       }
       assert.equal(url.origin, "https://www.tesco.ie");
       renewalSteps.push(url.pathname);
-      // Tesco rejects bare server clients before login, independently of valid cookies.
+
       if (
         request.headers.get("user-agent") !== "Mozilla/5.0 (Tesco test browser)"
       ) {

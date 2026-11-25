@@ -31,11 +31,10 @@ import {
   ImportId,
   SourceCanonicalId,
 } from "../../features/imports/import.contracts.js";
-import { LifecycleFixtureDurationSeconds } from "./fixture.js";
+import { LifecycleFixtureDurationSeconds } from "./lifecycle.fixture.js";
 
 const workerResource = { bind: () => () => Effect.void };
-// Only deployment registration metadata is synthetic. Runtime lifecycle, RPC,
-// streams and storage use the production constructor and installed native bridge.
+
 const services = Context.empty().pipe(
   Context.add(Self("Cloudflare.Container<TikTokMediaContainer>"), {
     LogicalId: "TikTokMediaContainer",

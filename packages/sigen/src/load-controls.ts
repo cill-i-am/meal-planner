@@ -116,7 +116,7 @@ const knownModeSettings = (
   }
   return true;
 };
-/** Activation accepts only complete known schedule settings, even for disabled rows. */
+
 const knownAutomaticSettings = (
   settings: typeof SmartLoadControlSettings.Type.onGrid
 ) => {
@@ -265,7 +265,7 @@ export const makeLoadControls = (read: ProviderRead, write: ProviderWrite) => {
       const hasEnabledRows =
         change.schedule.timed.some((row) => row.enabled) ||
         change.schedule.readyBy.some((row) => row.enabled);
-      // The app prompts for a switch to manual mode when clearing an active schedule.
+
       return state.onGrid.controlMode === 0 && !hasEnabledRows
         ? failure("InvalidInput")
         : Effect.void;

@@ -132,17 +132,26 @@ interface LoadedAlchemyD1Modules {
   readonly credentialsModule: CredentialsModule;
 }
 
-const decodeRequestBody = (body: HttpBody.HttpBody): D1QueryBody => {
+const decodeRequestBody = (body: HttpBody.HttpBody) => {
   if (body._tag !== "Uint8Array") {
     throw new TypeError(`Expected a JSON request body, received ${body._tag}`);
   }
-  return JSON.parse(new TextDecoder().decode(body.body)) as D1QueryBody;
+  {
+    const checkedResult: D1QueryBody = JSON.parse(
+      new TextDecoder().decode(body.body)
+    ) as D1QueryBody;
+    return checkedResult;
+  }
 };
 
-const decodeImportBody = (body: HttpBody.HttpBody): D1ImportBody =>
-  decodeRequestBody(body) as unknown as D1ImportBody;
+const decodeImportBody = (body: HttpBody.HttpBody) => {
+  const checkedResult: D1ImportBody = decodeRequestBody(
+    body
+  ) as unknown as D1ImportBody;
+  return checkedResult;
+};
 
-const loadAlchemyD1Modules = async (): Promise<LoadedAlchemyD1Modules> => {
+const loadAlchemyD1Modules = async () => {
   const cloudflareEntry = import.meta.resolve("@alchemy.run/cloudflare");
   const applyMigrationsUrl = new URL("D1/ApplyMigrations.js", cloudflareEntry);
   const requireFromAlchemy = createRequire(applyMigrationsUrl);
@@ -159,12 +168,19 @@ const loadAlchemyD1Modules = async (): Promise<LoadedAlchemyD1Modules> => {
       ) as Promise<AlchemyFormatModule>,
     ]);
 
-  return { applyMigrationsModule, credentialsModule, formatModule };
+  {
+    const checkedResult:
+      | Awaited<Promise<LoadedAlchemyD1Modules>>
+      | Promise<LoadedAlchemyD1Modules> = {
+      applyMigrationsModule,
+      credentialsModule,
+      formatModule,
+    };
+    return checkedResult;
+  }
 };
 
-const loadCheckedInMigrations = async (
-  directory: string
-): Promise<readonly MigrationFile[]> => {
+const loadCheckedInMigrations = async (directory: string) => {
   const migrationsDirectory = new URL(
     `../apps/api/${directory}/`,
     import.meta.url
@@ -176,31 +192,37 @@ const loadCheckedInMigrations = async (
     .filter((name) => name.endsWith(".sql"))
     .toSorted();
 
-  return Promise.all(
-    names.map(async (id) => ({
-      hash: "not-used-by-apply-migrations",
-      id,
-      sql: await readFile(new URL(id, migrationsDirectory), "utf-8"),
-    }))
-  );
+  {
+    const checkedResult:
+      | Awaited<Promise<readonly MigrationFile[]>>
+      | Promise<readonly MigrationFile[]> = Promise.all(
+      names.map(async (id) => ({
+        hash: "not-used-by-apply-migrations",
+        id,
+        sql: await readFile(new URL(id, migrationsDirectory), "utf-8"),
+      }))
+    );
+    return checkedResult;
+  }
 };
 
-const splitMigrationStatements = (sql: string): readonly string[] =>
-  sql
+const splitMigrationStatements = (sql: string) => {
+  const checkedResult: readonly string[] = sql
     .split(/--> statement-breakpoint(?:\r?\n)?/u)
     .map((statement) => statement.trim())
     .filter((statement) => statement.length > 0);
+  return checkedResult;
+};
 
-const migrationLedgerStatement = (
-  migration: MigrationFile,
-  index: number
-): string =>
-  `INSERT INTO d1_migrations (id, name, applied_at) VALUES ('${(index + 1).toString().padStart(5, "0")}', '${migration.id}', datetime('now'));`;
+const migrationLedgerStatement = (migration: MigrationFile, index: number) => {
+  const checkedResult = `INSERT INTO d1_migrations (id, name, applied_at) VALUES ('${(index + 1).toString().padStart(5, "0")}', '${migration.id}', datetime('now'));`;
+  return checkedResult;
+};
 
 const executeAtomically = (
   database: DatabaseSync,
   statements: readonly string[]
-): void => {
+) => {
   database.exec("BEGIN IMMEDIATE;");
   try {
     for (const statement of statements) {
@@ -213,17 +235,19 @@ const executeAtomically = (
   }
 };
 
-const splitD1SqlBatch = (sql: string): readonly string[] =>
-  sql
+const splitD1SqlBatch = (sql: string) => {
+  const checkedResult: readonly string[] = sql
     .split(";")
     .map((statement) => statement.trim())
     .filter((statement) => statement.length > 0)
     .map((statement) => `${statement};`);
+  return checkedResult;
+};
 
 const executeThroughD1Query = (
   database: DatabaseSync,
   statements: readonly string[]
-): void =>
+) =>
   executeAtomically(
     database,
     statements.flatMap((statement) => splitD1SqlBatch(statement))
@@ -232,7 +256,7 @@ const executeThroughD1Query = (
 const seedMigrationHistory = (
   database: DatabaseSync,
   migrations: readonly MigrationFile[]
-): void => {
+) => {
   database.exec(`CREATE TABLE d1_migrations (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -251,7 +275,7 @@ const runApplyMigrations = async (
   modules: LoadedAlchemyD1Modules,
   migrationsFiles: readonly MigrationFile[],
   client: HttpClient.HttpClient
-): Promise<void> => {
+) => {
   const credentials = modules.credentialsModule.apiTokenCredentials({
     apiBaseUrl: "https://cloudflare.invalid/client/v4",
     apiToken: Redacted.make("local-test-placeholder"),
@@ -288,19 +312,22 @@ const runApplyMigrations = async (
 const successfulD1Response = (
   request: Parameters<typeof HttpClientResponse.fromWeb>[0],
   results: readonly Record<string, unknown>[] = []
-): HttpClientResponse.HttpClientResponse =>
-  HttpClientResponse.fromWeb(
-    request,
-    Response.json({
-      result: [{ meta: {}, results, success: true }],
-    })
-  );
+) => {
+  const checkedResult: HttpClientResponse.HttpClientResponse =
+    HttpClientResponse.fromWeb(
+      request,
+      Response.json({
+        result: [{ meta: {}, results, success: true }],
+      })
+    );
+  return checkedResult;
+};
 
 const makeSemanticD1Client = (
   database: DatabaseSync,
   transport: RecordedD1Transport
-): HttpClient.HttpClient =>
-  HttpClient.make((request) =>
+) => {
+  const checkedResult: HttpClient.HttpClient = HttpClient.make((request) =>
     Effect.sync(() => {
       const requestUrl = new URL(request.url);
 
@@ -431,11 +458,18 @@ const makeSemanticD1Client = (
       return successfulD1Response(request, results);
     })
   );
+  return checkedResult;
+};
 
-const isMigrationRequest = (body: D1QueryBody): boolean =>
-  [body.sql, ...(body.batch?.map(({ sql }) => sql) ?? [])].some(
+const isMigrationRequest = (body: D1QueryBody) => {
+  const checkedResult: boolean = [
+    body.sql,
+    ...(body.batch?.map(({ sql }) => sql) ?? []),
+  ].some(
     (sql) => sql !== undefined && /INSERT INTO ["`]?d1_migrations\b/iu.test(sql)
   );
+  return checkedResult;
+};
 
 const migrationHistory = (database: DatabaseSync) =>
   database.prepare("SELECT name FROM d1_migrations ORDER BY id;").all();
@@ -581,7 +615,7 @@ describe("Alchemy D1 migration reconciliation", () => {
       ).toThrow("fixture event identity is immutable");
 
       const firstRunImportCount = transport.importFiles.length;
-      // Ledger conversion plus pending migration.
+
       expect(firstRunImportCount).toBe(2);
       expect(transport.queryBodies.filter(isMigrationRequest)).toHaveLength(0);
 
@@ -624,9 +658,6 @@ describe("Alchemy D1 migration reconciliation", () => {
         )
       ).rejects.toThrow();
 
-      // Conversion is a committed import before the later failing import.
-      // This fixture models each import as a local SQLite transaction; it is
-      // not a live Cloudflare transaction or recovery guarantee.
       expect(
         database
           .prepare("PRAGMA table_info(d1_migrations)")

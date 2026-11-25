@@ -38,7 +38,6 @@ const TescoProductNodeDto = Schema.Struct({
 });
 
 const TescoListingDto = Schema.Struct({
-  // Tesco's options.sortBy lists available choices; it is not a selected sort value.
   pageInformation: PageInformation,
   results: Schema.Array(Schema.Struct({ node: TescoProductNodeDto })),
 });
@@ -57,7 +56,6 @@ const TescoSuggestionsResponseDto = Schema.Struct({
   results: Schema.Array(Schema.Struct({ query: SearchQuery })),
 });
 
-// GraphQL
 const SearchReadOperation = defineReadOnlyGraphQlOperation({
   document: `
     query Search($query: String!, $page: Int!, $count: Int!, $sortBy: String!) {
@@ -106,7 +104,6 @@ const SearchReadOperation = defineReadOnlyGraphQlOperation({
   operationName: "Search",
 });
 
-// GraphQL
 const CategoryProductsReadOperation = defineReadOnlyGraphQlOperation({
   document: `
     query GetCategoryProducts(
@@ -169,9 +166,7 @@ interface TescoGraphQlQuery<Input, Output> {
   readonly variables: (input: Input) => GraphQlVariables;
 }
 
-const projectTescoListing = (
-  listing: typeof TescoListingDto.Type
-): CatalogueProductResults => {
+const projectTescoListing = (listing: typeof TescoListingDto.Type) => {
   const results = listing.results.map(({ node }) => {
     const projected = {
       id: node.id,
@@ -188,10 +183,13 @@ const projectTescoListing = (
       ? projected
       : { ...projected, defaultImageUrl: node.defaultImageUrl };
   });
-  return {
-    pageInformation: listing.pageInformation,
-    results,
-  };
+  {
+    const checkedResult: CatalogueProductResults = {
+      pageInformation: listing.pageInformation,
+      results,
+    };
+    return checkedResult;
+  }
 };
 
 /** Named Tesco search document paired with its response codec and projection. */
@@ -241,15 +239,18 @@ export const TescoCategoryProductsQuery: TescoGraphQlQuery<
 
 /** Tesco suggestions request mapper, response codec, and stable projection. */
 export const TescoSuggestionsEndpoint = {
-  decode: (
-    input: Schema.Json
-  ): Effect.Effect<CatalogueSuggestions, TescoCatalogueResponseInvalid> =>
-    Schema.decodeUnknownEffect(TescoSuggestionsResponseDto)(input).pipe(
+  decode: (input: Schema.Json) => {
+    const checkedResult: Effect.Effect<
+      CatalogueSuggestions,
+      TescoCatalogueResponseInvalid
+    > = Schema.decodeUnknownEffect(TescoSuggestionsResponseDto)(input).pipe(
       Effect.mapError(
         () => new TescoCatalogueResponseInvalid({ operation: "suggestions" })
       ),
       Effect.map(({ results }) => ({ results }))
-    ),
+    );
+    return checkedResult;
+  },
   request: ({
     input,
     locale,

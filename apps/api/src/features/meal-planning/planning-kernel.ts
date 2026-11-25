@@ -30,40 +30,52 @@ export interface PlanningAuthority {
   readonly content: PlanningContentSnapshot;
 }
 
-const violation = (
-  reason: MealPlanRuleViolation["reason"]
-): MealPlanRuleViolation => ({ _tag: "MealPlanRuleViolation", reason });
+const violation = (reason: MealPlanRuleViolation["reason"]) => {
+  const checkedResult: MealPlanRuleViolation = {
+    _tag: "MealPlanRuleViolation",
+    reason,
+  };
+  return checkedResult;
+};
 const casesHandled = (value: never): never => {
   throw new Error(`Unexpected meal plan variant: ${String(value)}`);
 };
 const gap = (
   reason: Extract<MealPlanResolution, { _tag: "Gap" }>["reason"],
   rationale: string
-): MealPlanResolution => ({ _tag: "Gap", rationale, reason });
+) => {
+  const checkedResult: MealPlanResolution = { _tag: "Gap", rationale, reason };
+  return checkedResult;
+};
 
-export const requirementIdentity = (
-  requirement: MealPlanRequirementKey
-): string =>
-  `${requirement.personId}\u0000${requirement.date}\u0000${requirement.occasion}`;
+export const requirementIdentity = (requirement: MealPlanRequirementKey) => {
+  const checkedResult = `${requirement.personId}\u0000${requirement.date}\u0000${requirement.occasion}`;
+  return checkedResult;
+};
 
 const optionIdentity = (option: {
   readonly optionId: string;
   readonly optionVersion: number;
   readonly kind: string;
-}): string =>
-  `${option.optionId}\u0000${option.optionVersion}\u0000${option.kind}`;
+}) => {
+  const checkedResult = `${option.optionId}\u0000${option.optionVersion}\u0000${option.kind}`;
+  return checkedResult;
+};
 
-const dateAt = (start: string, offset: number): string => {
+const dateAt = (start: string, offset: number) => {
   const date = new Date(`${start}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + offset);
-  return date.toISOString().slice(0, 10);
+  {
+    const checkedResult: string = date.toISOString().slice(0, 10);
+    return checkedResult;
+  }
 };
 
 /** Expand the saved per-person occasion configuration into dated requirements. */
 export const requiredCoverage = (
   request: MealPlanRequest,
   authority: PlanningAuthority
-): readonly MealPlanRequirementKey[] => {
+) => {
   const activePeople = new Set(
     authority.people.map(({ personId }) => personId)
   );
@@ -81,16 +93,21 @@ export const requiredCoverage = (
     };
     requirements.set(requirementIdentity(requirement), requirement);
   }
-  return [...requirements.values()].toSorted((left, right) =>
-    requirementIdentity(left).localeCompare(requirementIdentity(right))
-  );
+  {
+    const checkedResult: readonly MealPlanRequirementKey[] = [
+      ...requirements.values(),
+    ].toSorted((left, right) =>
+      requirementIdentity(left).localeCompare(requirementIdentity(right))
+    );
+    return checkedResult;
+  }
 };
 
 const preparationIssueForCoverage = (
   authority: PlanningAuthority,
   option: NonNullable<ReturnType<typeof currentOptionFor>>,
   requirement: MealPlanRequirementKey
-): MealPlanRuleViolation["reason"] | null => {
+) => {
   const weekday = new Date(`${requirement.date}T00:00:00.000Z`).getUTCDay();
   const matches = authority.content.availability.filter(
     (entry) =>
@@ -99,22 +116,29 @@ const preparationIssueForCoverage = (
       entry.weekdays.includes(weekday)
   );
   if (matches.length !== 1 && option.kind !== "external") {
-    return "availability_unknown";
+    const checkedResult: MealPlanRuleViolation["reason"] | null =
+      "availability_unknown";
+    return checkedResult;
   }
-  return optionPreparationIssue(
-    option,
-    matches[0],
-    authority.content.cookingCapacity
-  );
+  {
+    const checkedResult: MealPlanRuleViolation["reason"] | null =
+      optionPreparationIssue(
+        option,
+        matches[0],
+        authority.content.cookingCapacity
+      );
+    return checkedResult;
+  }
 };
 
 const preparationIssueForCook = (
   authority: PlanningAuthority,
   option: NonNullable<ReturnType<typeof currentOptionFor>>,
   date: string
-): MealPlanRuleViolation["reason"] | null => {
+) => {
   if (option.kind === "external") {
-    return null;
+    const checkedResult: MealPlanRuleViolation["reason"] | null = null;
+    return checkedResult;
   }
   const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay();
   const candidates = authority.content.availability.filter(
@@ -123,28 +147,38 @@ const preparationIssueForCook = (
       authority.people.some((person) => person.personId === entry.personId)
   );
   if (candidates.length === 0) {
-    return "availability_unknown";
+    const checkedResult: MealPlanRuleViolation["reason"] | null =
+      "availability_unknown";
+    return checkedResult;
   }
   const issues = candidates.map((entry) =>
     optionPreparationIssue(option, entry, authority.content.cookingCapacity)
   );
-  return issues.includes(null) ? null : (issues[0] ?? "availability_unknown");
+  {
+    const checkedResult: MealPlanRuleViolation["reason"] | null =
+      issues.includes(null) ? null : (issues[0] ?? "availability_unknown");
+    return checkedResult;
+  }
 };
 
-const personFor = (
-  people: readonly MealPlanPersonPin[],
-  personId: string
-): MealPlanPersonPin | undefined =>
-  people.find((person) => person.personId === personId);
+const personFor = (people: readonly MealPlanPersonPin[], personId: string) => {
+  const checkedResult: MealPlanPersonPin | undefined = people.find(
+    (person) => person.personId === personId
+  );
+  return checkedResult;
+};
 
 const validateOptionForPerson = (
   authority: PlanningAuthority,
   person: MealPlanPersonPin,
   option: MealPlanOptionRef,
   approval: boolean
-): MealPlanRuleViolation | null => {
+) => {
   if (currentOptionFor(authority.content, option) === undefined) {
-    return violation("content_version_changed");
+    const checkedResult: MealPlanRuleViolation | null = violation(
+      "content_version_changed"
+    );
+    return checkedResult;
   }
   const issue = contentSuitabilityIssue(authority.content, {
     optionRef: option,
@@ -153,12 +187,21 @@ const validateOptionForPerson = (
     safetyState: person.safetyState,
   });
   if (issue === "incompatible") {
-    return violation("incompatible_option");
+    const checkedResult: MealPlanRuleViolation | null = violation(
+      "incompatible_option"
+    );
+    return checkedResult;
   }
   if (approval && issue !== null) {
-    return violation("unreviewed_suitability");
+    const checkedResult: MealPlanRuleViolation | null = violation(
+      "unreviewed_suitability"
+    );
+    return checkedResult;
   }
-  return null;
+  {
+    const checkedResult: MealPlanRuleViolation | null = null;
+    return checkedResult;
+  }
 };
 
 type PreparedSource =
@@ -180,20 +223,25 @@ type PreparedSource =
 export const consumptionWeekStart = (
   request: MealPlanRequest,
   date: string
-): MealPlanRequirementKey["date"] => {
+) => {
   const day = Math.floor(
     (Date.parse(`${date}T00:00:00.000Z`) -
       Date.parse(`${request.startDate}T00:00:00.000Z`)) /
       86_400_000
   );
-  return MealPlanDate.make(dateAt(request.startDate, Math.floor(day / 7) * 7));
+  {
+    const checkedResult: MealPlanRequirementKey["date"] = MealPlanDate.make(
+      dateAt(request.startDate, Math.floor(day / 7) * 7)
+    );
+    return checkedResult;
+  }
 };
 
 const cookingCapacityIssue = (
   version: MealPlanVersion,
   request: MealPlanRequest,
   authority: PlanningAuthority
-): MealPlanRuleViolation["reason"] | null => {
+) => {
   const eventsByWeek = new Map<string, Set<string>>();
   const count = (
     eventId: string,
@@ -221,20 +269,25 @@ const cookingCapacityIssue = (
   for (const cook of version.cookEvents) {
     count(cook.eventId, cook.date, cook.option);
   }
-  return [...eventsByWeek.values()].some(
-    (events) =>
-      events.size >
-      authority.content.cookingCapacity.maximumSubstantialCookEventsPerWeek
-  )
-    ? "cooking_capacity_exceeded"
-    : null;
+  {
+    const checkedResult: MealPlanRuleViolation["reason"] | null = [
+      ...eventsByWeek.values(),
+    ].some(
+      (events) =>
+        events.size >
+        authority.content.cookingCapacity.maximumSubstantialCookEventsPerWeek
+    )
+      ? "cooking_capacity_exceeded"
+      : null;
+    return checkedResult;
+  }
 };
 
 const sourceQuantities = (
   version: MealPlanVersion,
   authority: PlanningAuthority,
   request: MealPlanRequest
-): Map<string, PreparedSource> => {
+) => {
   const sources = new Map<string, PreparedSource>();
   for (const portion of authority.content.preparedPortions) {
     if (portion.state !== "available" && portion.state !== "reserved") {
@@ -262,7 +315,10 @@ const sourceQuantities = (
       });
     }
   }
-  return sources;
+  {
+    const checkedResult: Map<string, PreparedSource> = sources;
+    return checkedResult;
+  }
 };
 
 type ValidationReason = MealPlanRuleViolation["reason"];
@@ -281,30 +337,36 @@ const preparedSourceOptionFor = (
   cookEvents: MealPlanVersion["cookEvents"],
   authority: PlanningAuthority,
   outputId: string
-): MealPlanOptionRef | null | undefined => {
+) => {
   const stock = authority.content.preparedPortions.find(
     (portion) => portion.id === outputId
   );
   if (stock !== undefined) {
-    return stock.sourceOptionRef;
+    const checkedResult: MealPlanOptionRef | null | undefined =
+      stock.sourceOptionRef;
+    return checkedResult;
   }
-  return cookEvents.find((cook) =>
-    cook.outputs.some((output) => output.outputId === outputId)
-  )?.option;
+  {
+    const checkedResult: MealPlanOptionRef | null | undefined = cookEvents.find(
+      (cook) => cook.outputs.some((output) => output.outputId === outputId)
+    )?.option;
+    return checkedResult;
+  }
 };
 
 const validatePreparedSourcePins = (
   version: MealPlanVersion,
   authority: PlanningAuthority,
   usedRefs: Set<string>
-): ValidationReason | null => {
+) => {
   const preparedOutputIds = new Set(
     version.coverage.flatMap(({ resolution }) =>
       resolution._tag === "Prepared" ? [resolution.outputId] : []
     )
   );
   if (version.pins.preparedSources.length !== preparedOutputIds.size) {
-    return "content_version_changed";
+    const checkedResult: ValidationReason | null = "content_version_changed";
+    return checkedResult;
   }
   for (const outputId of preparedOutputIds) {
     const pinned = version.pins.preparedSources.find(
@@ -316,11 +378,14 @@ const validatePreparedSourcePins = (
       outputId
     );
     if (pinned === undefined) {
-      return "content_version_changed";
+      const checkedResult: ValidationReason | null = "content_version_changed";
+      return checkedResult;
     }
     if (pinned.optionRef === null) {
       if (current !== null && current !== undefined) {
-        return "content_version_changed";
+        const checkedResult: ValidationReason | null =
+          "content_version_changed";
+        return checkedResult;
       }
       continue;
     }
@@ -329,17 +394,21 @@ const validatePreparedSourcePins = (
       current === undefined ||
       optionIdentity(pinned.optionRef) !== optionIdentity(current)
     ) {
-      return "content_version_changed";
+      const checkedResult: ValidationReason | null = "content_version_changed";
+      return checkedResult;
     }
     usedRefs.add(optionIdentity(current));
   }
-  return null;
+  {
+    const checkedResult: ValidationReason | null = null;
+    return checkedResult;
+  }
 };
 
 const validateContentPins = (
   version: MealPlanVersion,
   authority: PlanningAuthority
-): ValidationReason | null => {
+) => {
   const pinnedRefs = new Set(version.pins.content.map(optionIdentity));
   const pinnedSnapshots = new Set(
     version.pins.contentSnapshots.map(optionIdentity)
@@ -348,7 +417,8 @@ const validateContentPins = (
     pinnedRefs.size !== pinnedSnapshots.size ||
     [...pinnedRefs].some((key) => !pinnedSnapshots.has(key))
   ) {
-    return "content_version_changed";
+    const checkedResult: ValidationReason | null = "content_version_changed";
+    return checkedResult;
   }
   for (const snapshot of version.pins.contentSnapshots) {
     const current = currentOptionFor(authority.content, snapshot);
@@ -357,7 +427,8 @@ const validateContentPins = (
       JSON.stringify(Schema.encodeSync(MealOption)(snapshot)) !==
         JSON.stringify(Schema.encodeSync(MealOption)(current))
     ) {
-      return "content_version_changed";
+      const checkedResult: ValidationReason | null = "content_version_changed";
+      return checkedResult;
     }
   }
   const usedRefs = new Set<string>();
@@ -375,28 +446,35 @@ const validateContentPins = (
     usedRefs
   );
   if (preparedPinIssue !== null) {
-    return preparedPinIssue;
+    const checkedResult: ValidationReason | null = preparedPinIssue;
+    return checkedResult;
   }
-  return pinnedRefs.size === usedRefs.size &&
-    [...usedRefs].every((key) => pinnedRefs.has(key))
-    ? null
-    : "content_version_changed";
+  {
+    const checkedResult: ValidationReason | null =
+      pinnedRefs.size === usedRefs.size &&
+      [...usedRefs].every((key) => pinnedRefs.has(key))
+        ? null
+        : "content_version_changed";
+    return checkedResult;
+  }
 };
 
 const validatePins = (
   version: MealPlanVersion,
   authority: PlanningAuthority
-): ValidationReason | null => {
+) => {
   if (
     authority.people.length === 0 ||
     new Set(authority.people.map(({ personId }) => personId)).size !==
       authority.people.length ||
     version.pins.people.length !== authority.people.length
   ) {
-    return "invalid_requirement_matrix";
+    const checkedResult: ValidationReason | null = "invalid_requirement_matrix";
+    return checkedResult;
   }
   if (version.pins.configVersion !== authority.content.configVersion) {
-    return "config_version_changed";
+    const checkedResult: ValidationReason | null = "config_version_changed";
+    return checkedResult;
   }
   for (const pin of version.pins.people) {
     const current = personFor(authority.people, pin.personId);
@@ -405,7 +483,8 @@ const validatePins = (
       current.profileVersion !== pin.profileVersion ||
       current.safetyState !== pin.safetyState
     ) {
-      return "profile_version_changed";
+      const checkedResult: ValidationReason | null = "profile_version_changed";
+      return checkedResult;
     }
   }
   const routines = [
@@ -419,30 +498,42 @@ const validatePins = (
           routine.id === pin.routineId && routine.version === pin.routineVersion
       )
     ) {
-      return "config_version_changed";
+      const checkedResult: ValidationReason | null = "config_version_changed";
+      return checkedResult;
     }
   }
-  return validateContentPins(version, authority);
+  {
+    const checkedResult: ValidationReason | null = validateContentPins(
+      version,
+      authority
+    );
+    return checkedResult;
+  }
 };
 
 const validateRequirementMatrix = (
   version: MealPlanVersion,
   request: MealPlanRequest,
   authority: PlanningAuthority
-): ValidationReason | null => {
+) => {
   const expected = requiredCoverage(request, authority);
   if (expected.length === 0) {
-    return "config_missing";
+    const checkedResult: ValidationReason | null = "config_missing";
+    return checkedResult;
   }
   const expectedKeys = new Set(expected.map(requirementIdentity));
   const actualKeys = version.coverage.map(({ requirement }) =>
     requirementIdentity(requirement)
   );
-  return expected.length === version.coverage.length &&
-    actualKeys.length === new Set(actualKeys).size &&
-    actualKeys.every((key) => expectedKeys.has(key))
-    ? null
-    : "invalid_requirement_matrix";
+  {
+    const checkedResult: ValidationReason | null =
+      expected.length === version.coverage.length &&
+      actualKeys.length === new Set(actualKeys).size &&
+      actualKeys.every((key) => expectedKeys.has(key))
+        ? null
+        : "invalid_requirement_matrix";
+    return checkedResult;
+  }
 };
 
 const validateMealOptionCoverage = (
@@ -450,10 +541,11 @@ const validateMealOptionCoverage = (
   requirement: MealPlanRequirementKey,
   authority: PlanningAuthority,
   approval: boolean
-): ValidationReason | null => {
+) => {
   const person = personFor(authority.people, requirement.personId);
   if (person === undefined) {
-    return "invalid_requirement_matrix";
+    const checkedResult: ValidationReason | null = "invalid_requirement_matrix";
+    return checkedResult;
   }
   const suitability = validateOptionForPerson(
     authority,
@@ -462,38 +554,52 @@ const validateMealOptionCoverage = (
     approval
   );
   if (suitability !== null) {
-    return suitability.reason;
+    const checkedResult: ValidationReason | null = suitability.reason;
+    return checkedResult;
   }
   if (!approval) {
-    return null;
+    const checkedResult: ValidationReason | null = null;
+    return checkedResult;
   }
   const option = currentOptionFor(authority.content, resolution.option);
   if (option === undefined || !isShoppingResolved(option)) {
-    return "unresolved_shopping";
+    const checkedResult: ValidationReason | null = "unresolved_shopping";
+    return checkedResult;
   }
-  return preparationIssueForCoverage(authority, option, requirement);
+  {
+    const checkedResult: ValidationReason | null = preparationIssueForCoverage(
+      authority,
+      option,
+      requirement
+    );
+    return checkedResult;
+  }
 };
 
 const allocationConflicts = (
   existing: EventAllocation,
   resolution: Extract<MealPlanResolution, { _tag: "MealOption" }>,
   requirement: MealPlanRequirementKey
-): boolean =>
-  existing.date !== requirement.date ||
-  (resolution.quantity !== null &&
-    existing.unit !== null &&
-    existing.unit !== resolution.quantity.unit);
+) => {
+  const checkedResult: boolean =
+    existing.date !== requirement.date ||
+    (resolution.quantity !== null &&
+      existing.unit !== null &&
+      existing.unit !== resolution.quantity.unit);
+  return checkedResult;
+};
 
 const recordMealOptionAllocation = (
   resolution: Extract<MealPlanResolution, { _tag: "MealOption" }>,
   requirement: MealPlanRequirementKey,
   approval: boolean,
   collected: CollectedCoverage
-): ValidationReason | null => {
+) => {
   const optionKey = optionIdentity(resolution.option);
   const prior = collected.optionEvents.get(resolution.eventId);
   if (prior !== undefined && prior !== optionKey) {
-    return "cook_event_conflict";
+    const checkedResult: ValidationReason | null = "cook_event_conflict";
+    return checkedResult;
   }
   collected.optionEvents.set(resolution.eventId, optionKey);
   const existing = collected.eventAllocations.get(resolution.eventId);
@@ -501,14 +607,16 @@ const recordMealOptionAllocation = (
     existing !== undefined &&
     allocationConflicts(existing, resolution, requirement)
   ) {
-    return "cook_event_conflict";
+    const checkedResult: ValidationReason | null = "cook_event_conflict";
+    return checkedResult;
   }
   if (
     approval &&
     resolution.option.kind !== "external" &&
     resolution.quantity === null
   ) {
-    return "unresolved_allocation";
+    const checkedResult: ValidationReason | null = "unresolved_allocation";
+    return checkedResult;
   }
   if (existing === undefined) {
     collected.eventAllocations.set(resolution.eventId, {
@@ -521,7 +629,10 @@ const recordMealOptionAllocation = (
     existing.amount += resolution.quantity?.amount ?? 0;
     existing.unit ??= resolution.quantity?.unit ?? null;
   }
-  return null;
+  {
+    const checkedResult: ValidationReason | null = null;
+    return checkedResult;
+  }
 };
 
 const collectCoverageEntry = (
@@ -529,13 +640,17 @@ const collectCoverageEntry = (
   authority: PlanningAuthority,
   approval: boolean,
   collected: CollectedCoverage
-): ValidationReason | null => {
+) => {
   const { resolution, requirement } = coverage;
   if (resolution._tag === "Gap") {
-    return approval ? "unresolved_gap" : null;
+    const checkedResult: ValidationReason | null = approval
+      ? "unresolved_gap"
+      : null;
+    return checkedResult;
   }
   if (resolution._tag !== "MealOption") {
-    return null;
+    const checkedResult: ValidationReason | null = null;
+    return checkedResult;
   }
   const contentIssue = validateMealOptionCoverage(
     resolution,
@@ -543,17 +658,19 @@ const collectCoverageEntry = (
     authority,
     approval
   );
-  return (
-    contentIssue ??
-    recordMealOptionAllocation(resolution, requirement, approval, collected)
-  );
+  {
+    const checkedResult: ValidationReason | null =
+      contentIssue ??
+      recordMealOptionAllocation(resolution, requirement, approval, collected);
+    return checkedResult;
+  }
 };
 
 const collectCoverage = (
   version: MealPlanVersion,
   authority: PlanningAuthority,
   approval: boolean
-): CollectedCoverage | MealPlanRuleViolation => {
+) => {
   const collected: CollectedCoverage = {
     eventAllocations: new Map(),
     optionEvents: new Map(),
@@ -566,10 +683,15 @@ const collectCoverage = (
       collected
     );
     if (reason !== null) {
-      return violation(reason);
+      const checkedResult: CollectedCoverage | MealPlanRuleViolation =
+        violation(reason);
+      return checkedResult;
     }
   }
-  return collected;
+  {
+    const checkedResult: CollectedCoverage | MealPlanRuleViolation = collected;
+    return checkedResult;
+  }
 };
 
 const validateCookOutputs = (
@@ -577,9 +699,11 @@ const validateCookOutputs = (
   option: PlanningContentSnapshot["options"][number],
   authority: PlanningAuthority,
   outputIds: Set<string>
-): ValidationReason | null => {
+) => {
   if (option.kind === "external") {
-    return cook.outputs.length > 0 ? "invalid_cook_output" : null;
+    const checkedResult: ValidationReason | null =
+      cook.outputs.length > 0 ? "invalid_cook_output" : null;
+    return checkedResult;
   }
   const yieldQuantity =
     option.kind === "packaged" ? option.quantity : option.yield;
@@ -590,17 +714,22 @@ const validateCookOutputs = (
         (item) => item.id === output.outputId
       )
     ) {
-      return "invalid_cook_output";
+      const checkedResult: ValidationReason | null = "invalid_cook_output";
+      return checkedResult;
     }
     if (
       yieldQuantity._tag === "Known" &&
       output.quantity.unit !== yieldQuantity.unit
     ) {
-      return "quantity_unit_mismatch";
+      const checkedResult: ValidationReason | null = "quantity_unit_mismatch";
+      return checkedResult;
     }
     outputIds.add(output.outputId);
   }
-  return null;
+  {
+    const checkedResult: ValidationReason | null = null;
+    return checkedResult;
+  }
 };
 
 const validateCookEvents = (
@@ -609,7 +738,7 @@ const validateCookEvents = (
   authority: PlanningAuthority,
   approval: boolean,
   collected: CollectedCoverage
-): ValidationReason | null => {
+) => {
   const eventIds = new Set<string>();
   const outputIds = new Set<string>();
   for (const cook of version.cookEvents) {
@@ -620,34 +749,43 @@ const validateCookEvents = (
       cook.date < request.startDate ||
       cook.date >= dateAt(request.startDate, request.weeks * 7)
     ) {
-      return "cook_event_conflict";
+      const checkedResult: ValidationReason | null = "cook_event_conflict";
+      return checkedResult;
     }
     eventIds.add(cook.eventId);
     if (approval) {
       if (!isShoppingResolved(option)) {
-        return "unresolved_shopping";
+        const checkedResult: ValidationReason | null = "unresolved_shopping";
+        return checkedResult;
       }
       const preparation = preparationIssueForCook(authority, option, cook.date);
       if (preparation !== null) {
-        return preparation;
+        const checkedResult: ValidationReason | null = preparation;
+        return checkedResult;
       }
     }
     if (
       collected.optionEvents.has(cook.eventId) &&
       collected.optionEvents.get(cook.eventId) !== optionIdentity(cook.option)
     ) {
-      return "cook_event_conflict";
+      const checkedResult: ValidationReason | null = "cook_event_conflict";
+      return checkedResult;
     }
     const meal = collected.eventAllocations.get(cook.eventId);
     if (meal !== undefined && meal.date < cook.date) {
-      return "cook_event_conflict";
+      const checkedResult: ValidationReason | null = "cook_event_conflict";
+      return checkedResult;
     }
     const outputIssue = validateCookOutputs(cook, option, authority, outputIds);
     if (outputIssue !== null) {
-      return outputIssue;
+      const checkedResult: ValidationReason | null = outputIssue;
+      return checkedResult;
     }
   }
-  return null;
+  {
+    const checkedResult: ValidationReason | null = null;
+    return checkedResult;
+  }
 };
 
 const validateAllocatedYields = (
@@ -655,11 +793,12 @@ const validateAllocatedYields = (
   authority: PlanningAuthority,
   approval: boolean,
   allocations: ReadonlyMap<string, EventAllocation>
-): ValidationReason | null => {
+) => {
   for (const [eventId, allocation] of allocations) {
     const option = currentOptionFor(authority.content, allocation.option);
     if (option === undefined) {
-      return "content_version_changed";
+      const checkedResult: ValidationReason | null = "content_version_changed";
+      return checkedResult;
     }
     if (option.kind === "external") {
       continue;
@@ -668,12 +807,14 @@ const validateAllocatedYields = (
       option.kind === "packaged" ? option.quantity : option.yield;
     if (yieldQuantity._tag !== "Known") {
       if (approval) {
-        return "unresolved_shopping";
+        const checkedResult: ValidationReason | null = "unresolved_shopping";
+        return checkedResult;
       }
       continue;
     }
     if (allocation.unit !== null && allocation.unit !== yieldQuantity.unit) {
-      return "quantity_unit_mismatch";
+      const checkedResult: ValidationReason | null = "quantity_unit_mismatch";
+      return checkedResult;
     }
     const cook = version.cookEvents.find((entry) => entry.eventId === eventId);
     const matchingOutputs =
@@ -685,10 +826,14 @@ const validateAllocatedYields = (
       allocation.amount + matchingOutputs >
       yieldQuantity.amount * (cook?.batchCount ?? 1) + 1e-9
     ) {
-      return "prepared_overallocated";
+      const checkedResult: ValidationReason | null = "prepared_overallocated";
+      return checkedResult;
     }
   }
-  return null;
+  {
+    const checkedResult: ValidationReason | null = null;
+    return checkedResult;
+  }
 };
 
 const validateUnallocatedCookYields = (
@@ -696,18 +841,20 @@ const validateUnallocatedCookYields = (
   authority: PlanningAuthority,
   approval: boolean,
   allocations: ReadonlyMap<string, EventAllocation>
-): ValidationReason | null => {
+) => {
   for (const cook of version.cookEvents) {
     if (allocations.has(cook.eventId)) {
       continue;
     }
     const option = currentOptionFor(authority.content, cook.option);
     if (option === undefined) {
-      return "content_version_changed";
+      const checkedResult: ValidationReason | null = "content_version_changed";
+      return checkedResult;
     }
     if (option.kind === "external") {
       if (cook.outputs.length > 0) {
-        return "invalid_cook_output";
+        const checkedResult: ValidationReason | null = "invalid_cook_output";
+        return checkedResult;
       }
       continue;
     }
@@ -715,7 +862,8 @@ const validateUnallocatedCookYields = (
       option.kind === "packaged" ? option.quantity : option.yield;
     if (yieldQuantity._tag !== "Known") {
       if (approval) {
-        return "unresolved_shopping";
+        const checkedResult: ValidationReason | null = "unresolved_shopping";
+        return checkedResult;
       }
       continue;
     }
@@ -724,10 +872,14 @@ const validateUnallocatedCookYields = (
       0
     );
     if (produced > yieldQuantity.amount * cook.batchCount + 1e-9) {
-      return "prepared_overallocated";
+      const checkedResult: ValidationReason | null = "prepared_overallocated";
+      return checkedResult;
     }
   }
-  return null;
+  {
+    const checkedResult: ValidationReason | null = null;
+    return checkedResult;
+  }
 };
 
 const validatePreparedCoverage = (
@@ -735,7 +887,7 @@ const validatePreparedCoverage = (
   request: MealPlanRequest,
   authority: PlanningAuthority,
   approval: boolean
-): ValidationReason | null => {
+) => {
   const sources = sourceQuantities(version, authority, request);
   const used = new Map<string, number>();
   for (const { requirement, resolution } of version.coverage) {
@@ -744,13 +896,15 @@ const validatePreparedCoverage = (
     }
     const source = sources.get(resolution.outputId);
     if (source === undefined) {
-      return "prepared_output_missing";
+      const checkedResult: ValidationReason | null = "prepared_output_missing";
+      return checkedResult;
     }
     if (
       source.kind === "stock" &&
       source.confirmedWeek !== consumptionWeekStart(request, requirement.date)
     ) {
-      return "prepared_output_missing";
+      const checkedResult: ValidationReason | null = "prepared_output_missing";
+      return checkedResult;
     }
     if (
       source.kind === "cook" &&
@@ -758,24 +912,30 @@ const validatePreparedCoverage = (
         consumptionWeekStart(request, requirement.date) !==
           consumptionWeekStart(request, source.cookDate))
     ) {
-      return "prepared_output_missing";
+      const checkedResult: ValidationReason | null = "prepared_output_missing";
+      return checkedResult;
     }
     if (source.unit !== resolution.quantity.unit) {
-      return "quantity_unit_mismatch";
+      const checkedResult: ValidationReason | null = "quantity_unit_mismatch";
+      return checkedResult;
     }
     const next =
       (used.get(resolution.outputId) ?? 0) + resolution.quantity.amount;
     if (next > source.amount + 1e-9) {
-      return "prepared_overallocated";
+      const checkedResult: ValidationReason | null = "prepared_overallocated";
+      return checkedResult;
     }
     used.set(resolution.outputId, next);
     if (approval) {
       const person = personFor(authority.people, requirement.personId);
       if (person === undefined) {
-        return "invalid_requirement_matrix";
+        const checkedResult: ValidationReason | null =
+          "invalid_requirement_matrix";
+        return checkedResult;
       }
       if (source.optionRef === null) {
-        return "unreviewed_suitability";
+        const checkedResult: ValidationReason | null = "unreviewed_suitability";
+        return checkedResult;
       }
       const suitability = validateOptionForPerson(
         authority,
@@ -784,11 +944,15 @@ const validatePreparedCoverage = (
         true
       );
       if (suitability !== null) {
-        return suitability.reason;
+        const checkedResult: ValidationReason | null = suitability.reason;
+        return checkedResult;
       }
     }
   }
-  return null;
+  {
+    const checkedResult: ValidationReason | null = null;
+    return checkedResult;
+  }
 };
 
 /** Validate a complete version against a fresh server-owned authority snapshot. */
@@ -797,18 +961,21 @@ export const validatePlanVersion = (
   request: MealPlanRequest,
   authority: PlanningAuthority,
   approval: boolean
-): MealPlanRuleViolation | null => {
+) => {
   const pinIssue = validatePins(version, authority);
   if (pinIssue !== null) {
-    return violation(pinIssue);
+    const checkedResult: MealPlanRuleViolation | null = violation(pinIssue);
+    return checkedResult;
   }
   const matrixIssue = validateRequirementMatrix(version, request, authority);
   if (matrixIssue !== null) {
-    return violation(matrixIssue);
+    const checkedResult: MealPlanRuleViolation | null = violation(matrixIssue);
+    return checkedResult;
   }
   const collected = collectCoverage(version, authority, approval);
   if ("_tag" in collected) {
-    return collected;
+    const checkedResult: MealPlanRuleViolation | null = collected;
+    return checkedResult;
   }
   const cookIssue = validateCookEvents(
     version,
@@ -818,7 +985,8 @@ export const validatePlanVersion = (
     collected
   );
   if (cookIssue !== null) {
-    return violation(cookIssue);
+    const checkedResult: MealPlanRuleViolation | null = violation(cookIssue);
+    return checkedResult;
   }
   const allocatedYieldIssue = validateAllocatedYields(
     version,
@@ -827,7 +995,9 @@ export const validatePlanVersion = (
     collected.eventAllocations
   );
   if (allocatedYieldIssue !== null) {
-    return violation(allocatedYieldIssue);
+    const checkedResult: MealPlanRuleViolation | null =
+      violation(allocatedYieldIssue);
+    return checkedResult;
   }
   const cookYieldIssue = validateUnallocatedCookYields(
     version,
@@ -836,7 +1006,9 @@ export const validatePlanVersion = (
     collected.eventAllocations
   );
   if (cookYieldIssue !== null) {
-    return violation(cookYieldIssue);
+    const checkedResult: MealPlanRuleViolation | null =
+      violation(cookYieldIssue);
+    return checkedResult;
   }
   const preparedIssue = validatePreparedCoverage(
     version,
@@ -845,40 +1017,48 @@ export const validatePlanVersion = (
     approval
   );
   if (preparedIssue !== null) {
-    return violation(preparedIssue);
+    const checkedResult: MealPlanRuleViolation | null =
+      violation(preparedIssue);
+    return checkedResult;
   }
   if (approval) {
     const capacityIssue = cookingCapacityIssue(version, request, authority);
     if (capacityIssue !== null) {
-      return violation(capacityIssue);
+      const checkedResult: MealPlanRuleViolation | null =
+        violation(capacityIssue);
+      return checkedResult;
     }
   }
-  return null;
+  {
+    const checkedResult: MealPlanRuleViolation | null = null;
+    return checkedResult;
+  }
 };
 
 const missingOutput = (
   reason: "dependent_output_removed" | "unavailable_prepared_food"
-): MealPlanResolution => ({
-  _tag: "Gap",
-  rationale: "The prepared food for this meal is no longer available.",
-  reason,
-});
+) => {
+  const checkedResult: MealPlanResolution = {
+    _tag: "Gap",
+    rationale: "The prepared food for this meal is no longer available.",
+    reason,
+  };
+  return checkedResult;
+};
 
 /** Repair downstream prepared meals after a cook event changes or disappears. */
 export const repairPreparedDependencies = (
   version: MealPlanVersion,
   request: MealPlanRequest,
   authority: PlanningAuthority
-): {
-  readonly version: MealPlanVersion;
-  readonly changed: readonly MealPlanRequirementKey[];
-} => {
+) => {
   const sources = sourceQuantities(version, authority, request);
   const used = new Map<string, number>();
   const changed: MealPlanRequirementKey[] = [];
-  const coverage = version.coverage.map((entry): MealPlanCoverage => {
+  const coverage = version.coverage.map((entry) => {
     if (entry.resolution._tag !== "Prepared") {
-      return entry;
+      const checkedResult: MealPlanCoverage = entry;
+      return checkedResult;
     }
     const { outputId, quantity } = entry.resolution;
     const source = sources.get(outputId);
@@ -899,26 +1079,38 @@ export const repairPreparedDependencies = (
       next > source.amount + 1e-9
     ) {
       changed.push(entry.requirement);
-      return {
-        ...entry,
-        resolution: missingOutput(
-          source === undefined
-            ? "dependent_output_removed"
-            : "unavailable_prepared_food"
-        ),
-      };
+      {
+        const checkedResult: MealPlanCoverage = {
+          ...entry,
+          resolution: missingOutput(
+            source === undefined
+              ? "dependent_output_removed"
+              : "unavailable_prepared_food"
+          ),
+        };
+        return checkedResult;
+      }
     }
     used.set(outputId, next);
-    return entry;
+    {
+      const checkedResult: MealPlanCoverage = entry;
+      return checkedResult;
+    }
   });
-  return { changed, version: { ...version, coverage } };
+  {
+    const checkedResult: {
+      readonly version: MealPlanVersion;
+      readonly changed: readonly MealPlanRequirementKey[];
+    } = { changed, version: { ...version, coverage } };
+    return checkedResult;
+  }
 };
 
 const pinsFor = (
   authority: PlanningAuthority,
   coverage: readonly MealPlanCoverage[],
   cookEvents: MealPlanVersion["cookEvents"]
-): MealPlanVersion["pins"] => {
+) => {
   const content = new Map<string, MealPlanOptionRef>();
   for (const { resolution } of coverage) {
     if (resolution._tag === "MealOption") {
@@ -942,35 +1134,41 @@ const pinsFor = (
     }
     return { optionRef, outputId };
   });
-  return {
-    configVersion: authority.content.configVersion,
-    content: [...content.values()],
-    contentSnapshots: [...content.values()].flatMap((reference) => {
-      const option = currentOptionFor(authority.content, reference);
-      return option === undefined ? [] : [option];
-    }),
-    people: authority.people,
-    preparedSources,
-    routines: [
-      ...authority.content.routines.filter(({ state }) => state === "active"),
-      ...authority.content.oneOffRoutines,
-    ].map(({ id, version }) => ({ routineId: id, routineVersion: version })),
-  };
+  {
+    const checkedResult: MealPlanVersion["pins"] = {
+      configVersion: authority.content.configVersion,
+      content: [...content.values()],
+      contentSnapshots: [...content.values()].flatMap((reference) => {
+        const option = currentOptionFor(authority.content, reference);
+        return option === undefined ? [] : [option];
+      }),
+      people: authority.people,
+      preparedSources,
+      routines: [
+        ...authority.content.routines.filter(({ state }) => state === "active"),
+        ...authority.content.oneOffRoutines,
+      ].map(({ id, version }) => ({ routineId: id, routineVersion: version })),
+    };
+    return checkedResult;
+  }
 };
 
 export const repinPlanVersion = (
   version: MealPlanVersion,
   authority: PlanningAuthority
-): MealPlanVersion => ({
-  ...version,
-  pins: pinsFor(authority, version.coverage, version.cookEvents),
-});
+) => {
+  const checkedResult: MealPlanVersion = {
+    ...version,
+    pins: pinsFor(authority, version.coverage, version.cookEvents),
+  };
+  return checkedResult;
+};
 
 export const makeInitialPlanVersion = (
   request: MealPlanRequest,
   authority: PlanningAuthority,
   initialCoverage: readonly MealPlanCoverage[] = []
-): MealPlanVersion => {
+) => {
   const byKey = new Map(
     initialCoverage.map((entry) => [
       requirementIdentity(entry.requirement),
@@ -978,27 +1176,32 @@ export const makeInitialPlanVersion = (
     ])
   );
   const eventIds = new Map<string, string>();
-  const eventIdFor = (key: string): string => {
+  const eventIdFor = (key: string) => {
     const existing = eventIds.get(key);
     if (existing !== undefined) {
-      return existing;
+      const checkedResult: string = existing;
+      return checkedResult;
     }
     const id = `event_${eventIds.size + 1}`;
     eventIds.set(key, id);
-    return id;
+    {
+      const checkedResult: string = id;
+      return checkedResult;
+    }
   };
   const plannedOption = (
     requirement: MealPlanRequirementKey,
     optionRef: MealPlanOptionRef,
     eventId: string,
     rationale: string
-  ): MealPlanResolution => {
+  ) => {
     const option = currentOptionFor(authority.content, optionRef);
     if (option === undefined) {
-      return gap(
+      const checkedResult: MealPlanResolution = gap(
         "no_compatible_option",
         "This saved food option is no longer available."
       );
+      return checkedResult;
     }
     const preparationIssue = preparationIssueForCoverage(
       authority,
@@ -1006,152 +1209,175 @@ export const makeInitialPlanVersion = (
       requirement
     );
     if (preparationIssue !== null) {
-      return gap(
+      const checkedResult: MealPlanResolution = gap(
         "preparation_context_unresolved",
         `Review this meal's equipment or preparation window: ${preparationIssue}.`
       );
+      return checkedResult;
     }
-    return {
-      _tag: "MealOption",
-      eventId,
-      option: optionRef,
-      quantity: null,
-      rationale,
-    };
+    {
+      const checkedResult: MealPlanResolution = {
+        _tag: "MealOption",
+        eventId,
+        option: optionRef,
+        quantity: null,
+        rationale,
+      };
+      return checkedResult;
+    }
   };
-  const coverage = requiredCoverage(request, authority).map(
-    (requirement): MealPlanCoverage => {
-      const supplied = byKey.get(requirementIdentity(requirement));
-      if (supplied !== undefined) {
-        return supplied;
-      }
-      const person = personFor(authority.people, requirement.personId);
-      if (person === undefined) {
-        return {
-          requirement,
-          resolution: gap(
-            "not_planned",
-            "This person needs a saved planning profile."
-          ),
-        };
-      }
-      const weekday = new Date(`${requirement.date}T00:00:00.000Z`).getUTCDay();
-      const routine = resolveRoutineForCoverage(authority.content, {
+  const coverage = requiredCoverage(request, authority).map((requirement) => {
+    const supplied = byKey.get(requirementIdentity(requirement));
+    if (supplied !== undefined) {
+      const checkedResult: MealPlanCoverage = supplied;
+      return checkedResult;
+    }
+    const person = personFor(authority.people, requirement.personId);
+    if (person === undefined) {
+      const checkedResult: MealPlanCoverage = {
+        requirement,
+        resolution: gap(
+          "not_planned",
+          "This person needs a saved planning profile."
+        ),
+      };
+      return checkedResult;
+    }
+    const weekday = new Date(`${requirement.date}T00:00:00.000Z`).getUTCDay();
+    const routine = resolveRoutineForCoverage(authority.content, {
+      profileVersion: person.profileVersion,
+      requirement: {
+        date: requirement.date,
+        occasionId: requirement.occasion,
+        personId: requirement.personId,
+        weekday,
+      },
+      safetyState: person.safetyState,
+    });
+    if (routine._tag === "Conflict") {
+      const checkedResult: MealPlanCoverage = {
+        requirement,
+        resolution: gap(
+          "routine_conflict",
+          "Conflicting routines need an adult choice."
+        ),
+      };
+      return checkedResult;
+    }
+    if (routine._tag === "BlockedSuitability") {
+      const location =
+        authority.content.availability.find(
+          (entry) =>
+            entry.personId === requirement.personId &&
+            entry.occasionId === requirement.occasion &&
+            entry.weekdays.includes(weekday)
+        )?.location ?? "home";
+      const fallback = resolveFallbackForCoverage(authority.content, {
+        location,
+        occasionId: requirement.occasion,
+        personId: person.personId,
         profileVersion: person.profileVersion,
-        requirement: {
-          date: requirement.date,
-          occasionId: requirement.occasion,
-          personId: requirement.personId,
-          weekday,
-        },
         safetyState: person.safetyState,
       });
-      if (routine._tag === "Conflict") {
-        return {
+      if (fallback._tag === "Selected") {
+        const checkedResult: MealPlanCoverage = {
           requirement,
-          resolution: gap(
-            "routine_conflict",
-            "Conflicting routines need an adult choice."
+          resolution: plannedOption(
+            requirement,
+            fallback.optionRef,
+            eventIdFor(
+              `${requirementIdentity(requirement)}|${optionIdentity(fallback.optionRef)}`
+            ),
+            `Approved fallback ${fallback.fallbackId} covers this person's meal.`
           ),
         };
+        return checkedResult;
       }
-      if (routine._tag === "BlockedSuitability") {
-        const location =
-          authority.content.availability.find(
-            (entry) =>
-              entry.personId === requirement.personId &&
-              entry.occasionId === requirement.occasion &&
-              entry.weekdays.includes(weekday)
-          )?.location ?? "home";
-        const fallback = resolveFallbackForCoverage(authority.content, {
-          location,
-          occasionId: requirement.occasion,
-          personId: person.personId,
-          profileVersion: person.profileVersion,
-          safetyState: person.safetyState,
-        });
-        if (fallback._tag === "Selected") {
-          return {
-            requirement,
-            resolution: plannedOption(
-              requirement,
-              fallback.optionRef,
-              eventIdFor(
-                `${requirementIdentity(requirement)}|${optionIdentity(fallback.optionRef)}`
-              ),
-              `Approved fallback ${fallback.fallbackId} covers this person's meal.`
-            ),
-          };
-        }
-        return {
+      {
+        const checkedResult: MealPlanCoverage = {
           requirement,
           resolution: gap(
             "unconfirmed_suitability",
             "The routine meal needs suitability review or an approved fallback."
           ),
         };
+        return checkedResult;
       }
-      if (routine._tag === "NoRoutine") {
-        return {
+    }
+    if (routine._tag === "NoRoutine") {
+      const checkedResult: MealPlanCoverage = {
+        requirement,
+        resolution: gap(
+          "not_planned",
+          "No saved routine covers this occasion yet."
+        ),
+      };
+      return checkedResult;
+    }
+    const rationale = `Applied ${routine.source.scope} routine ${routine.source.id}.`;
+    switch (routine.choice._tag) {
+      case "Skip": {
+        const checkedResult: MealPlanCoverage = {
+          requirement,
+          resolution: { _tag: "Skip", rationale },
+        };
+        return checkedResult;
+      }
+      case "Flexible": {
+        const checkedResult: MealPlanCoverage = {
+          requirement,
+          resolution: { _tag: "Flexible", rationale },
+        };
+        return checkedResult;
+      }
+      case "Leftover": {
+        const checkedResult: MealPlanCoverage = {
           requirement,
           resolution: gap(
-            "not_planned",
-            "No saved routine covers this occasion yet."
+            "unavailable_prepared_food",
+            "Choose a confirmed prepared portion for this leftover routine."
           ),
         };
+        return checkedResult;
       }
-      const rationale = `Applied ${routine.source.scope} routine ${routine.source.id}.`;
-      switch (routine.choice._tag) {
-        case "Skip": {
-          return { requirement, resolution: { _tag: "Skip", rationale } };
-        }
-        case "Flexible": {
-          return { requirement, resolution: { _tag: "Flexible", rationale } };
-        }
-        case "Leftover": {
-          return {
+      case "External": {
+        const checkedResult: MealPlanCoverage = {
+          requirement,
+          resolution: plannedOption(
+            requirement,
+            routine.choice.optionRef,
+            eventIdFor(
+              `${requirement.date}|${requirement.occasion}|${optionIdentity(routine.choice.optionRef)}`
+            ),
+            rationale
+          ),
+        };
+        return checkedResult;
+      }
+      case "Options": {
+        const offset = Math.floor(
+          (Date.parse(`${requirement.date}T00:00:00.000Z`) -
+            Date.parse(`${request.startDate}T00:00:00.000Z`)) /
+            86_400_000
+        );
+        const selected =
+          routine.choice.optionRefs[
+            routine.choice.selection === "rotate"
+              ? offset % routine.choice.optionRefs.length
+              : 0
+          ];
+        if (selected === undefined) {
+          const checkedResult: MealPlanCoverage = {
             requirement,
             resolution: gap(
-              "unavailable_prepared_food",
-              "Choose a confirmed prepared portion for this leftover routine."
+              "no_compatible_option",
+              "The routine has no available meal option."
             ),
           };
+          return checkedResult;
         }
-        case "External": {
-          return {
-            requirement,
-            resolution: plannedOption(
-              requirement,
-              routine.choice.optionRef,
-              eventIdFor(
-                `${requirement.date}|${requirement.occasion}|${optionIdentity(routine.choice.optionRef)}`
-              ),
-              rationale
-            ),
-          };
-        }
-        case "Options": {
-          const offset = Math.floor(
-            (Date.parse(`${requirement.date}T00:00:00.000Z`) -
-              Date.parse(`${request.startDate}T00:00:00.000Z`)) /
-              86_400_000
-          );
-          const selected =
-            routine.choice.optionRefs[
-              routine.choice.selection === "rotate"
-                ? offset % routine.choice.optionRefs.length
-                : 0
-            ];
-          if (selected === undefined) {
-            return {
-              requirement,
-              resolution: gap(
-                "no_compatible_option",
-                "The routine has no available meal option."
-              ),
-            };
-          }
-          return {
+        {
+          const checkedResult: MealPlanCoverage = {
             requirement,
             resolution: plannedOption(
               requirement,
@@ -1162,19 +1388,24 @@ export const makeInitialPlanVersion = (
               rationale
             ),
           };
-        }
-        default: {
-          return casesHandled(routine.choice);
+          return checkedResult;
         }
       }
+      default: {
+        const checkedResult: MealPlanCoverage = casesHandled(routine.choice);
+        return checkedResult;
+      }
     }
-  );
-  return {
-    cookEvents: [],
-    coverage,
-    number: 1,
-    pins: pinsFor(authority, coverage, []),
-  };
+  });
+  {
+    const checkedResult: MealPlanVersion = {
+      cookEvents: [],
+      coverage,
+      number: 1,
+      pins: pinsFor(authority, coverage, []),
+    };
+    return checkedResult;
+  }
 };
 
 /** Update only a proposed version when authoritative inputs changed. */
@@ -1182,10 +1413,7 @@ export const rebasePlanVersion = (
   version: MealPlanVersion,
   request: MealPlanRequest,
   authority: PlanningAuthority
-): {
-  readonly version: MealPlanVersion;
-  readonly changed: readonly MealPlanRequirementKey[];
-} => {
+) => {
   const old = new Map(
     version.coverage.map((entry) => [
       requirementIdentity(entry.requirement),
@@ -1193,12 +1421,12 @@ export const rebasePlanVersion = (
     ])
   );
   const changed: MealPlanRequirementKey[] = [];
-  const coverage = requiredCoverage(request, authority).map(
-    (requirement): MealPlanCoverage => {
-      const prior = old.get(requirementIdentity(requirement));
-      if (prior === undefined) {
-        changed.push(requirement);
-        return {
+  const coverage = requiredCoverage(request, authority).map((requirement) => {
+    const prior = old.get(requirementIdentity(requirement));
+    if (prior === undefined) {
+      changed.push(requirement);
+      {
+        const checkedResult: MealPlanCoverage = {
           requirement,
           resolution: {
             _tag: "Gap",
@@ -1206,22 +1434,26 @@ export const rebasePlanVersion = (
             reason: "not_planned",
           },
         };
+        return checkedResult;
       }
-      if (prior.resolution._tag !== "MealOption") {
-        return prior;
-      }
-      const person = personFor(authority.people, requirement.personId);
-      if (
-        person === undefined ||
-        validateOptionForPerson(
-          authority,
-          person,
-          prior.resolution.option,
-          true
-        ) !== null
-      ) {
-        changed.push(requirement);
-        return {
+    }
+    if (prior.resolution._tag !== "MealOption") {
+      const checkedResult: MealPlanCoverage = prior;
+      return checkedResult;
+    }
+    const person = personFor(authority.people, requirement.personId);
+    if (
+      person === undefined ||
+      validateOptionForPerson(
+        authority,
+        person,
+        prior.resolution.option,
+        true
+      ) !== null
+    ) {
+      changed.push(requirement);
+      {
+        const checkedResult: MealPlanCoverage = {
           requirement,
           resolution: {
             _tag: "Gap",
@@ -1230,17 +1462,17 @@ export const rebasePlanVersion = (
             reason: "unconfirmed_suitability",
           },
         };
+        return checkedResult;
       }
-      const option = currentOptionFor(
-        authority.content,
-        prior.resolution.option
-      );
-      if (
-        option === undefined ||
-        preparationIssueForCoverage(authority, option, requirement) !== null
-      ) {
-        changed.push(requirement);
-        return {
+    }
+    const option = currentOptionFor(authority.content, prior.resolution.option);
+    if (
+      option === undefined ||
+      preparationIssueForCoverage(authority, option, requirement) !== null
+    ) {
+      changed.push(requirement);
+      {
+        const checkedResult: MealPlanCoverage = {
           requirement,
           resolution: {
             _tag: "Gap",
@@ -1249,10 +1481,14 @@ export const rebasePlanVersion = (
             reason: "preparation_context_unresolved",
           },
         };
+        return checkedResult;
       }
-      return prior;
     }
-  );
+    {
+      const checkedResult: MealPlanCoverage = prior;
+      return checkedResult;
+    }
+  });
   const cookEvents = version.cookEvents.filter((cook) => {
     const option = currentOptionFor(authority.content, cook.option);
     return (
@@ -1266,10 +1502,16 @@ export const rebasePlanVersion = (
     coverage,
   };
   const repaired = repairPreparedDependencies(rebased, request, authority);
-  return {
-    changed: [...changed, ...repaired.changed],
-    version: repinPlanVersion(repaired.version, authority),
-  };
+  {
+    const checkedResult: {
+      readonly version: MealPlanVersion;
+      readonly changed: readonly MealPlanRequirementKey[];
+    } = {
+      changed: [...changed, ...repaired.changed],
+      version: repinPlanVersion(repaired.version, authority),
+    };
+    return checkedResult;
+  }
 };
 
 export const changePlanVersion = (
@@ -1277,17 +1519,18 @@ export const changePlanVersion = (
   change: MealPlanChange,
   request: MealPlanRequest,
   authority: PlanningAuthority
-):
-  | {
-      readonly version: MealPlanVersion;
-      readonly changed: readonly MealPlanRequirementKey[];
-    }
-  | MealPlanRuleViolation => {
+) => {
   const changed: MealPlanRequirementKey[] = [];
   let next = version;
   switch (change._tag) {
     case "RefreshInputs": {
-      return violation("config_version_changed");
+      const checkedResult:
+        | {
+            readonly version: MealPlanVersion;
+            readonly changed: readonly MealPlanRequirementKey[];
+          }
+        | MealPlanRuleViolation = violation("config_version_changed");
+      return checkedResult;
     }
     case "ReplaceDraftPlan": {
       const prior = new Map(
@@ -1318,7 +1561,13 @@ export const changePlanVersion = (
         ({ requirement }) => requirementIdentity(requirement) === key
       );
       if (index === -1) {
-        return violation("requirement_not_found");
+        const checkedResult:
+          | {
+              readonly version: MealPlanVersion;
+              readonly changed: readonly MealPlanRequirementKey[];
+            }
+          | MealPlanRuleViolation = violation("requirement_not_found");
+        return checkedResult;
       }
       const coverage = [...version.coverage];
       coverage[index] = {
@@ -1348,9 +1597,15 @@ export const changePlanVersion = (
         };
       });
       if (changed.length === 0) {
-        return violation("requirement_not_found");
+        const checkedResult:
+          | {
+              readonly version: MealPlanVersion;
+              readonly changed: readonly MealPlanRequirementKey[];
+            }
+          | MealPlanRuleViolation = violation("requirement_not_found");
+        return checkedResult;
       }
-      // Replacing a cook event removes its old outputs until an adult confirms new production.
+
       next = {
         ...version,
         cookEvents: version.cookEvents.filter(
@@ -1372,7 +1627,13 @@ export const changePlanVersion = (
       if (
         !version.cookEvents.some(({ eventId }) => eventId === change.eventId)
       ) {
-        return violation("cook_event_conflict");
+        const checkedResult:
+          | {
+              readonly version: MealPlanVersion;
+              readonly changed: readonly MealPlanRequirementKey[];
+            }
+          | MealPlanRuleViolation = violation("cook_event_conflict");
+        return checkedResult;
       }
       next = {
         ...version,
@@ -1383,14 +1644,37 @@ export const changePlanVersion = (
       break;
     }
     default: {
-      return casesHandled(change);
+      const checkedResult:
+        | {
+            readonly version: MealPlanVersion;
+            readonly changed: readonly MealPlanRequirementKey[];
+          }
+        | MealPlanRuleViolation = casesHandled(change);
+      return checkedResult;
     }
   }
   const repaired = repairPreparedDependencies(next, request, authority);
   const repinned = repinPlanVersion(repaired.version, authority);
   const issue = validatePlanVersion(repinned, request, authority, false);
   if (issue !== null) {
-    return issue;
+    const checkedResult:
+      | {
+          readonly version: MealPlanVersion;
+          readonly changed: readonly MealPlanRequirementKey[];
+        }
+      | MealPlanRuleViolation = issue;
+    return checkedResult;
   }
-  return { changed: [...changed, ...repaired.changed], version: repinned };
+  {
+    const checkedResult:
+      | {
+          readonly version: MealPlanVersion;
+          readonly changed: readonly MealPlanRequirementKey[];
+        }
+      | MealPlanRuleViolation = {
+      changed: [...changed, ...repaired.changed],
+      version: repinned,
+    };
+    return checkedResult;
+  }
 };

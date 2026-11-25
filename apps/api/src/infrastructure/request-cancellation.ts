@@ -23,8 +23,8 @@ const clientAbort = Effect.withFiber((fiber) =>
 export const raceWithRequestSignal = <A, E, R>(
   signal: RequestCancellationSignal,
   requestEffect: Effect.Effect<A, E, R>
-): Effect.Effect<A, E, R> =>
-  Effect.suspend(() => {
+) => {
+  const checkedResult: Effect.Effect<A, E, R> = Effect.suspend(() => {
     if (signal.aborted) {
       return clientAbort;
     }
@@ -58,6 +58,8 @@ export const raceWithRequestSignal = <A, E, R>(
 
     return Effect.raceFirst(requestEffect, requestAborted);
   });
+  return checkedResult;
+};
 
 /** Runs request work against the original Request supplied by Alchemy. */
 export const withCurrentRequestCancellation = <A, E, R>(

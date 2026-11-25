@@ -29,13 +29,19 @@ const allowedTikTokHosts = new Set([
   "www.tiktok.com",
 ]);
 
-const unavailable = (): TikTokTransportFailure => ({
-  _tag: "TikTokTransportUnavailable",
-});
+const unavailable = () => {
+  const checkedResult: TikTokTransportFailure = {
+    _tag: "TikTokTransportUnavailable",
+  };
+  return checkedResult;
+};
 
-const invalidTarget = (): TikTokTransportFailure => ({
-  _tag: "TikTokTransportInvalidTarget",
-});
+const invalidTarget = () => {
+  const checkedResult: TikTokTransportFailure = {
+    _tag: "TikTokTransportInvalidTarget",
+  };
+  return checkedResult;
+};
 
 const finiteDeadline = (override: number | undefined) => {
   const duration = override ?? DefaultDeadlineMilliseconds;
@@ -45,30 +51,38 @@ const finiteDeadline = (override: number | undefined) => {
   return duration;
 };
 
-export const parseTikTokHttpUrl = (input: string): URL | undefined => {
+export const parseTikTokHttpUrl = (input: string) => {
   let url: URL;
   try {
     url = new URL(input);
   } catch {
-    return undefined;
+    const checkedResult: URL | undefined = undefined;
+    return checkedResult;
   }
-  return url.protocol === "https:" &&
-    url.username === "" &&
-    url.password === "" &&
-    url.port === "" &&
-    allowedTikTokHosts.has(url.hostname)
-    ? url
-    : undefined;
+  {
+    const checkedResult: URL | undefined =
+      url.protocol === "https:" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.port === "" &&
+      allowedTikTokHosts.has(url.hostname)
+        ? url
+        : undefined;
+    return checkedResult;
+  }
 };
 
 export const isTikTokShortLink = (url: URL) =>
   url.hostname === "vm.tiktok.com" || url.hostname === "vt.tiktok.com";
 
-const resolveRedirect = (location: string, current: URL): URL | null => {
+const resolveRedirect = (location: string, current: URL) => {
   try {
-    return parseTikTokHttpUrl(new URL(location, current).toString()) ?? null;
+    const checkedResult: URL | null =
+      parseTikTokHttpUrl(new URL(location, current).toString()) ?? null;
+    return checkedResult;
   } catch {
-    return null;
+    const checkedResult: URL | null = null;
+    return checkedResult;
   }
 };
 
@@ -80,7 +94,7 @@ const ignoreCancellation = async (cancellation: Promise<unknown>) => {
   try {
     await cancellation;
   } catch {
-    // Best-effort cleanup failures remain private.
+    // WARNING: Cancellation can race with the stream closing; preserve the original failure.
   }
 };
 
@@ -88,7 +102,7 @@ const cancelBestEffort = (cancel: () => Promise<unknown>) => {
   try {
     void ignoreCancellation(cancel());
   } catch {
-    // Cleanup must remain finite even when a stream implementation throws.
+    // WARNING: The stream can be released before cancellation starts.
   }
 };
 
@@ -217,9 +231,12 @@ export const makeTikTokHttpTransport = (
   );
 
   return {
-    resolveHandoff: (
-      initial: URL
-    ): Effect.Effect<TikTokHandoff, TikTokTransportFailure> =>
-      withDeadline(resolveHandoff(initial), deadlineMilliseconds),
+    resolveHandoff: (initial: URL) => {
+      const checkedResult: Effect.Effect<
+        TikTokHandoff,
+        TikTokTransportFailure
+      > = withDeadline(resolveHandoff(initial), deadlineMilliseconds);
+      return checkedResult;
+    },
   };
 };

@@ -31,21 +31,44 @@ import {
   isAllowedTikTokMediaHostname,
 } from "./import-source-session.js";
 
-const unavailable = (): UnavailableFailure =>
-  new UnavailableError({ code: "private_or_unavailable" });
-const retryableSession = (): RetryableAcquisitionFailure =>
-  new RetryableAcquisitionError({ stage: "resolve" });
-const invalidSession = (): RetryableAcquisitionFailure =>
-  new RetryableAcquisitionError({
-    reason: "media_session_invalid",
+const unavailable = () => {
+  const checkedResult: UnavailableFailure = new UnavailableError({
+    code: "private_or_unavailable",
+  });
+  return checkedResult;
+};
+const retryableSession = () => {
+  const checkedResult: RetryableAcquisitionFailure =
+    new RetryableAcquisitionError({ stage: "resolve" });
+  return checkedResult;
+};
+const invalidSession = () => {
+  const checkedResult: RetryableAcquisitionFailure =
+    new RetryableAcquisitionError({
+      reason: "media_session_invalid",
+      stage: "resolve",
+    });
+  return checkedResult;
+};
+const unsupportedCarousel = () => {
+  const checkedResult: UnsupportedCarouselFailure =
+    new UnsupportedCarouselError({ code: "unsupported_carousel" });
+  return checkedResult;
+};
+const invalidMetadata = () => {
+  const checkedResult: TerminalMediaFailure = new TerminalMediaError({
+    code: "invalid_media",
     stage: "resolve",
   });
-const unsupportedCarousel = (): UnsupportedCarouselFailure =>
-  new UnsupportedCarouselError({ code: "unsupported_carousel" });
-const invalidMetadata = (): TerminalMediaFailure =>
-  new TerminalMediaError({ code: "invalid_media", stage: "resolve" });
-const sourceLimitExceeded = (): TerminalMediaFailure =>
-  new TerminalMediaError({ code: "limit_exceeded", stage: "resolve" });
+  return checkedResult;
+};
+const sourceLimitExceeded = () => {
+  const checkedResult: TerminalMediaFailure = new TerminalMediaError({
+    code: "limit_exceeded",
+    stage: "resolve",
+  });
+  return checkedResult;
+};
 
 const TikTokProviderMetadataEnvelope = Schema.Struct({
   _type: Schema.optionalKey(Schema.Json),
@@ -132,11 +155,10 @@ const safeTikTokReferer = (value: string | undefined) => {
   }
 };
 
-const mediaRequestHeaders = (
-  raw: Schema.Json | undefined
-): MediaRequestHeaders => {
+const mediaRequestHeaders = (raw: Schema.Json | undefined) => {
   if (raw === undefined || !isJsonObject(raw)) {
-    return {};
+    const checkedResult: MediaRequestHeaders = {};
+    return checkedResult;
   }
   const accept = headerValue(raw, "accept", 1024);
   const acceptLanguage = headerValue(raw, "accept-language", 256);
@@ -155,7 +177,10 @@ const mediaRequestHeaders = (
   if (userAgent !== undefined) {
     headers = { ...headers, userAgent };
   }
-  return headers;
+  {
+    const checkedResult: MediaRequestHeaders = headers;
+    return checkedResult;
+  }
 };
 
 export const isSafeTikTokMediaLocator = (value: string) => {
@@ -259,16 +284,18 @@ type TikTokProviderMetadata =
 const decodeTikTokProviderMetadata = (
   input: Uint8Array,
   identity: TikTokIdentity
-): TikTokProviderMetadata => {
+) => {
   const metadata = decodeTikTokProviderMetadataEnvelope(
     new TextDecoder().decode(input)
   );
   const classification = classifyMetadata(metadata);
   if (classification === "carousel") {
-    return { _tag: "carousel" };
+    const checkedResult: TikTokProviderMetadata = { _tag: "carousel" };
+    return checkedResult;
   }
   if (classification === "unavailable") {
-    return { _tag: "unavailable" };
+    const checkedResult: TikTokProviderMetadata = { _tag: "unavailable" };
+    return checkedResult;
   }
   const { canonicalUrl, mediaLocator } = validatedSourceFields(
     metadata,
@@ -279,25 +306,30 @@ const decodeTikTokProviderMetadata = (
     Number.isFinite(metadata.duration) &&
     metadata.duration > MaximumMediaDurationSeconds
   ) {
-    return { _tag: "limit" };
+    const checkedResult: TikTokProviderMetadata = { _tag: "limit" };
+    return checkedResult;
   }
   const { timestamp } = metadata;
-  return {
-    _tag: "video",
-    canonicalUrl,
-    caption: stringOrNull(metadata.description) ?? stringOrNull(metadata.title),
-    creator: {
-      displayName: stringOrNull(metadata.uploader),
-      handle: creatorHandle(metadata.uploader_url),
-      id: stringOrNull(metadata.uploader_id),
-    },
-    mediaLocator,
-    publishedAt:
-      Schema.is(Schema.Number)(timestamp) && Number.isSafeInteger(timestamp)
-        ? new Date(timestamp * 1000).toISOString()
-        : null,
-    requestHeaders: mediaRequestHeaders(metadata.http_headers),
-  };
+  {
+    const checkedResult: TikTokProviderMetadata = {
+      _tag: "video",
+      canonicalUrl,
+      caption:
+        stringOrNull(metadata.description) ?? stringOrNull(metadata.title),
+      creator: {
+        displayName: stringOrNull(metadata.uploader),
+        handle: creatorHandle(metadata.uploader_url),
+        id: stringOrNull(metadata.uploader_id),
+      },
+      mediaLocator,
+      publishedAt:
+        Schema.is(Schema.Number)(timestamp) && Number.isSafeInteger(timestamp)
+          ? new Date(timestamp * 1000).toISOString()
+          : null,
+      requestHeaders: mediaRequestHeaders(metadata.http_headers),
+    };
+    return checkedResult;
+  }
 };
 
 const parseMetadata = Effect.fn("ImportMedia.parseTikTokMetadata")(
@@ -346,118 +378,119 @@ const parseMetadata = Effect.fn("ImportMedia.parseTikTokMetadata")(
   }
 );
 
-export const makeTikTokSourceResolver = (
-  processRunner: MediaProcessRunner
-): SourceResolver => ({
-  resolve: Effect.fn("ImportMedia.resolveTikTokSource")(
-    (identity, workspaceRoot) => {
-      const sessionPath = path.join(workspaceRoot, "yt-dlp-session.cookies");
-      const createSessionFile = Effect.tryPromise({
-        catch: retryableSession,
-        try: async () => {
-          try {
-            const file = await open(sessionPath, "wx", 0o600);
+export const makeTikTokSourceResolver = (processRunner: MediaProcessRunner) => {
+  const checkedResult: SourceResolver = {
+    resolve: Effect.fn("ImportMedia.resolveTikTokSource")(
+      (identity, workspaceRoot) => {
+        const sessionPath = path.join(workspaceRoot, "yt-dlp-session.cookies");
+        const createSessionFile = Effect.tryPromise({
+          catch: retryableSession,
+          try: async () => {
             try {
-              await file.writeFile("# Netscape HTTP Cookie File\n");
+              const file = await open(sessionPath, "wx", 0o600);
+              try {
+                await file.writeFile("# Netscape HTTP Cookie File\n");
+              } finally {
+                await file.close();
+              }
+              return sessionPath;
+            } catch (error) {
+              await rm(sessionPath, { force: true });
+              throw error;
+            }
+          },
+        });
+        const removeSessionFile = () =>
+          Effect.tryPromise({
+            catch: retryableSession,
+            try: () => rm(sessionPath, { force: true }),
+          });
+        const readSession = Effect.tryPromise({
+          catch: invalidSession,
+          try: async () => {
+            const file = await open(
+              sessionPath,
+              // eslint-disable-next-line no-bitwise -- O_NOFOLLOW must be combined with the read-only flag to reject symlink substitution.
+              constants.O_RDONLY | constants.O_NOFOLLOW
+            );
+            try {
+              const stats = await file.stat();
+              const processUserId = process.getuid?.();
+              if (
+                !stats.isFile() ||
+                stats.mode % 0o1000 !== 0o600 ||
+                (processUserId !== undefined && stats.uid !== processUserId) ||
+                stats.size <= 0 ||
+                stats.size > 64 * 1024
+              ) {
+                throw new Error("invalid session file");
+              }
+              return decodeTikTokMediaSession(await file.readFile());
             } finally {
               await file.close();
             }
-            return sessionPath;
-          } catch (error) {
-            await rm(sessionPath, { force: true });
-            throw error;
-          }
-        },
-      });
-      const removeSessionFile = () =>
-        Effect.tryPromise({
-          catch: retryableSession,
-          try: () => rm(sessionPath, { force: true }),
+          },
         });
-      const readSession = Effect.tryPromise({
-        catch: invalidSession,
-        try: async () => {
-          const file = await open(
-            sessionPath,
-            // eslint-disable-next-line no-bitwise -- O_NOFOLLOW must be combined with the read-only flag to reject symlink substitution.
-            constants.O_RDONLY | constants.O_NOFOLLOW
-          );
-          try {
-            const stats = await file.stat();
-            const processUserId = process.getuid?.();
-            if (
-              !stats.isFile() ||
-              stats.mode % 0o1000 !== 0o600 ||
-              (processUserId !== undefined && stats.uid !== processUserId) ||
-              stats.size <= 0 ||
-              stats.size > 64 * 1024
-            ) {
-              throw new Error("invalid session file");
-            }
-            return decodeTikTokMediaSession(await file.readFile());
-          } finally {
-            await file.close();
-          }
-        },
-      });
-      return Effect.acquireUseRelease(
-        createSessionFile,
-        () =>
-          Effect.gen(function* resolveTikTokSource() {
-            const sourceUrl = `https://www.tiktok.com/@_/video/${identity.canonicalId}`;
-            const result = yield* processRunner.run(
-              "yt-dlp",
-              [
-                "--ignore-config",
-                "--no-cache-dir",
-                "--cookies",
-                sessionPath,
-                "--dump-single-json",
-                "--skip-download",
-                "--no-playlist",
-                "--socket-timeout",
-                "30",
-                "--retries",
-                "0",
-                "--fragment-retries",
-                "0",
-                "--concurrent-fragments",
-                String(MaximumConcurrentFragments),
-                sourceUrl,
-              ],
-              {
-                deadlineMilliseconds: 30_000,
-                failure: "retryable",
-                workspaceRoot,
+        return Effect.acquireUseRelease(
+          createSessionFile,
+          () =>
+            Effect.gen(function* resolveTikTokSource() {
+              const sourceUrl = `https://www.tiktok.com/@_/video/${identity.canonicalId}`;
+              const result = yield* processRunner.run(
+                "yt-dlp",
+                [
+                  "--ignore-config",
+                  "--no-cache-dir",
+                  "--cookies",
+                  sessionPath,
+                  "--dump-single-json",
+                  "--skip-download",
+                  "--no-playlist",
+                  "--socket-timeout",
+                  "30",
+                  "--retries",
+                  "0",
+                  "--fragment-retries",
+                  "0",
+                  "--concurrent-fragments",
+                  String(MaximumConcurrentFragments),
+                  sourceUrl,
+                ],
+                {
+                  deadlineMilliseconds: 30_000,
+                  failure: "retryable",
+                  workspaceRoot,
+                }
+              );
+              const parsed = yield* parseMetadata(result.stdout, identity);
+              switch (parsed._tag) {
+                case "carousel": {
+                  return yield* Effect.fail(unsupportedCarousel());
+                }
+                case "limit": {
+                  return yield* Effect.fail(sourceLimitExceeded());
+                }
+                case "unavailable": {
+                  return yield* Effect.fail(unavailable());
+                }
+                case "video": {
+                  const session = yield* readSession;
+                  return {
+                    mediaLocator: parsed.mediaLocator,
+                    metadata: parsed.metadata,
+                    requestHeaders: parsed.requestHeaders,
+                    session,
+                  };
+                }
+                default: {
+                  return yield* Effect.fail(invalidMetadata());
+                }
               }
-            );
-            const parsed = yield* parseMetadata(result.stdout, identity);
-            switch (parsed._tag) {
-              case "carousel": {
-                return yield* Effect.fail(unsupportedCarousel());
-              }
-              case "limit": {
-                return yield* Effect.fail(sourceLimitExceeded());
-              }
-              case "unavailable": {
-                return yield* Effect.fail(unavailable());
-              }
-              case "video": {
-                const session = yield* readSession;
-                return {
-                  mediaLocator: parsed.mediaLocator,
-                  metadata: parsed.metadata,
-                  requestHeaders: parsed.requestHeaders,
-                  session,
-                };
-              }
-              default: {
-                return yield* Effect.fail(invalidMetadata());
-              }
-            }
-          }),
-        removeSessionFile
-      );
-    }
-  ),
-});
+            }),
+          removeSessionFile
+        );
+      }
+    ),
+  };
+  return checkedResult;
+};

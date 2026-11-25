@@ -4,10 +4,12 @@ import {
 } from "@meal-planner/agent-conversations-api";
 import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { http } from "msw";
+import { setupServer } from "msw/node";
+import { afterAll, beforeAll, afterEach, describe, expect, it } from "vitest";
 
-import { responsesToolSse } from "../../test/cloudflare-responses.test-fixture.js";
-import { encodeKimiCompletion } from "../private-output/private-discovery-kimi-stream.test-fixtures.js";
+import { responsesToolSse } from "../../test/cloudflare-responses.fixture.js";
+import { encodeKimiCompletion } from "../private-output/private-discovery-kimi-stream.fixture.js";
 import { projectConversationModelContext } from "./conversation-model-context.js";
 import {
   ConversationModelFailure,
@@ -65,6 +67,13 @@ interface CapturedRequestBody {
     readonly function: { readonly parameters: unknown };
   }[];
 }
+
+const providerServer = setupServer();
+beforeAll(() => {
+  providerServer.listen({ onUnhandledRequest: "error" });
+});
+afterEach(() => providerServer.resetHandlers());
+afterAll(() => providerServer.close());
 
 describe("conversation model transport", () => {
   it("shows the active proposed roster only in private setup model context", () => {
@@ -258,7 +267,7 @@ describe("conversation model transport", () => {
     let thrown: unknown;
     try {
       for await (const _chunk of stream) {
-        // The SDK invokes the tool callback only when its stream is consumed.
+        // WARNING: The stream must drain before asserting the durable callback result.
       }
     } catch (error) {
       thrown = error;
@@ -327,19 +336,23 @@ describe("conversation model transport", () => {
     let gatewayId: string | null = null;
     let collectLog: string | null = null;
     let skipCache: string | null = null;
-    const fakeFetch: typeof fetch = async (input, init) => {
-      const request = new Request(input, init);
-      providerURL = request.url;
-      gatewayId = request.headers.get("cf-aig-gateway-id");
-      collectLog = request.headers.get("cf-aig-collect-log");
-      skipCache = request.headers.get("cf-aig-skip-cache");
-      providerRequest = Schema.decodeUnknownSync(ProviderRequest)(
-        JSON.parse(await request.text())
-      );
-      return new Response(responsesToolSse(JSON.stringify(question)), {
-        headers: { "content-type": "text/event-stream" },
-      });
-    };
+    providerServer.use(
+      http.post(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/responses`,
+        async ({ request }) => {
+          providerURL = request.url;
+          gatewayId = request.headers.get("cf-aig-gateway-id");
+          collectLog = request.headers.get("cf-aig-collect-log");
+          skipCache = request.headers.get("cf-aig-skip-cache");
+          providerRequest = Schema.decodeUnknownSync(ProviderRequest)(
+            JSON.parse(await request.text())
+          );
+          return new Response(responsesToolSse(JSON.stringify(question)), {
+            headers: { "content-type": "text/event-stream" },
+          });
+        }
+      )
+    );
     let accepted = 0;
     let failed: ConversationModelFailure | undefined;
     const stream = streamConversationTurn({
@@ -361,7 +374,6 @@ describe("conversation model transport", () => {
       focusPersonId: null,
       foodAnswer: null,
       messages: [{ content: "Please help me set up my family.", role: "user" }],
-      responsesFetch: fakeFetch,
       runId: "run-responses-local-test",
       scope: { _tag: "AccountPrivateSetup" },
       threadId: "thread-responses-local-test",
@@ -421,27 +433,31 @@ describe("conversation model transport", () => {
     };
     let strict: boolean | undefined;
     let parameters: unknown;
-    const fakeFetch: typeof fetch = async (input, init) => {
-      const request = new Request(input, init);
-      const body = Schema.decodeUnknownSync(
-        Schema.Struct({
-          instructions: Schema.String,
-          tools: Schema.Array(
+    providerServer.use(
+      http.post(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/responses`,
+        async ({ request }) => {
+          const body = Schema.decodeUnknownSync(
             Schema.Struct({
-              parameters: Schema.Unknown,
-              strict: Schema.Boolean,
+              instructions: Schema.String,
+              tools: Schema.Array(
+                Schema.Struct({
+                  parameters: Schema.Unknown,
+                  strict: Schema.Boolean,
+                })
+              ),
             })
-          ),
-        })
-      )(JSON.parse(await request.text()));
-      strict = body.tools[0]?.strict;
-      expect(body.instructions).toContain('"setupAccountDisplayName":null');
-      expect(body.instructions).not.toContain("Morgan");
-      parameters = body.tools[0]?.parameters;
-      return new Response(responsesToolSse(JSON.stringify(question)), {
-        headers: { "content-type": "text/event-stream" },
-      });
-    };
+          )(JSON.parse(await request.text()));
+          strict = body.tools[0]?.strict;
+          expect(body.instructions).toContain('"setupAccountDisplayName":null');
+          expect(body.instructions).not.toContain("Morgan");
+          parameters = body.tools[0]?.parameters;
+          return new Response(responsesToolSse(JSON.stringify(question)), {
+            headers: { "content-type": "text/event-stream" },
+          });
+        }
+      )
+    );
     let accepted = 0;
     const stream = streamConversationTurn({
       accept: (value) => {
@@ -468,7 +484,6 @@ describe("conversation model transport", () => {
       focusPersonId: null,
       foodAnswer: null,
       messages: [{ content: "Can we talk about dinners?", role: "user" }],
-      responsesFetch: fakeFetch,
       runId: "run-shared-responses-local-test",
       scope: Schema.decodeUnknownSync(ConversationScope)({
         _tag: "FamilyShared",
@@ -477,7 +492,7 @@ describe("conversation model transport", () => {
       threadId: "thread-shared-responses-local-test",
     });
     for await (const _chunk of stream) {
-      // The SDK invokes the tool callback only when its stream is consumed.
+      // WARNING: The stream must drain before asserting the durable callback result.
     }
     expect(accepted).toBe(1);
     expect(strict).toBe(false);

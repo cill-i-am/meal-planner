@@ -19,36 +19,43 @@ export const ActionExecution = Schema.Struct({
 }).pipe(Schema.annotate({ parseOptions: { onExcessProperty: "error" } }));
 export type ActionExecution = typeof ActionExecution.Type;
 
-export const conversationActionState = (
-  execution: ActionExecution
-): ConversationActionState => {
+export const conversationActionState = (execution: ActionExecution) => {
   switch (execution.status) {
     case "pending": {
-      return { _tag: "Pending", actionId: execution.action.actionId };
+      const checkedResult: ConversationActionState = {
+        _tag: "Pending",
+        actionId: execution.action.actionId,
+      };
+      return checkedResult;
     }
     case "unknown": {
-      return {
+      const checkedResult: ConversationActionState = {
         _tag: "Unknown",
         actionId: execution.action.actionId,
         familyId: execution.familyId,
       };
+      return checkedResult;
     }
     case "committed": {
-      return {
+      const checkedResult: ConversationActionState = {
         _tag: "Committed",
         actionId: execution.action.actionId,
         familyId: execution.familyId,
       };
+      return checkedResult;
     }
     case "rejected": {
-      return {
+      const checkedResult: ConversationActionState = {
         _tag: "Rejected",
         actionId: execution.action.actionId,
         reason: execution.rejectionReason ?? "stale_review",
       };
+      return checkedResult;
     }
     default: {
-      return execution.status satisfies never;
+      const checkedResult: ConversationActionState =
+        execution.status satisfies never;
+      return checkedResult;
     }
   }
 };

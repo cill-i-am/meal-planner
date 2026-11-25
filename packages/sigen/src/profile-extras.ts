@@ -72,56 +72,62 @@ const priorityKey = (entry: typeof Priority.Type) =>
 export const applyProfilePriorities = (
   profile: ProfileConfiguration,
   priorities: ProfilePriorities
-): ProfileConfiguration => ({
-  ...profile,
-  batteryDischargeSources:
-    priorities.batteryDischargeSources ?? profile.batteryDischargeSources,
-  solarPriority: profile.solarPriority.map((entry) => ({
-    ...entry,
-    providerPriority:
-      priorities.solarPriority?.find(
-        (proposed) =>
-          priorityKey(proposed) ===
-          JSON.stringify([
-            entry.providerLoadType,
-            entry.providerDeviceType,
-            entry.smartLoadPath,
-          ])
-      )?.providerPriority ?? entry.providerPriority,
-  })),
-});
+) => {
+  const checkedResult: ProfileConfiguration = {
+    ...profile,
+    batteryDischargeSources:
+      priorities.batteryDischargeSources ?? profile.batteryDischargeSources,
+    solarPriority: profile.solarPriority.map((entry) => ({
+      ...entry,
+      providerPriority:
+        priorities.solarPriority?.find(
+          (proposed) =>
+            priorityKey(proposed) ===
+            JSON.stringify([
+              entry.providerLoadType,
+              entry.providerDeviceType,
+              entry.smartLoadPath,
+            ])
+        )?.providerPriority ?? entry.providerPriority,
+    })),
+  };
+  return checkedResult;
+};
 const minutes = (time: string) =>
   Number(time.slice(0, 2)) * 60 + Number(time.slice(3));
 export const applyProfileSchedules = (
   profile: ProfileConfiguration,
   schedules: ProfileSchedules
-): ProfileConfiguration => ({
-  ...profile,
-  peakShaving:
-    schedules.peakShaving === undefined
-      ? profile.peakShaving
-      : {
-          providerControlMode: schedules.peakShaving.enabled ? 1 : 0,
-          reserveSocPercent: schedules.peakShaving.reserveSocPercent,
-          slots: schedules.peakShaving.slots,
-        },
-  preheating:
-    schedules.preheating === undefined
-      ? profile.preheating
-      : {
-          ...profile.preheating,
-          providerMode: null,
-          providerSwitch: schedules.preheating.enabled ? 1 : 0,
-          slots: schedules.preheating.windows.map((window) => ({
-            providerChargingPower: null,
-            providerDischargePower: null,
-            providerDuration:
-              minutes(window.endTime) - minutes(window.startTime),
-            providerPeriods: window.providerDays.split(",").map(Number),
-            providerStartTime: minutes(window.startTime),
-          })),
-        },
-});
+) => {
+  const checkedResult: ProfileConfiguration = {
+    ...profile,
+    peakShaving:
+      schedules.peakShaving === undefined
+        ? profile.peakShaving
+        : {
+            providerControlMode: schedules.peakShaving.enabled ? 1 : 0,
+            reserveSocPercent: schedules.peakShaving.reserveSocPercent,
+            slots: schedules.peakShaving.slots,
+          },
+    preheating:
+      schedules.preheating === undefined
+        ? profile.preheating
+        : {
+            ...profile.preheating,
+            providerMode: null,
+            providerSwitch: schedules.preheating.enabled ? 1 : 0,
+            slots: schedules.preheating.windows.map((window) => ({
+              providerChargingPower: null,
+              providerDischargePower: null,
+              providerDuration:
+                minutes(window.endTime) - minutes(window.startTime),
+              providerPeriods: window.providerDays.split(",").map(Number),
+              providerStartTime: minutes(window.startTime),
+            })),
+          },
+  };
+  return checkedResult;
+};
 const sameMembers = (
   left: readonly (string | number)[],
   right: readonly (string | number)[]

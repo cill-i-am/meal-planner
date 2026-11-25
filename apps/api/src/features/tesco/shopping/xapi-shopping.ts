@@ -215,7 +215,7 @@ export const makeTescoXapiShopping = <R>(
           return yield* failure("invalid_input");
         }
         yield* beforeSend;
-        // The caller holds the owner's DO semaphore. Persist before I/O; an interruption leaves a non-replayable attempt.
+
         yield* storage.writeCommand(id, { fingerprint, state: "started" });
         const sent = yield* execute.pipe(Effect.result);
         const current = yield* basket;

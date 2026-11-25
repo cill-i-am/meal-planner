@@ -15,6 +15,7 @@ import { privateOutputGeneration } from "./private-output.database-schema.js";
 const connections: DatabaseSync[] = [];
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
   for (const connection of connections.splice(0)) {
     connection.close();
   }
@@ -22,14 +23,14 @@ afterEach(() => {
 
 const socket = (generation: string | null, readyState = 1) => {
   const connection = {
-    close: vi.fn(),
+    close() {
+      this.readyState = 2;
+    },
     deserializeAttachment: () => ({ generation }),
     readyState,
     send: vi.fn(),
   };
-  connection.close.mockImplementation(() => {
-    connection.readyState = 2;
-  });
+  vi.spyOn(connection, "close");
   return connection;
 };
 const renewal = () => {
@@ -168,20 +169,21 @@ const requestFixture = (
 ) => {
   const accounts: OutputRegistration[] = [];
   const households: OutputRegistration[] = [];
-  const lifecycle = (
-    registrations: OutputRegistration[]
-  ): OutputLifecyclePort => ({
-    beginMutation: renewal,
-    completeMutation: renewal,
-    findPendingMutation: renewal,
-    markDispatched: renewal,
-    prepareMutation: renewal,
-    readMutation: renewal,
-    register: (registration) => {
-      registrations.push(registration);
-      return register(registration);
-    },
-  });
+  const lifecycle = (registrations: OutputRegistration[]) => {
+    const checkedResult: OutputLifecyclePort = {
+      beginMutation: renewal,
+      completeMutation: renewal,
+      findPendingMutation: renewal,
+      markDispatched: renewal,
+      prepareMutation: renewal,
+      readMutation: renewal,
+      register: (registration) => {
+        registrations.push(registration);
+        return register(registration);
+      },
+    };
+    return checkedResult;
+  };
   const state = fixture(status, expiresAt, {
     AccountOutputLifecycle: { getByName: () => lifecycle(accounts) },
     HouseholdAgent: { getByName: () => lifecycle(households) },
@@ -206,28 +208,30 @@ describe("private output request leases", () => {
   });
 
   it("reuses and renews only the current live request grant", async () => {
-    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1000);
     const { accounts, households, output } = requestFixture();
     const generation = await output.beginRequest(participant, target);
     output.authorizeRequest(generation, 2000);
-    now.mockReturnValue(1500);
+    vi.setSystemTime(1500);
     expect(await output.beginRequest(participant, target)).toBe(generation);
     output.authorizeRequest(generation, 3000);
-    now.mockReturnValue(2500);
+    vi.setSystemTime(2500);
     expect(output.isRequestCurrent(generation)).toBe(true);
     expect(accounts).toHaveLength(1);
     expect(households).toHaveLength(1);
-    now.mockReturnValue(3000);
+    vi.setSystemTime(3000);
     expect(output.isCurrent(generation)).toBe(false);
     expect(output.isRequestCurrent(generation)).toBe(false);
   });
 
   it("requires a newly registered generation after request expiry", async () => {
-    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1000);
     const { accounts, output } = requestFixture();
     const expired = await output.beginRequest(participant, target);
     output.authorizeRequest(expired, 2000);
-    now.mockReturnValue(2000);
+    vi.setSystemTime(2000);
     expect(() => output.authorizeRequest(expired, 3000)).toThrow(
       new PrivateOutputUnavailable({ reason: "output_disabled" })
     );
@@ -295,7 +299,8 @@ describe("private output request leases", () => {
   );
 
   it("preserves a request lease while beginning and authorizing a browser connection", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1000);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1000);
     const { accounts, database, output, sockets } = requestFixture();
     const request = await output.beginRequest(participant, target);
     output.authorizeRequest(request, 4000);
@@ -312,8 +317,6 @@ describe("private output request leases", () => {
     expect(output.isRequestCurrent(request)).toBe(true);
     expect(output.isRequestCurrent(browser)).toBe(false);
 
-    // Native accept is covered by the runtime suite; this unit fixture resumes
-    // its persisted connected state without inventing a WebSocketPair.
     database
       .update(privateOutputGeneration)
       .set({ status: "connected" })
@@ -354,7 +357,8 @@ describe("private output request leases", () => {
   });
 
   it("refuses already expired authority without consuming a pending request", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1000);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1000);
     const { output } = requestFixture();
     const generation = await output.beginRequest(participant, target);
     expect(() => output.authorizeRequest(generation, 1000)).toThrow(
@@ -394,7 +398,8 @@ describe("private output request leases", () => {
 
 describe("coexisting browser and request output leases", () => {
   it("preserves the connected browser generation and expiry through request admission and renewal", async () => {
-    const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1000);
     const {
       accounts,
       database,
@@ -414,7 +419,7 @@ describe("coexisting browser and request output leases", () => {
     expect(output.isRequestCurrent(request)).toBe(false);
     expect(retained.close).not.toHaveBeenCalled();
     output.authorizeRequest(request, 2500);
-    now.mockReturnValue(2000);
+    vi.setSystemTime(2000);
     expect(await output.beginRequest(participant, target)).toBe(request);
     output.authorizeRequest(request, 3500);
     expect(output.isCurrent(browser)).toBe(true);
@@ -440,7 +445,8 @@ describe("coexisting browser and request output leases", () => {
   ])(
     "expires $expiresFirst authority without expiring the other channel",
     async ({ browserExpiresAt, requestExpiresAt }) => {
-      const now = vi.spyOn(Date, "now").mockReturnValue(1000);
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(1000);
       const {
         generation: browser,
         output,
@@ -460,14 +466,14 @@ describe("coexisting browser and request output leases", () => {
       expect(output.read(request)?.expiresAt).toBe(requestExpiresAt);
       expect(output.isCurrent(browser)).toBe(true);
       expect(output.isRequestCurrent(request)).toBe(true);
-      now.mockReturnValue(2000);
+      vi.setSystemTime(2000);
       expect(output.isCurrent(browser)).toBe(browserExpiresAt > 2000);
       expect(output.isRequestCurrent(request)).toBe(requestExpiresAt > 2000);
       output.send(browser, "only if browser authority remains");
       expect(retained.send).toHaveBeenCalledTimes(
         browserExpiresAt > 2000 ? 1 : 0
       );
-      now.mockReturnValue(3000);
+      vi.setSystemTime(3000);
       expect(output.isCurrent(browser)).toBe(false);
       expect(output.isRequestCurrent(request)).toBe(false);
     }
@@ -522,7 +528,6 @@ describe("coexisting browser and request output leases", () => {
     expect(output.isCurrent(browser)).toBe(true);
     expect(retained.close).not.toHaveBeenCalled();
 
-    // Each native lifecycle retains both registrations and fences each one.
     for (const registration of accounts) {
       output.invalidate({ generation: registration.generation });
     }

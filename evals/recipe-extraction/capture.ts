@@ -194,10 +194,11 @@ const interruptedOutput = (
   invocation: typeof EvaluationInvocation.Type,
   base: Omit<PersistedExtractionOutput, "status">,
   latencySource: "client_wall" | "tool_wall"
-): PersistedExtractionOutput | null => {
+) => {
   const interrupted = Schema.decodeUnknownOption(InterruptedResult)(receipt);
   if (interrupted._tag === "None") {
-    return null;
+    const checkedResult: PersistedExtractionOutput | null = null;
+    return checkedResult;
   }
   const unknown = interrupted.value.result;
   if (
@@ -206,27 +207,31 @@ const interruptedOutput = (
   ) {
     throw new Error("Interrupted receipt request identity differs");
   }
-  return {
-    ...base,
-    failureCode: "provider_outcome_unknown",
-    measurements: {
-      ...unavailableMeasurements,
-      costReservationMicroUsd: unknown.reservationMicroUsd,
-      fallbackInvocations: 0,
-      latencyMilliseconds: unknown.latencyMs,
-      latencySource: unknown.latencyMs === null ? "unavailable" : latencySource,
-      providerInvocations: unknown.providerInvocations,
-    },
-    requestIdentity: "request_sha256",
-    status: "failed",
-    transportReceipt: receipt,
-  };
+  {
+    const checkedResult: PersistedExtractionOutput | null = {
+      ...base,
+      failureCode: "provider_outcome_unknown",
+      measurements: {
+        ...unavailableMeasurements,
+        costReservationMicroUsd: unknown.reservationMicroUsd,
+        fallbackInvocations: 0,
+        latencyMilliseconds: unknown.latencyMs,
+        latencySource:
+          unknown.latencyMs === null ? "unavailable" : latencySource,
+        providerInvocations: unknown.providerInvocations,
+      },
+      requestIdentity: "request_sha256",
+      status: "failed",
+      transportReceipt: receipt,
+    };
+    return checkedResult;
+  }
 };
 
 const nativeRequestIdentity = (
   directory: string,
   invocation: typeof EvaluationInvocation.Type
-): "request_sha256" | "dispatch_id_only" => {
+) => {
   let saved: string;
   try {
     saved = readFileSync(
@@ -242,7 +247,9 @@ const nativeRequestIdentity = (
       Schema.Struct({ code: Schema.Literal("ENOENT") })
     )(error);
     if (missing._tag === "Some") {
-      return "dispatch_id_only";
+      const checkedResult: "request_sha256" | "dispatch_id_only" =
+        "dispatch_id_only";
+      return checkedResult;
     }
     throw error;
   }
@@ -259,7 +266,11 @@ const nativeRequestIdentity = (
       "Unknown native receipt published request identity differs"
     );
   }
-  return "request_sha256";
+  {
+    const checkedResult: "request_sha256" | "dispatch_id_only" =
+      "request_sha256";
+    return checkedResult;
+  }
 };
 
 const nativeUnknownOutput = (
@@ -267,10 +278,11 @@ const nativeUnknownOutput = (
   invocation: typeof EvaluationInvocation.Type,
   base: Omit<PersistedExtractionOutput, "status">,
   directory: string
-): PersistedExtractionOutput | null => {
+) => {
   const decoded = Schema.decodeUnknownOption(NativeUnknownResult)(receipt);
   if (decoded._tag === "None") {
-    return null;
+    const checkedResult: PersistedExtractionOutput | null = null;
+    return checkedResult;
   }
   const matches = decoded.value.ledger.dispatches.filter(
     (dispatch) =>
@@ -288,18 +300,21 @@ const nativeUnknownOutput = (
       "Unknown native receipt lacks the matching reserved dispatch"
     );
   }
-  return {
-    ...base,
-    failureCode: "provider_outcome_unknown",
-    measurements: {
-      ...unavailableMeasurements,
-      costReservationMicroUsd: dispatch.maximum_cost_micro_usd,
-      fallbackInvocations: 0,
-    },
-    requestIdentity: nativeRequestIdentity(directory, invocation),
-    status: "failed",
-    transportReceipt: receipt,
-  };
+  {
+    const checkedResult: PersistedExtractionOutput | null = {
+      ...base,
+      failureCode: "provider_outcome_unknown",
+      measurements: {
+        ...unavailableMeasurements,
+        costReservationMicroUsd: dispatch.maximum_cost_micro_usd,
+        fallbackInvocations: 0,
+      },
+      requestIdentity: nativeRequestIdentity(directory, invocation),
+      status: "failed",
+      transportReceipt: receipt,
+    };
+    return checkedResult;
+  }
 };
 
 const collectOutput = (
@@ -308,7 +323,7 @@ const collectOutput = (
   plan: typeof CapturePlan.Type,
   directory: string,
   latencySource: "client_wall" | "tool_wall"
-): PersistedExtractionOutput | null => {
+) => {
   const base = {
     caseId: item.id,
     evidenceSha256: request.evidenceSha256,
@@ -318,7 +333,7 @@ const collectOutput = (
     rawProviderResponse: null,
   };
   if (request.invocation === null) {
-    return {
+    const checkedResult: PersistedExtractionOutput | null = {
       ...base,
       measurements: {
         ...unavailableMeasurements,
@@ -327,6 +342,7 @@ const collectOutput = (
       },
       status: "skipped",
     };
+    return checkedResult;
   }
   const resultFile = path.join(
     directory,
@@ -340,7 +356,8 @@ const collectOutput = (
       Schema.Struct({ code: Schema.Literal("ENOENT") })
     )(error);
     if (missing._tag === "Some") {
-      return null;
+      const checkedResult: PersistedExtractionOutput | null = null;
+      return checkedResult;
     }
     throw error;
   }
@@ -349,16 +366,18 @@ const collectOutput = (
     interruptedOutput(receipt, request.invocation, base, latencySource) ??
     nativeUnknownOutput(receipt, request.invocation, base, directory);
   if (interrupted !== null) {
-    return interrupted;
+    const checkedResult: PersistedExtractionOutput | null = interrupted;
+    return checkedResult;
   }
   const result = Schema.decodeUnknownSync(AccountedResult)(receipt);
   const response = result.result?.value;
   if (response === undefined) {
-    return {
+    const checkedResult: PersistedExtractionOutput | null = {
       ...base,
       failureCode: "accounted_outcome_unavailable",
       status: "failed",
     };
+    return checkedResult;
   }
   if (
     response.dispatchId !== request.invocation.dispatchId ||
@@ -389,7 +408,7 @@ const collectOutput = (
         : unavailableMeasurements.providerSpendMicroUsd,
   };
   if (response.status < 200 || response.status >= 300) {
-    return {
+    const checkedResult: PersistedExtractionOutput | null = {
       ...base,
       failureCode: `http_${response.status}`,
       measurements,
@@ -397,17 +416,21 @@ const collectOutput = (
       requestIdentity: "request_sha256",
       status: "failed",
     };
+    return checkedResult;
   }
   const rawCandidate = candidateFromResponse(plan.strategy, item, raw);
-  return {
-    ...base,
-    failureCode: rawCandidate === null ? "malformed_response" : null,
-    measurements,
-    rawCandidate,
-    rawProviderResponse: response.body,
-    requestIdentity: "request_sha256",
-    status: rawCandidate === null ? "failed" : "completed",
-  };
+  {
+    const checkedResult: PersistedExtractionOutput | null = {
+      ...base,
+      failureCode: rawCandidate === null ? "malformed_response" : null,
+      measurements,
+      rawCandidate,
+      rawProviderResponse: response.body,
+      requestIdentity: "request_sha256",
+      status: rawCandidate === null ? "failed" : "completed",
+    };
+    return checkedResult;
+  }
 };
 
 const { positionals, values } = parseArgs({

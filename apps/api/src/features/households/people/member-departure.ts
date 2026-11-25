@@ -126,42 +126,45 @@ const confirmTerminalInstance = (instance: MemberDepartureWorkflowInstance) =>
 /** Deterministically create or reconcile the one native departure Workflow. */
 export const makeMemberDepartureWorkflowStarter = (
   workflow: MemberDepartureWorkflowHandle
-): MemberDepartureWorkflowStarter => ({
-  confirmTerminal: (input) =>
-    memberDepartureWorkflowInstanceId(input).pipe(
-      Effect.flatMap(workflow.get),
-      Effect.flatMap(confirmTerminalInstance),
-      Effect.mapError(() => new MemberDepartureWorkflowUnavailable())
-    ),
-  ensureStarted: (input) =>
-    Effect.gen(function* ensureMemberDepartureStarted() {
-      const [id, params] = yield* Effect.all([
-        memberDepartureWorkflowInstanceId(input),
-        Schema.encodeEffect(MemberDepartureWorkflowInput)(input),
-      ]);
-      return yield* workflow.createBatch([{ id, params }]).pipe(
-        Effect.flatMap((created) => {
-          const [instance] = created;
-          return created.length === 1 && instance !== undefined
-            ? reconcileInstance(instance)
-            : workflow.get(id).pipe(Effect.flatMap(reconcileInstance));
-        }),
-        Effect.catchCauseIf(
-          (cause) => !Cause.hasInterrupts(cause),
-          () => workflow.get(id).pipe(Effect.flatMap(reconcileInstance))
-        )
-      );
-    }).pipe(Effect.mapError(() => new MemberDepartureWorkflowUnavailable())),
-  signalRemovalOutcome: (input, outcome) =>
-    Effect.gen(function* signalMemberDepartureOutcome() {
-      const [attemptId, instanceId] = yield* Effect.all([
-        memberDepartureAttemptId(input),
-        memberDepartureWorkflowInstanceId(input),
-      ]);
-      const instance = yield* workflow.get(instanceId);
-      yield* instance.sendEvent({
-        payload: { attemptId, outcome },
-        type: "membership-removal-outcome",
-      });
-    }).pipe(Effect.mapError(() => new MemberDepartureWorkflowUnavailable())),
-});
+) => {
+  const checkedResult: MemberDepartureWorkflowStarter = {
+    confirmTerminal: (input) =>
+      memberDepartureWorkflowInstanceId(input).pipe(
+        Effect.flatMap(workflow.get),
+        Effect.flatMap(confirmTerminalInstance),
+        Effect.mapError(() => new MemberDepartureWorkflowUnavailable())
+      ),
+    ensureStarted: (input) =>
+      Effect.gen(function* ensureMemberDepartureStarted() {
+        const [id, params] = yield* Effect.all([
+          memberDepartureWorkflowInstanceId(input),
+          Schema.encodeEffect(MemberDepartureWorkflowInput)(input),
+        ]);
+        return yield* workflow.createBatch([{ id, params }]).pipe(
+          Effect.flatMap((created) => {
+            const [instance] = created;
+            return created.length === 1 && instance !== undefined
+              ? reconcileInstance(instance)
+              : workflow.get(id).pipe(Effect.flatMap(reconcileInstance));
+          }),
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterrupts(cause),
+            () => workflow.get(id).pipe(Effect.flatMap(reconcileInstance))
+          )
+        );
+      }).pipe(Effect.mapError(() => new MemberDepartureWorkflowUnavailable())),
+    signalRemovalOutcome: (input, outcome) =>
+      Effect.gen(function* signalMemberDepartureOutcome() {
+        const [attemptId, instanceId] = yield* Effect.all([
+          memberDepartureAttemptId(input),
+          memberDepartureWorkflowInstanceId(input),
+        ]);
+        const instance = yield* workflow.get(instanceId);
+        yield* instance.sendEvent({
+          payload: { attemptId, outcome },
+          type: "membership-removal-outcome",
+        });
+      }).pipe(Effect.mapError(() => new MemberDepartureWorkflowUnavailable())),
+  };
+  return checkedResult;
+};

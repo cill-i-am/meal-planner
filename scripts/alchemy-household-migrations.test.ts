@@ -12,32 +12,36 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { Effect } from "effect";
 import { expect, it } from "vitest";
 
-const executor = (database: DatabaseSync): SqlExecutor => ({
-  batch: (statements) =>
-    Effect.try({
-      catch: (cause) =>
-        new MigrationError({ cause, message: "Test migration failed" }),
-      try: () => {
-        database.exec("BEGIN");
-        try {
-          for (const statement of statements) {
-            database.exec(statement);
+const executor = (database: DatabaseSync) => {
+  const checkedResult: SqlExecutor = {
+    batch: (statements) =>
+      Effect.try({
+        catch: (cause) =>
+          new MigrationError({ cause, message: "Test migration failed" }),
+        try: () => {
+          database.exec("BEGIN");
+          try {
+            for (const statement of statements) {
+              database.exec(statement);
+            }
+            database.exec("COMMIT");
+          } catch (error) {
+            database.exec("ROLLBACK");
+            throw error;
           }
-          database.exec("COMMIT");
-        } catch (error) {
-          database.exec("ROLLBACK");
-          throw error;
-        }
-      },
-    }),
-  dialect: "sqlite",
-  query: (sql, params = []) =>
-    Effect.try({
-      catch: (cause) =>
-        new MigrationError({ cause, message: "Test query failed" }),
-      try: () => database.prepare(inlineSqlParams(sql, params, "sqlite")).all(),
-    }),
-});
+        },
+      }),
+    dialect: "sqlite",
+    query: (sql, params = []) =>
+      Effect.try({
+        catch: (cause) =>
+          new MigrationError({ cause, message: "Test query failed" }),
+        try: () =>
+          database.prepare(inlineSqlParams(sql, params, "sqlite")).all(),
+      }),
+  };
+  return checkedResult;
+};
 
 it("adopts the existing Drizzle household ledger without replaying SQL or losing facts", async () => {
   const records = await Effect.runPromise(

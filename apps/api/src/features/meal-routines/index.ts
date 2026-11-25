@@ -45,8 +45,12 @@ export type RoutineResolution =
       readonly ruleId: string;
     };
 
-const dateOf = (value: Date): PlanningDate =>
-  PlanningDateSchema.make(value.toISOString().slice(0, 10));
+const dateOf = (value: Date) => {
+  const checkedResult: PlanningDate = PlanningDateSchema.make(
+    value.toISOString().slice(0, 10)
+  );
+  return checkedResult;
+};
 
 /** Expands only adult-confirmed managed occasions. No calendar coverage is inferred. */
 export const expandManagedOccasions = (
@@ -54,7 +58,7 @@ export const expandManagedOccasions = (
   activePersonIds: ReadonlySet<HouseholdPersonId>,
   startDate: PlanningDate,
   weeks: number
-): readonly CoverageRequirement[] => {
+) => {
   const start = new Date(`${startDate}T00:00:00.000Z`);
   const requirements: CoverageRequirement[] = [];
   for (let offset = 0; offset < weeks * 7; offset += 1) {
@@ -77,24 +81,31 @@ export const expandManagedOccasions = (
       }
     }
   }
-  return requirements;
+  {
+    const checkedResult: readonly CoverageRequirement[] = requirements;
+    return checkedResult;
+  }
 };
 
-const refsFor = (choice: RoutineChoice): readonly PlanningOptionRef[] => {
+const refsFor = (choice: RoutineChoice) => {
   switch (choice._tag) {
     case "Options": {
-      return choice.optionRefs;
+      const checkedResult: readonly PlanningOptionRef[] = choice.optionRefs;
+      return checkedResult;
     }
     case "External": {
-      return [choice.optionRef];
+      const checkedResult: readonly PlanningOptionRef[] = [choice.optionRef];
+      return checkedResult;
     }
     case "Leftover":
     case "Skip":
     case "Flexible": {
-      return [];
+      const checkedResult: readonly PlanningOptionRef[] = [];
+      return checkedResult;
     }
     default: {
-      return casesHandled(choice);
+      const checkedResult: readonly PlanningOptionRef[] = casesHandled(choice);
+      return checkedResult;
     }
   }
 };
@@ -107,7 +118,7 @@ export const resolveRoutineForCoverage = (
     readonly profileVersion: ProfileVersion;
     readonly safetyState: "confirmed_none" | "has_constraints" | "unknown";
   }
-): RoutineResolution => {
+) => {
   const { requirement } = input;
   const oneOffs = snapshot.oneOffRoutines.filter(
     (rule) =>
@@ -137,18 +148,21 @@ export const resolveRoutineForCoverage = (
   ];
   const selected = ranked.find(({ rules }) => rules.length > 0);
   if (!selected) {
-    return { _tag: "NoRoutine" };
+    const checkedResult: RoutineResolution = { _tag: "NoRoutine" };
+    return checkedResult;
   }
   if (selected.rules.length > 1) {
-    return {
+    const checkedResult: RoutineResolution = {
       _tag: "Conflict",
       ruleIds: selected.rules.map((rule) => rule.id),
       scope: selected.scope,
     };
+    return checkedResult;
   }
   const [rule] = selected.rules;
   if (!rule) {
-    return { _tag: "NoRoutine" };
+    const checkedResult: RoutineResolution = { _tag: "NoRoutine" };
+    return checkedResult;
   }
   const blocked = refsFor(rule.choice).filter(
     (reference) =>
@@ -160,13 +174,21 @@ export const resolveRoutineForCoverage = (
       }) !== null
   );
   if (blocked.length > 0) {
-    return { _tag: "BlockedSuitability", optionRefs: blocked, ruleId: rule.id };
+    const checkedResult: RoutineResolution = {
+      _tag: "BlockedSuitability",
+      optionRefs: blocked,
+      ruleId: rule.id,
+    };
+    return checkedResult;
   }
-  return {
-    _tag: "Applied",
-    choice: rule.choice,
-    source: { id: rule.id, scope: selected.scope, version: rule.version },
-  };
+  {
+    const checkedResult: RoutineResolution = {
+      _tag: "Applied",
+      choice: rule.choice,
+      source: { id: rule.id, scope: selected.scope, version: rule.version },
+    };
+    return checkedResult;
+  }
 };
 
 export type FallbackResolution =
@@ -188,7 +210,7 @@ export const resolveFallbackForCoverage = (
     readonly profileVersion: ProfileVersion;
     readonly safetyState: "confirmed_none" | "has_constraints" | "unknown";
   }
-): FallbackResolution => {
+) => {
   const candidates = snapshot.fallbacks
     .filter(
       (fallback) =>
@@ -208,18 +230,26 @@ export const resolveFallbackForCoverage = (
     .toSorted((left, right) => left.priority - right.priority);
   const [first] = candidates;
   if (!first) {
-    return { _tag: "None" };
+    const checkedResult: FallbackResolution = { _tag: "None" };
+    return checkedResult;
   }
   const tied = candidates.filter(
     (candidate) => candidate.priority === first.priority
   );
   if (tied.length > 1) {
-    return { _tag: "Conflict", fallbackIds: tied.map((item) => item.id) };
+    const checkedResult: FallbackResolution = {
+      _tag: "Conflict",
+      fallbackIds: tied.map((item) => item.id),
+    };
+    return checkedResult;
   }
-  return {
-    _tag: "Selected",
-    fallbackId: first.id,
-    optionRef: first.optionRef,
-    version: first.version,
-  };
+  {
+    const checkedResult: FallbackResolution = {
+      _tag: "Selected",
+      fallbackId: first.id,
+      optionRef: first.optionRef,
+      version: first.version,
+    };
+    return checkedResult;
+  }
 };

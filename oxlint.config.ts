@@ -1,27 +1,27 @@
 import { defineConfig } from "oxlint";
 import core from "ultracite/oxlint/core";
+import landmines from "ultracite/oxlint/landmines";
 import shadcn from "ultracite/oxlint/shadcn";
 
 export default defineConfig({
-  // The current Vitest add-on enforces assertion-count and exact thrown-text
-  // policies that conflict with these comprehensive Effect schema tests.
-  extends: [core, shadcn],
-  // Project-scoped vendor skills are executable tooling, not application source.
+  extends: [core, shadcn, landmines],
+
   ignorePatterns: [
     ...core.ignorePatterns,
     ".agents/**",
     "apps/api/auth-migrations/**/snapshot.json",
     "apps/api/src/features/auth/auth.database-schema.ts",
-    // Drizzle Kit emits this import() declaration alongside generated
-    // Durable SQLite migrations; generation/no-diff checks own its integrity.
+
     "apps/api/household-migrations/migrations.d.ts",
-    // Byte-identical upstream plugin sources are verified separately and must
-    // not lint themselves; repository-owned plugin glue remains in lint scope.
+    // WARNING: Migration regression tests require this historical repository snapshot byte for byte.
+    "apps/api/src/features/provider-accounting/provider-accounting.repository.previous.fixture.ts",
+
     "tools/oxlint/anti-slop/no-conditional-empty-object-spread.ts",
     "tools/oxlint/anti-slop/no-runtime-typeof.ts",
   ],
   jsPlugins: [
     ...shadcn.jsPlugins,
+    ...landmines.jsPlugins,
     {
       name: "anti-slop",
       specifier: "./tools/oxlint/anti-slop/index.ts",
@@ -31,22 +31,17 @@ export default defineConfig({
     {
       files: ["**/*.{ts,tsx,mts,cts}"],
       rules: {
-        // TypeScript permits paired type/value names for Effect schemas and
-        // services. The compiler checks real redeclarations; this JS rule does not.
         "no-redeclare": "off",
-        // Service factories keep helpers beside their Effect construction context.
-        // This rule also misidentifies captures in nested Effect callbacks.
+
         "unicorn/consistent-function-scoping": "off",
       },
     },
     {
       files: [
-        "apps/api/src/features/households/household-object-host.test-fixture.ts",
-        "apps/api/src/features/imports/household-import-batch-workflow.test-fixture.ts",
+        "apps/api/src/features/households/household-object-host.fixture.ts",
+        "apps/api/src/features/imports/household-import-batch-workflow.fixture.ts",
       ],
       rules: {
-        // Native Worker hosts must export their cooperating runtime classes
-        // from the same entry module. Oxlint reports this rule at file scope.
         "max-classes-per-file": "off",
       },
     },
@@ -62,22 +57,18 @@ export default defineConfig({
         "apps/api/src/features/tesco/catalogue/xapi-catalogue.ts",
       ],
       rules: {
-        // Effect.gen uses anonymous generator callbacks; naming them after the
-        // surrounding binding immediately conflicts with no-shadow.
         "func-names": "off",
       },
     },
     {
       files: ["apps/api/src/app/http/query-params.ts"],
       rules: {
-        // Effect.succeed requires the explicit undefined value for this branch.
         "unicorn/no-useless-undefined": "off",
       },
     },
     {
       files: ["apps/api/src/app/http/responses.ts"],
       rules: {
-        // These are Effect combinators; no Promise callbacks or .then calls exist.
         "promise/prefer-await-to-callbacks": "off",
         "promise/prefer-await-to-then": "off",
       },
@@ -85,7 +76,6 @@ export default defineConfig({
     {
       files: ["apps/api/src/features/auth/auth.principal.ts"],
       rules: {
-        // Effect.mapError is an Effect combinator, not a Promise callback.
         "promise/prefer-await-to-callbacks": "off",
       },
     },
@@ -94,7 +84,6 @@ export default defineConfig({
         "apps/api/src/features/tesco/auth/soft-login-auth-refresh.test.ts",
       ],
       rules: {
-        // Node's callback-only Server APIs require Promise adapters in this fixture.
         "promise/avoid-new": "off",
         "promise/prefer-await-to-callbacks": "off",
       },
@@ -104,6 +93,16 @@ export default defineConfig({
     "anti-slop/no-conditional-empty-object-spread": "error",
     "anti-slop/no-runtime-typeof": "error",
     "anti-slop/no-unknown-parameters": "error",
+    // WARNING: These opt-in real-runtime suites exercise Docker provisioning, native expiry, and a measured provider budget window.
+    "landmines-testing/no-flake-masking": [
+      "error",
+      {
+        allow: {
+          "apps/api/vitest.container.config.ts": 2,
+          "scripts/sigen-worker-runtime.test.ts": 1,
+        },
+      },
+    ],
     complexity: ["error", { max: 20 }],
   },
 });

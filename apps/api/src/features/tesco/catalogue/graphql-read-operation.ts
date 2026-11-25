@@ -52,13 +52,17 @@ const invalid = (
 export const defineReadOnlyGraphQlOperation = (input: {
   readonly document: string;
   readonly operationName: string;
-}): ReadOnlyGraphQlOperation => {
+}) => {
   let parsed: ReturnType<typeof parse>;
 
   try {
     parsed = parse(input.document);
   } catch {
-    return invalid("InvalidDocument", input.operationName);
+    const checkedResult: ReadOnlyGraphQlOperation = invalid(
+      "InvalidDocument",
+      input.operationName
+    );
+    return checkedResult;
   }
 
   if (
@@ -68,7 +72,11 @@ export const defineReadOnlyGraphQlOperation = (input: {
         definition.kind !== Kind.FRAGMENT_DEFINITION
     )
   ) {
-    return invalid("UnexpectedDefinition", input.operationName);
+    const checkedResult: ReadOnlyGraphQlOperation = invalid(
+      "UnexpectedDefinition",
+      input.operationName
+    );
+    return checkedResult;
   }
 
   const operations = parsed.definitions.filter(
@@ -76,31 +84,62 @@ export const defineReadOnlyGraphQlOperation = (input: {
   );
 
   if (operations.length === 0) {
-    return invalid("NoOperation", input.operationName);
+    const checkedResult: ReadOnlyGraphQlOperation = invalid(
+      "NoOperation",
+      input.operationName
+    );
+    return checkedResult;
   }
   if (operations.length > 1) {
-    return invalid("MultipleOperations", input.operationName);
+    const checkedResult: ReadOnlyGraphQlOperation = invalid(
+      "MultipleOperations",
+      input.operationName
+    );
+    return checkedResult;
   }
 
   const [operation] = operations;
   if (operation === undefined) {
-    return invalid("NoOperation", input.operationName);
+    const checkedResult: ReadOnlyGraphQlOperation = invalid(
+      "NoOperation",
+      input.operationName
+    );
+    return checkedResult;
   }
   if (operation.operation === OperationTypeNode.MUTATION) {
-    return invalid("MutationOperation", input.operationName);
+    const checkedResult: ReadOnlyGraphQlOperation = invalid(
+      "MutationOperation",
+      input.operationName
+    );
+    return checkedResult;
   }
   if (operation.operation === OperationTypeNode.SUBSCRIPTION) {
-    return invalid("SubscriptionOperation", input.operationName);
+    const checkedResult: ReadOnlyGraphQlOperation = invalid(
+      "SubscriptionOperation",
+      input.operationName
+    );
+    return checkedResult;
   }
   if (operation.name === undefined) {
-    return invalid("AnonymousOperation", input.operationName);
+    const checkedResult: ReadOnlyGraphQlOperation = invalid(
+      "AnonymousOperation",
+      input.operationName
+    );
+    return checkedResult;
   }
   if (operation.name.value !== input.operationName) {
-    return invalid("MismatchedOperationName", input.operationName);
+    const checkedResult: ReadOnlyGraphQlOperation = invalid(
+      "MismatchedOperationName",
+      input.operationName
+    );
+    return checkedResult;
   }
 
-  return {
-    document: input.document as ReadOnlyGraphQlDocument,
-    operationName: input.operationName,
-  };
+  {
+    const checkedResult: ReadOnlyGraphQlOperation = {
+      document: input.document as ReadOnlyGraphQlDocument,
+      operationName: input.operationName,
+    };
+    return checkedResult;
+  }
 };

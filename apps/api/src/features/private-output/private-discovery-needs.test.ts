@@ -45,33 +45,42 @@ type Reference = Update["need"];
 const reason = (
   participant: PrivateDiscoveryEvidenceMessage,
   need: Reference = declared
-): Update => ({
-  _tag: "RecordReason",
-  evidence: evidence(participant),
-  need,
-  revisit: null,
-  value: "The shared meal is too spicy.",
-});
+) => {
+  const checkedResult: Update = {
+    _tag: "RecordReason",
+    evidence: evidence(participant),
+    need,
+    revisit: null,
+    value: "The shared meal is too spicy.",
+  };
+  return checkedResult;
+};
 const acceptedOption = (
   participant: PrivateDiscoveryEvidenceMessage,
   need: Reference = declared
-): Update => ({
-  _tag: "RecordOption",
-  evidence: evidence(participant),
-  need,
-  revisit: null,
-  value: option,
-});
+) => {
+  const checkedResult: Update = {
+    _tag: "RecordOption",
+    evidence: evidence(participant),
+    need,
+    revisit: null,
+    value: option,
+  };
+  return checkedResult;
+};
 const preparation = (
   participant: PrivateDiscoveryEvidenceMessage,
   need: Reference = declared
-): Update => ({
-  _tag: "RecordPreparation",
-  evidence: evidence(participant),
-  need,
-  revisit: null,
-  value: "Assembling without additional cooking is manageable.",
-});
+) => {
+  const checkedResult: Update = {
+    _tag: "RecordPreparation",
+    evidence: evidence(participant),
+    need,
+    revisit: null,
+    value: "Assembling without additional cooking is manageable.",
+  };
+  return checkedResult;
+};
 const changes = (
   participant: PrivateDiscoveryEvidenceMessage,
   updates: readonly Update[] = [],

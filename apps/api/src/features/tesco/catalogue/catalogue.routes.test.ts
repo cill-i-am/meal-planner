@@ -23,11 +23,14 @@ const makeApp = (service: TescoCatalogue) =>
     { disableLogger: true }
   );
 
-const failingCatalogue = (failure: TescoCatalogueError): TescoCatalogue => ({
-  categoryProducts: () => Effect.fail(failure),
-  search: () => Effect.fail(failure),
-  suggestions: () => Effect.fail(failure),
-});
+const failingCatalogue = (failure: TescoCatalogueError) => {
+  const checkedResult: TescoCatalogue = {
+    categoryProducts: () => Effect.fail(failure),
+    search: () => Effect.fail(failure),
+    suggestions: () => Effect.fail(failure),
+  };
+  return checkedResult;
+};
 
 describe("Tesco catalogue routes", () => {
   const apps: ReturnType<typeof HttpRouter.toWebHandler>[] = [];

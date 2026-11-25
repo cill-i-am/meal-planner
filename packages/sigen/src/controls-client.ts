@@ -83,64 +83,86 @@ const peakShavingBody = (
 const validatePeakReserve = (
   reserveSocPercent: number,
   levels: typeof BatterySocSettings.Type
-): Effect.Effect<void, SigenFailure> => {
+) => {
   const { backupSocPercent, chargeSocPercent, dischargeSocPercent } = levels;
   if (
     backupSocPercent === null ||
     chargeSocPercent === null ||
     dischargeSocPercent === null
   ) {
-    return failure("UnsupportedCapability");
+    const checkedResult: Effect.Effect<void, SigenFailure> = failure(
+      "UnsupportedCapability"
+    );
+    return checkedResult;
   }
-  return reserveSocPercent < Math.max(backupSocPercent, dischargeSocPercent) ||
-    reserveSocPercent > chargeSocPercent
-    ? failure("InvalidInput")
-    : Effect.void;
+  {
+    const checkedResult: Effect.Effect<void, SigenFailure> =
+      reserveSocPercent < Math.max(backupSocPercent, dischargeSocPercent) ||
+      reserveSocPercent > chargeSocPercent
+        ? failure("InvalidInput")
+        : Effect.void;
+    return checkedResult;
+  }
 };
 
 const validatePeakSchedule = (
   change: Extract<ControlChange, { operation: "set_peak_shaving_schedule" }>,
   snapshot: ControlSnapshot
-): SigenFailure | null => {
+) => {
   if (snapshot.kind !== "peak_shaving") {
-    return failure("SchemaMismatch");
+    const checkedResult: SigenFailure | null = failure("SchemaMismatch");
+    return checkedResult;
   }
   const value = snapshot.settings;
   if (value.providerControlMode !== 0 && value.providerControlMode !== 1) {
-    return failure("UnsupportedCapability");
+    const checkedResult: SigenFailure | null = failure("UnsupportedCapability");
+    return checkedResult;
   }
   if (change.enabled && change.slots.length === 0) {
-    return failure("InvalidInput");
+    const checkedResult: SigenFailure | null = failure("InvalidInput");
+    return checkedResult;
   }
   if (change.timezone !== value.timezone) {
-    return failure("InvalidInput");
+    const checkedResult: SigenFailure | null = failure("InvalidInput");
+    return checkedResult;
   }
-  // The app sends zero/empty fields when disabling, but the provider retains its preset.
+
   if (!change.enabled) {
-    return samePeakShavingPreset(change, value)
+    const checkedResult: SigenFailure | null = samePeakShavingPreset(
+      change,
+      value
+    )
       ? null
       : failure("InvalidInput");
+    return checkedResult;
   }
-  return change.slots.length <= 12 &&
-    change.slots.every(Schema.is(ScheduleWindow)) &&
-    nonOverlappingWindows(change.slots)
-    ? null
-    : failure("UnsupportedCapability");
+  {
+    const checkedResult: SigenFailure | null =
+      change.slots.length <= 12 &&
+      change.slots.every(Schema.is(ScheduleWindow)) &&
+      nonOverlappingWindows(change.slots)
+        ? null
+        : failure("UnsupportedCapability");
+    return checkedResult;
+  }
 };
 
-const validateSocSnapshot = (
-  snapshot: ControlSnapshot
-): SigenFailure | null => {
+const validateSocSnapshot = (snapshot: ControlSnapshot) => {
   if (snapshot.kind !== "battery") {
-    return failure("SchemaMismatch");
+    const checkedResult: SigenFailure | null = failure("SchemaMismatch");
+    return checkedResult;
   }
   const value = snapshot.settings;
-  return value.chargeSocPercent === null ||
-    value.dischargeSocPercent === null ||
-    value.backupSocPercent === null ||
-    value.peakShavingSocPercent === null
-    ? failure("UnsupportedCapability")
-    : null;
+  {
+    const checkedResult: SigenFailure | null =
+      value.chargeSocPercent === null ||
+      value.dischargeSocPercent === null ||
+      value.backupSocPercent === null ||
+      value.peakShavingSocPercent === null
+        ? failure("UnsupportedCapability")
+        : null;
+    return checkedResult;
+  }
 };
 
 const validateGridPower = (
@@ -149,9 +171,10 @@ const validateGridPower = (
     { operation: "set_grid_export_limit" | "set_grid_import_limit" }
   >,
   snapshot: ControlSnapshot
-): SigenFailure | null => {
+) => {
   if (snapshot.kind !== "grid") {
-    return failure("SchemaMismatch");
+    const checkedResult: SigenFailure | null = failure("SchemaMismatch");
+    return checkedResult;
   }
   const ceiling = (
     change.operation === "set_grid_export_limit"
@@ -159,42 +182,59 @@ const validateGridPower = (
       : snapshot.settings.importPower
   ).installer;
   if (ceiling.kind === "unset") {
-    return failure("UnsupportedCapability");
+    const checkedResult: SigenFailure | null = failure("UnsupportedCapability");
+    return checkedResult;
   }
-  return ceiling.kind === "limited" && change.watts > ceiling.watts
-    ? failure("InvalidInput")
-    : null;
+  {
+    const checkedResult: SigenFailure | null =
+      ceiling.kind === "limited" && change.watts > ceiling.watts
+        ? failure("InvalidInput")
+        : null;
+    return checkedResult;
+  }
 };
 
 const validateGridCurrent = (
   change: Extract<ControlChange, { operation: "set_grid_connection_current" }>,
   snapshot: ControlSnapshot
-): SigenFailure | null => {
+) => {
   if (snapshot.kind !== "grid") {
-    return failure("SchemaMismatch");
+    const checkedResult: SigenFailure | null = failure("SchemaMismatch");
+    return checkedResult;
   }
   const ceiling = snapshot.settings.connectionCurrent.installerAmps;
   if (ceiling === null) {
-    return failure("UnsupportedCapability");
+    const checkedResult: SigenFailure | null = failure("UnsupportedCapability");
+    return checkedResult;
   }
-  return change.amperes > ceiling ? failure("InvalidInput") : null;
+  {
+    const checkedResult: SigenFailure | null =
+      change.amperes > ceiling ? failure("InvalidInput") : null;
+    return checkedResult;
+  }
 };
 const validateSmartLoad = (
   change: Extract<ControlChange, { operation: "set_smart_load_switch" }>,
   snapshot: ControlSnapshot
-): SigenFailure | null => {
+) => {
   if (snapshot.kind !== "smart_load") {
-    return failure("SchemaMismatch");
+    const checkedResult: SigenFailure | null = failure("SchemaMismatch");
+    return checkedResult;
   }
   const { load } = snapshot.settings;
   if (load.key !== change.loadKey || load.path !== change.loadPath) {
-    return failure("PermissionDenied");
+    const checkedResult: SigenFailure | null = failure("PermissionDenied");
+    return checkedResult;
   }
-  return load.controllable === true &&
-    load.providerRunMode === 1 &&
-    (load.providerManualSwitch === 0 || load.providerManualSwitch === 1)
-    ? null
-    : failure("UnsupportedCapability");
+  {
+    const checkedResult: SigenFailure | null =
+      load.controllable === true &&
+      load.providerRunMode === 1 &&
+      (load.providerManualSwitch === 0 || load.providerManualSwitch === 1)
+        ? null
+        : failure("UnsupportedCapability");
+    return checkedResult;
+  }
 };
 const validateBatteryPriority = (
   change: Extract<
@@ -202,21 +242,27 @@ const validateBatteryPriority = (
     { operation: "set_battery_discharge_priority" }
   >,
   snapshot: ControlSnapshot
-): SigenFailure | null => {
+) => {
   if (snapshot.kind !== "battery_priority") {
-    return failure("SchemaMismatch");
+    const checkedResult: SigenFailure | null = failure("SchemaMismatch");
+    return checkedResult;
   }
-  return JSON.stringify([...snapshot.settings.providerSources].toSorted()) ===
-    JSON.stringify([...change.sources].toSorted())
-    ? null
-    : failure("UnsupportedCapability");
+  {
+    const checkedResult: SigenFailure | null =
+      JSON.stringify([...snapshot.settings.providerSources].toSorted()) ===
+      JSON.stringify([...change.sources].toSorted())
+        ? null
+        : failure("UnsupportedCapability");
+    return checkedResult;
+  }
 };
 const validateSolarPriority = (
   change: Extract<ControlChange, { operation: "set_solar_priority" }>,
   snapshot: ControlSnapshot
-): SigenFailure | null => {
+) => {
   if (snapshot.kind !== "solar_priority") {
-    return failure("SchemaMismatch");
+    const checkedResult: SigenFailure | null = failure("SchemaMismatch");
+    return checkedResult;
   }
   const current = snapshot.settings.entries;
   const key = (entry: (typeof change.entries)[number]) =>
@@ -226,7 +272,8 @@ const validateSolarPriority = (
       entry.smartLoadPath,
     ]);
   if (current.some((entry) => entry.group || entry.groupPath.length !== 1)) {
-    return failure("UnsupportedCapability");
+    const checkedResult: SigenFailure | null = failure("UnsupportedCapability");
+    return checkedResult;
   }
   if (
     current.some(
@@ -237,7 +284,8 @@ const validateSolarPriority = (
         entry.smartLoadPath !== null
     )
   ) {
-    return failure("UnsupportedCapability");
+    const checkedResult: SigenFailure | null = failure("UnsupportedCapability");
+    return checkedResult;
   }
   if (
     current.some(
@@ -247,7 +295,8 @@ const validateSolarPriority = (
           ?.providerPriority !== entry.providerPriority
     )
   ) {
-    return failure("UnsupportedCapability");
+    const checkedResult: SigenFailure | null = failure("UnsupportedCapability");
+    return checkedResult;
   }
   const keys = change.entries.map(key);
   const sameKeys =
@@ -258,13 +307,19 @@ const validateSolarPriority = (
   const priorities = change.entries
     .map((entry) => entry.providerPriority)
     .toSorted((a, b) => a - b);
-  return sameKeys &&
-    JSON.stringify(priorities) ===
-      JSON.stringify(
-        current.map((entry) => entry.providerPriority).toSorted((a, b) => a - b)
-      )
-    ? null
-    : failure("InvalidInput");
+  {
+    const checkedResult: SigenFailure | null =
+      sameKeys &&
+      JSON.stringify(priorities) ===
+        JSON.stringify(
+          current
+            .map((entry) => entry.providerPriority)
+            .toSorted((a, b) => a - b)
+        )
+        ? null
+        : failure("InvalidInput");
+    return checkedResult;
+  }
 };
 
 const validateExistingOwnerLimits = (
@@ -276,39 +331,68 @@ const validateExistingOwnerLimits = (
     | TimeOfUseChange
   >,
   snapshot: ControlSnapshot
-): SigenFailure | null => {
+) => {
   switch (change.operation) {
     case "set_grid_export_limit":
     case "set_grid_import_limit": {
-      return validateGridPower(change, snapshot);
+      const checkedResult: SigenFailure | null = validateGridPower(
+        change,
+        snapshot
+      );
+      return checkedResult;
     }
 
     case "set_grid_connection_current": {
-      return validateGridCurrent(change, snapshot);
+      const checkedResult: SigenFailure | null = validateGridCurrent(
+        change,
+        snapshot
+      );
+      return checkedResult;
     }
     case "set_battery_soc_thresholds": {
-      return validateSocSnapshot(snapshot);
+      const checkedResult: SigenFailure | null = validateSocSnapshot(snapshot);
+      return checkedResult;
     }
     case "set_peak_shaving_schedule": {
-      return validatePeakSchedule(change, snapshot);
+      const checkedResult: SigenFailure | null = validatePeakSchedule(
+        change,
+        snapshot
+      );
+      return checkedResult;
     }
     case "set_battery_export": {
       if (snapshot.kind !== "battery") {
-        return failure("SchemaMismatch");
+        const checkedResult: SigenFailure | null = failure("SchemaMismatch");
+        return checkedResult;
       }
-      return change.enabled &&
-        snapshot.settings.export.installerEnabled !== true
-        ? failure("PermissionDenied")
-        : null;
+      {
+        const checkedResult: SigenFailure | null =
+          change.enabled && snapshot.settings.export.installerEnabled !== true
+            ? failure("PermissionDenied")
+            : null;
+        return checkedResult;
+      }
     }
     case "set_smart_load_switch": {
-      return validateSmartLoad(change, snapshot);
+      const checkedResult: SigenFailure | null = validateSmartLoad(
+        change,
+        snapshot
+      );
+      return checkedResult;
     }
     case "set_battery_discharge_priority": {
-      return validateBatteryPriority(change, snapshot);
+      const checkedResult: SigenFailure | null = validateBatteryPriority(
+        change,
+        snapshot
+      );
+      return checkedResult;
     }
     case "set_solar_priority": {
-      return validateSolarPriority(change, snapshot);
+      const checkedResult: SigenFailure | null = validateSolarPriority(
+        change,
+        snapshot
+      );
+      return checkedResult;
     }
     case "start_manual_override":
     case "stop_manual_override":
@@ -316,10 +400,12 @@ const validateExistingOwnerLimits = (
     case "set_battery_power_limits":
     case "set_solar_power_limit":
     case "set_operating_mode": {
-      return null;
+      const checkedResult: SigenFailure | null = null;
+      return checkedResult;
     }
     default: {
-      return absurd<never>(change);
+      const checkedResult: SigenFailure | null = absurd<never>(change);
+      return checkedResult;
     }
   }
 };
@@ -327,16 +413,23 @@ const validateExistingOwnerLimits = (
 const validateOwnerLimits = (
   change: ControlChange,
   snapshot: ControlSnapshot
-): SigenFailure | null => {
+) => {
   if (
     isProfileChange(change) ||
     isScheduledSettingsChange(change) ||
     isLoadControlChange(change) ||
     change.operation === "activate_time_of_use_mode"
   ) {
-    return null;
+    const checkedResult: SigenFailure | null = null;
+    return checkedResult;
   }
-  return validateExistingOwnerLimits(change, snapshot);
+  {
+    const checkedResult: SigenFailure | null = validateExistingOwnerLimits(
+      change,
+      snapshot
+    );
+    return checkedResult;
+  }
 };
 export const makeControlsClient = (
   read: ProviderRead,
@@ -354,118 +447,147 @@ export const makeControlsClient = (
     stationId: StationId,
     change: ControlChange,
     token: Redacted.Redacted<string>
-  ): Effect.Effect<ControlSnapshot, SigenFailure> => {
+  ) => {
     if (change.operation === "activate_time_of_use_mode") {
-      return timeOfUse.inspect(stationId, token);
+      const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+        timeOfUse.inspect(stationId, token);
+      return checkedResult;
     }
     if (isLoadControlChange(change)) {
-      return loadControls.inspect(stationId, change, token);
+      const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+        loadControls.inspect(stationId, change, token);
+      return checkedResult;
     }
     if (isProfileChange(change)) {
-      return profileControls.inspect(stationId, change, token);
+      const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+        profileControls.inspect(stationId, change, token);
+      return checkedResult;
     }
     if (isScheduledSettingsChange(change)) {
-      return scheduledSettings.inspect(stationId, change, token);
+      const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+        scheduledSettings.inspect(stationId, change, token);
+      return checkedResult;
     }
     switch (change.operation) {
       case "set_smart_load_switch": {
-        return loads
-          .smartLoad({ loadPath: change.loadPath, stationId }, token)
-          .pipe(
-            Effect.map((value) => ({ kind: "smart_load", settings: value }))
-          );
+        const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+          loads
+            .smartLoad({ loadPath: change.loadPath, stationId }, token)
+            .pipe(
+              Effect.map((value) => ({ kind: "smart_load", settings: value }))
+            );
+        return checkedResult;
       }
       case "set_battery_discharge_priority": {
-        return profiles.batteryDischargePriority(stationId, token).pipe(
-          Effect.map((value) => ({
-            kind: "battery_priority",
-            settings: value,
-          }))
-        );
+        const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+          profiles.batteryDischargePriority(stationId, token).pipe(
+            Effect.map((value) => ({
+              kind: "battery_priority",
+              settings: value,
+            }))
+          );
+        return checkedResult;
       }
       case "set_solar_priority": {
-        return energyProfiles
-          .solarPriority(stationId, token)
-          .pipe(
-            Effect.map((value) => ({ kind: "solar_priority", settings: value }))
+        const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+          energyProfiles.solarPriority(stationId, token).pipe(
+            Effect.map((value) => ({
+              kind: "solar_priority",
+              settings: value,
+            }))
           );
+        return checkedResult;
       }
       case "set_battery_soc_thresholds":
       case "set_backup_reserve":
       case "set_battery_power_limits":
       case "set_battery_export": {
-        return settings
-          .batterySettings(stationId, token)
-          .pipe(Effect.map((value) => ({ kind: "battery", settings: value })));
+        const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+          settings
+            .batterySettings(stationId, token)
+            .pipe(
+              Effect.map((value) => ({ kind: "battery", settings: value }))
+            );
+        return checkedResult;
       }
       case "set_peak_shaving_schedule": {
-        return settings
-          .peakShavingSchedule(stationId, token)
-          .pipe(
-            Effect.map((value) => ({ kind: "peak_shaving", settings: value }))
+        const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+          settings.peakShavingSchedule(stationId, token).pipe(
+            Effect.map((value) => ({
+              kind: "peak_shaving",
+              settings: value,
+            }))
           );
+        return checkedResult;
       }
       case "start_manual_override":
       case "stop_manual_override": {
-        return readManualOverrideState(read, stationId, token).pipe(
-          Effect.map((value) => ({
-            kind: "manual",
-            settings: value,
-          }))
-        );
+        const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+          readManualOverrideState(read, stationId, token).pipe(
+            Effect.map((value) => ({
+              kind: "manual",
+              settings: value,
+            }))
+          );
+        return checkedResult;
       }
       case "set_solar_power_limit": {
-        return settings
-          .solarSettings(stationId, token)
-          .pipe(Effect.map((value) => ({ kind: "solar", settings: value })));
+        const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+          settings
+            .solarSettings(stationId, token)
+            .pipe(Effect.map((value) => ({ kind: "solar", settings: value })));
+        return checkedResult;
       }
       case "set_grid_export_limit":
       case "set_grid_import_limit":
       case "set_grid_connection_current": {
-        return settings
-          .gridSettings(stationId, token)
-          .pipe(Effect.map((value) => ({ kind: "grid", settings: value })));
+        const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+          settings
+            .gridSettings(stationId, token)
+            .pipe(Effect.map((value) => ({ kind: "grid", settings: value })));
+        return checkedResult;
       }
       case "set_operating_mode": {
-        return read(
-          `/device/energy-profile/mode/current/${stationId}`,
-          token
-        ).pipe(
-          Effect.flatMap(
-            decodeProvider(
-              Schema.Struct({
-                currentMode: Schema.Number,
-                currentProfileId: Schema.Number,
+        const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+          read(`/device/energy-profile/mode/current/${stationId}`, token).pipe(
+            Effect.flatMap(
+              decodeProvider(
+                Schema.Struct({
+                  currentMode: Schema.Number,
+                  currentProfileId: Schema.Number,
+                })
+              )
+            ),
+            Effect.flatMap((value) =>
+              Effect.gen(function* readModeSnapshot() {
+                const mode = yield* decodeProvider(OperatingMode)({
+                  fetchedAt: yield* Clock.currentTimeMillis,
+                  profileId: value.currentProfileId,
+                  providerMode: value.currentMode,
+                  stationId,
+                });
+                if (change.providerMode !== 9) {
+                  return mode;
+                }
+                const { fetchedAt: _fetchedAt, ...selectedProfile } =
+                  yield* energyProfiles.energyProfile(
+                    {
+                      stationId,
+                      target: { kind: "custom", profileId: change.profileId },
+                    },
+                    token
+                  );
+                return { ...mode, selectedProfile };
               })
-            )
-          ),
-          Effect.flatMap((value) =>
-            Effect.gen(function* readModeSnapshot() {
-              const mode = yield* decodeProvider(OperatingMode)({
-                fetchedAt: yield* Clock.currentTimeMillis,
-                profileId: value.currentProfileId,
-                providerMode: value.currentMode,
-                stationId,
-              });
-              if (change.providerMode !== 9) {
-                return mode;
-              }
-              const { fetchedAt: _fetchedAt, ...selectedProfile } =
-                yield* energyProfiles.energyProfile(
-                  {
-                    stationId,
-                    target: { kind: "custom", profileId: change.profileId },
-                  },
-                  token
-                );
-              return { ...mode, selectedProfile };
-            })
-          ),
-          Effect.map((value) => ({ kind: "mode", settings: value }))
-        );
+            ),
+            Effect.map((value) => ({ kind: "mode", settings: value }))
+          );
+        return checkedResult;
       }
       default: {
-        return absurd<never>(change);
+        const checkedResult: Effect.Effect<ControlSnapshot, SigenFailure> =
+          absurd<never>(change);
+        return checkedResult;
       }
     }
   };
@@ -503,84 +625,91 @@ export const makeControlsClient = (
     change: ControlChange,
     snapshot: ControlSnapshot,
     token: Redacted.Redacted<string>
-  ): Effect.Effect<void, SigenFailure> =>
-    Effect.gen(function* validateOwnerChange() {
-      const equipment = yield* read(
-        `/device/owner/station/home?stationId=${stationId}`,
-        token
-      ).pipe(
-        Effect.flatMap(
-          decodeProvider(
-            Schema.Struct({
-              batteryCapacity: Schema.NullOr(Schema.Finite),
-              hasSolar: Schema.Boolean,
-              stationId: Schema.Number,
-            })
-          )
-        )
-      );
-      if (String(equipment.stationId) !== stationId) {
-        return yield* failure("PermissionDenied");
-      }
-      if (
-        requiresBattery(change, snapshot) &&
-        (equipment.batteryCapacity === null || equipment.batteryCapacity <= 0)
-      ) {
-        return yield* failure("UnsupportedCapability");
-      }
-      if (requiresSolar(change, snapshot) && !equipment.hasSolar) {
-        return yield* failure("UnsupportedCapability");
-      }
-      yield* validateExtendedControl(stationId, change, snapshot, token);
-      const invalid = validateOwnerLimits(change, snapshot);
-      if (invalid !== null) {
-        return yield* invalid;
-      }
-      if (change.operation === "set_peak_shaving_schedule" && change.enabled) {
-        yield* validatePeakReserve(
-          change.reserveSocPercent,
-          yield* readBatterySocSettings(read, stationId, token)
-        );
-      }
-      if (change.operation === "set_battery_discharge_priority") {
-        const capabilities = yield* profiles.energyCapabilities(
-          stationId,
+  ) => {
+    const checkedResult: Effect.Effect<void, SigenFailure> = Effect.gen(
+      function* validateOwnerChange() {
+        const equipment = yield* read(
+          `/device/owner/station/home?stationId=${stationId}`,
           token
-        );
-        if (
-          !capabilities.providerFeatures.hasBatteryPriority ||
-          change.sources.some(
-            (source) => !capabilities.batterySourceOptions.includes(source)
+        ).pipe(
+          Effect.flatMap(
+            decodeProvider(
+              Schema.Struct({
+                batteryCapacity: Schema.NullOr(Schema.Finite),
+                hasSolar: Schema.Boolean,
+                stationId: Schema.Number,
+              })
+            )
           )
+        );
+        if (String(equipment.stationId) !== stationId) {
+          return yield* failure("PermissionDenied");
+        }
+        if (
+          requiresBattery(change, snapshot) &&
+          (equipment.batteryCapacity === null || equipment.batteryCapacity <= 0)
         ) {
           return yield* failure("UnsupportedCapability");
         }
-      }
-      if (change.operation === "set_solar_priority") {
-        const capabilities = yield* profiles.energyCapabilities(
-          stationId,
-          token
-        );
-        if (!capabilities.providerFeatures.hasPVPriority) {
+        if (requiresSolar(change, snapshot) && !equipment.hasSolar) {
           return yield* failure("UnsupportedCapability");
         }
-      }
-      if (change.operation === "set_operating_mode") {
-        const modes = yield* settings.operatingModes(stationId, token);
-        const allowed =
-          change.providerMode === 9
-            ? modes.customProfiles.some(
-                (profile) => profile.profileId === change.profileId
-              )
-            : change.profileId === -1 &&
-              modes.modes.some(
-                (mode) => mode.providerMode === String(change.providerMode)
-              );
-        if (!allowed) {
-          return yield* failure("UnsupportedCapability");
+        yield* validateExtendedControl(stationId, change, snapshot, token);
+        const invalid = validateOwnerLimits(change, snapshot);
+        if (invalid !== null) {
+          return yield* invalid;
+        }
+        if (
+          change.operation === "set_peak_shaving_schedule" &&
+          change.enabled
+        ) {
+          yield* validatePeakReserve(
+            change.reserveSocPercent,
+            yield* readBatterySocSettings(read, stationId, token)
+          );
+        }
+        if (change.operation === "set_battery_discharge_priority") {
+          const capabilities = yield* profiles.energyCapabilities(
+            stationId,
+            token
+          );
+          if (
+            !capabilities.providerFeatures.hasBatteryPriority ||
+            change.sources.some(
+              (source) => !capabilities.batterySourceOptions.includes(source)
+            )
+          ) {
+            return yield* failure("UnsupportedCapability");
+          }
+        }
+        if (change.operation === "set_solar_priority") {
+          const capabilities = yield* profiles.energyCapabilities(
+            stationId,
+            token
+          );
+          if (!capabilities.providerFeatures.hasPVPriority) {
+            return yield* failure("UnsupportedCapability");
+          }
+        }
+        if (change.operation === "set_operating_mode") {
+          const modes = yield* settings.operatingModes(stationId, token);
+          const allowed =
+            change.providerMode === 9
+              ? modes.customProfiles.some(
+                  (profile) => profile.profileId === change.profileId
+                )
+              : change.profileId === -1 &&
+                modes.modes.some(
+                  (mode) => mode.providerMode === String(change.providerMode)
+                );
+          if (!allowed) {
+            return yield* failure("UnsupportedCapability");
+          }
         }
       }
-    });
+    );
+    return checkedResult;
+  };
   const dispatchExistingControl = (
     stationId: StationId,
     change: Exclude<

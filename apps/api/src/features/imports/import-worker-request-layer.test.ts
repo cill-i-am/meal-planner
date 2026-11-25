@@ -9,7 +9,7 @@ import {
 import { HouseholdMemberAdmission } from "../households/rpc/command-envelope.js";
 import { makeRecipeImportWorkflowDispatcher } from "./import-worker-request-layer.js";
 import { workflowStartUnavailable } from "./import.errors.js";
-import { TestImportTrace } from "./import.test-fixtures.js";
+import { TestImportTrace } from "./import.fixture.js";
 
 const intentId = "018f47ad-91aa-7c35-b6fe-000000000001";
 const createdAt = "2026-08-22T08:00:00.000Z";

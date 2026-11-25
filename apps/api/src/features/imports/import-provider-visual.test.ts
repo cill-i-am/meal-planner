@@ -14,10 +14,10 @@ import {
   validVisualSemantics,
   defaultVisualUsage,
   toolResponse,
-} from "./import-provider-adapters.test-fixture.js";
+} from "./import-provider-adapters.fixture.js";
 import type { ProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
-import { syntheticThreeFrameResponse } from "./import-provider-visual.scout.test-fixture.js";
+import { syntheticThreeFrameResponse } from "./import-provider-visual.scout.fixture.js";
 
 describe("installed visual provider adapter", () => {
   it("replays the accounted three-image Scout response without inventing confidence", async () => {
@@ -90,7 +90,7 @@ describe("installed visual provider adapter", () => {
   });
 
   it("maps a missing visual forced-tool call without payload data", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     const gateway = makeProviderTransports({
       providerSecret: "must-not-escape",
     });

@@ -50,19 +50,22 @@ export const projectConversationModelContext = (
     ConversationBlock,
     { _tag: "RosterProposal" }
   > | null = null
-): ConversationModelContext => {
+) => {
   const { plan } = context;
   const setupAccountDisplayName =
     scope._tag === "AccountPrivateSetup"
       ? context.setupAccountDisplayName
       : null;
   if (plan === null) {
-    return Schema.decodeUnknownSync(ConversationModelContext)({
+    const checkedResult: ConversationModelContext = Schema.decodeUnknownSync(
+      ConversationModelContext
+    )({
       ...context,
       plan: null,
       setupAccountDisplayName,
       setupRoster: scope._tag === "AccountPrivateSetup" ? setupRoster : null,
     });
+    return checkedResult;
   }
   const version = plan._tag === "Approved" ? plan.active : plan.proposed;
   const grouped = new Map<
@@ -105,18 +108,23 @@ export const projectConversationModelContext = (
     (count, row) => count + row.weekIndices.length,
     0
   );
-  return Schema.decodeUnknownSync(ConversationModelContext)({
-    ...context,
-    plan: {
-      currentChoices,
-      omittedCoverageCount: version.coverage.length - includedCoverage,
-      planId: plan.planId,
-      request: plan.request,
-      revision: plan.revision,
-      state: plan._tag,
-      totalCoverage: version.coverage.length,
-    },
-    setupAccountDisplayName,
-    setupRoster: null,
-  });
+  {
+    const checkedResult: ConversationModelContext = Schema.decodeUnknownSync(
+      ConversationModelContext
+    )({
+      ...context,
+      plan: {
+        currentChoices,
+        omittedCoverageCount: version.coverage.length - includedCoverage,
+        planId: plan.planId,
+        request: plan.request,
+        revision: plan.revision,
+        state: plan._tag,
+        totalCoverage: version.coverage.length,
+      },
+      setupAccountDisplayName,
+      setupRoster: null,
+    });
+    return checkedResult;
+  }
 };

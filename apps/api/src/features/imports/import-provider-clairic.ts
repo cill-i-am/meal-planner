@@ -124,7 +124,7 @@ export const decodeClairicRecipeResponse = (
   raw: Schema.Json,
   evidence: ClairicEvidenceText,
   encoding: ClairicSpanEncoding
-): RecipeProviderOutcome => {
+) => {
   const decoded = Schema.decodeUnknownResult(ClairicRecipeResponse, {
     onExcessProperty: "error",
   })(raw);
@@ -132,7 +132,8 @@ export const decodeClairicRecipeResponse = (
     decoded._tag === "Failure" ||
     decoded.success.state_text !== evidence.state
   ) {
-    return malformed;
+    const checkedResult: RecipeProviderOutcome = malformed;
+    return checkedResult;
   }
   const { answers, state_text: returnedStateText, usage } = decoded.success;
   const spanValue = (
@@ -148,39 +149,49 @@ export const decodeClairicRecipeResponse = (
           span,
           value,
         });
-  const text = (
-    answer: typeof TextAnswer.Type
-  ): Option.Option<string | null> => {
+  const text = (answer: typeof TextAnswer.Type) => {
     if (answer.value === null) {
-      return Option.some(null);
+      const checkedResult: Option.Option<string | null> = Option.some(null);
+      return checkedResult;
     }
     const supported = spanValue(answer.value, answer.span);
-    return supported === null || supported.value.trim().length === 0
-      ? Option.none()
-      : Option.some(supported.value.trim());
+    {
+      const checkedResult: Option.Option<string | null> =
+        supported === null || supported.value.trim().length === 0
+          ? Option.none()
+          : Option.some(supported.value.trim());
+      return checkedResult;
+    }
   };
-  const list = (answer: typeof ListAnswer.Type): readonly string[] | null => {
+  const list = (answer: typeof ListAnswer.Type) => {
     if (answer.value === null || answer.value.length === 0) {
-      return [];
+      const checkedResult: readonly string[] | null = [];
+      return checkedResult;
     }
     if (answer.spans?.length !== answer.value.length) {
-      return null;
+      const checkedResult: readonly string[] | null = null;
+      return checkedResult;
     }
     const values: string[] = [];
     let previousEnd = 0;
     for (const [index, value] of answer.value.entries()) {
       const span = answer.spans[index];
       if (span === undefined || span[0] < previousEnd) {
-        return null;
+        const checkedResult: readonly string[] | null = null;
+        return checkedResult;
       }
       const supported = spanValue(value, span);
       if (supported === null || supported.value.trim().length === 0) {
-        return null;
+        const checkedResult: readonly string[] | null = null;
+        return checkedResult;
       }
       [, previousEnd] = span;
       values.push(supported.value.trim());
     }
-    return values;
+    {
+      const checkedResult: readonly string[] | null = values;
+      return checkedResult;
+    }
   };
   const name = text(answers.name);
   const servings = text(answers.servings);
@@ -200,7 +211,8 @@ export const decodeClairicRecipeResponse = (
     ingredients === null ||
     instructions === null
   ) {
-    return malformed;
+    const checkedResult: RecipeProviderOutcome = malformed;
+    return checkedResult;
   }
   const normalized = Option.liftThrowable(normalizeClairicRecipePhrases)({
     cook: cook.value,
@@ -212,12 +224,15 @@ export const decodeClairicRecipeResponse = (
     servings: servings.value,
     total: total.value,
   });
-  return Option.isNone(normalized)
-    ? malformed
-    : {
-        _tag: "Decoded",
-        inputTokens: usage.input_tokens,
-        outputTokens: usage.output_tokens,
-        value: normalized.value,
-      };
+  {
+    const checkedResult: RecipeProviderOutcome = Option.isNone(normalized)
+      ? malformed
+      : {
+          _tag: "Decoded",
+          inputTokens: usage.input_tokens,
+          outputTokens: usage.output_tokens,
+          value: normalized.value,
+        };
+    return checkedResult;
+  }
 };

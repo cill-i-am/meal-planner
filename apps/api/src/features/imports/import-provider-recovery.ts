@@ -78,10 +78,13 @@ export interface ProviderRecoveryError {
   readonly _tag: "ProviderRecoveryError";
   readonly code: ProviderRecoveryErrorCode;
 }
-const failure = (code: ProviderRecoveryErrorCode): ProviderRecoveryError => ({
-  _tag: "ProviderRecoveryError",
-  code,
-});
+const failure = (code: ProviderRecoveryErrorCode) => {
+  const checkedResult: ProviderRecoveryError = {
+    _tag: "ProviderRecoveryError",
+    code,
+  };
+  return checkedResult;
+};
 const mapHouseholdError = (error: {
   readonly _tag: "ImportPersistenceUnavailable" | "ImportTransitionRejected";
 }) =>
@@ -170,24 +173,62 @@ const prepareProviderRecovery = (
 
 export const makeProviderRecoveryService = (
   input: ProviderRecoveryServiceInput
-): ProviderRecoveryService => ({
-  recover: Effect.fn("ProviderRecoveryService.recover")(
-    function* recoverFromHouseholdTerminal(request) {
-      if (request.operation === "prepare_speech_recovery") {
-        return yield* prepareProviderRecovery(input, request, "speech");
-      }
-      if (request.operation === "prepare_visual_recovery") {
-        return yield* prepareProviderRecovery(input, request, "visual");
-      }
-      if (request.operation === "prepare_recipe_recovery") {
-        const recovery = yield* prepareHouseholdRecipeRecovery({
+) => {
+  const checkedResult: ProviderRecoveryService = {
+    recover: Effect.fn("ProviderRecoveryService.recover")(
+      function* recoverFromHouseholdTerminal(request) {
+        if (request.operation === "prepare_speech_recovery") {
+          return yield* prepareProviderRecovery(input, request, "speech");
+        }
+        if (request.operation === "prepare_visual_recovery") {
+          return yield* prepareProviderRecovery(input, request, "visual");
+        }
+        if (request.operation === "prepare_recipe_recovery") {
+          const recovery = yield* prepareHouseholdRecipeRecovery({
+            acquisitionGeneration: request.acquisitionGeneration,
+            executionGeneration: request.executionGeneration,
+            householdDomain: input.householdDomain,
+            importId: request.importId,
+            organizationId: request.organizationId,
+            predecessorDispatchId: request.dispatchId,
+          }).pipe(Effect.mapError(mapHouseholdError));
+          const authority = yield* resolveHouseholdRecoveryAuthority({
+            acquisitionGeneration: request.acquisitionGeneration,
+            executionGeneration: request.executionGeneration,
+            householdDomain: input.householdDomain,
+            importId: request.importId,
+            organizationId: request.organizationId,
+          }).pipe(Effect.mapError(mapHouseholdError));
+          yield* input.recipeRecoveryStarter
+            .start(
+              recovery.attempt,
+              authority.originalTrace,
+              request.organizationId,
+              recovery.outcome
+            )
+            .pipe(Effect.mapError(() => failure("persistence_unavailable")));
+          return yield* Schema.decodeUnknownEffect(ProviderRecoveryResponse)({
+            acquisitionGeneration: recovery.attempt.acquisitionGeneration,
+            dispatchId: recovery.attempt.predecessorDispatchId,
+            importId: recovery.attempt.importId,
+            outcome: "recipe_recovery_prepared",
+            recoveryDispatchId: recovery.attempt.currentDispatchId,
+            recoveryExtractionFingerprint:
+              recovery.attempt.currentExtractionFingerprint,
+            recoveryOrdinal: recovery.attempt.ordinal,
+          }).pipe(Effect.mapError(() => failure("persistence_corrupt")));
+        }
+        const recovery = yield* readHouseholdRecipeRecovery({
           acquisitionGeneration: request.acquisitionGeneration,
           executionGeneration: request.executionGeneration,
           householdDomain: input.householdDomain,
           importId: request.importId,
           organizationId: request.organizationId,
-          predecessorDispatchId: request.dispatchId,
+          selector: { _tag: "Latest", rootDispatchId: request.dispatchId },
         }).pipe(Effect.mapError(mapHouseholdError));
+        if (recovery === null) {
+          return yield* Effect.fail(failure("not_allowed"));
+        }
         const authority = yield* resolveHouseholdRecoveryAuthority({
           acquisitionGeneration: request.acquisitionGeneration,
           executionGeneration: request.executionGeneration,
@@ -197,58 +238,23 @@ export const makeProviderRecoveryService = (
         }).pipe(Effect.mapError(mapHouseholdError));
         yield* input.recipeRecoveryStarter
           .start(
-            recovery.attempt,
+            recovery,
             authority.originalTrace,
             request.organizationId,
-            recovery.outcome
+            "Replay"
           )
           .pipe(Effect.mapError(() => failure("persistence_unavailable")));
         return yield* Schema.decodeUnknownEffect(ProviderRecoveryResponse)({
-          acquisitionGeneration: recovery.attempt.acquisitionGeneration,
-          dispatchId: recovery.attempt.predecessorDispatchId,
-          importId: recovery.attempt.importId,
-          outcome: "recipe_recovery_prepared",
-          recoveryDispatchId: recovery.attempt.currentDispatchId,
-          recoveryExtractionFingerprint:
-            recovery.attempt.currentExtractionFingerprint,
-          recoveryOrdinal: recovery.attempt.ordinal,
+          acquisitionGeneration: recovery.acquisitionGeneration,
+          dispatchId: recovery.rootDispatchId,
+          importId: recovery.importId,
+          outcome: "recipe_recovery_resumed",
+          recoveryDispatchId: recovery.currentDispatchId,
+          recoveryExtractionFingerprint: recovery.currentExtractionFingerprint,
+          recoveryOrdinal: recovery.ordinal,
         }).pipe(Effect.mapError(() => failure("persistence_corrupt")));
       }
-      const recovery = yield* readHouseholdRecipeRecovery({
-        acquisitionGeneration: request.acquisitionGeneration,
-        executionGeneration: request.executionGeneration,
-        householdDomain: input.householdDomain,
-        importId: request.importId,
-        organizationId: request.organizationId,
-        selector: { _tag: "Latest", rootDispatchId: request.dispatchId },
-      }).pipe(Effect.mapError(mapHouseholdError));
-      if (recovery === null) {
-        return yield* Effect.fail(failure("not_allowed"));
-      }
-      const authority = yield* resolveHouseholdRecoveryAuthority({
-        acquisitionGeneration: request.acquisitionGeneration,
-        executionGeneration: request.executionGeneration,
-        householdDomain: input.householdDomain,
-        importId: request.importId,
-        organizationId: request.organizationId,
-      }).pipe(Effect.mapError(mapHouseholdError));
-      yield* input.recipeRecoveryStarter
-        .start(
-          recovery,
-          authority.originalTrace,
-          request.organizationId,
-          "Replay"
-        )
-        .pipe(Effect.mapError(() => failure("persistence_unavailable")));
-      return yield* Schema.decodeUnknownEffect(ProviderRecoveryResponse)({
-        acquisitionGeneration: recovery.acquisitionGeneration,
-        dispatchId: recovery.rootDispatchId,
-        importId: recovery.importId,
-        outcome: "recipe_recovery_resumed",
-        recoveryDispatchId: recovery.currentDispatchId,
-        recoveryExtractionFingerprint: recovery.currentExtractionFingerprint,
-        recoveryOrdinal: recovery.ordinal,
-      }).pipe(Effect.mapError(() => failure("persistence_corrupt")));
-    }
-  ),
-});
+    ),
+  };
+  return checkedResult;
+};

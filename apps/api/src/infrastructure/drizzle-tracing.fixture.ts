@@ -12,7 +12,7 @@ export class RecordingDrizzleTracer implements TracerLike {
     finished: boolean;
   }[] = [];
 
-  enterSpan<T>(name: string, body: (span: SpanLike) => T): T {
+  enterSpan<T>(name: string, body: (span: SpanLike) => T) {
     const record: (typeof this.spans)[number] = {
       attributes: {},
       errors: [],
@@ -38,16 +38,20 @@ export class RecordingDrizzleTracer implements TracerLike {
     try {
       const result = body(span);
       if (result instanceof Promise) {
-        return (async () => {
+        const checkedResult: T = (async () => {
           try {
             return await result;
           } finally {
             record.finished = true;
           }
         })() as T;
+        return checkedResult;
       }
       record.finished = true;
-      return result;
+      {
+        const checkedResult: T = result;
+        return checkedResult;
+      }
     } catch (error) {
       record.finished = true;
       throw error;

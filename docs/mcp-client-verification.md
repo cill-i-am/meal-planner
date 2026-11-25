@@ -133,7 +133,7 @@ Reproduce the additional regressions:
 ```sh
 pnpm --filter @meal-planner/api exec vitest run --project node \
   src/features/product-api/product-mcp-interactions.test.ts \
-  src/features/imports/import-provider-terminal-authority.integration.test.ts
+  src/infrastructure/import-provider-terminal-authority.integration.test.ts
 pnpm --filter @meal-planner/api check
 ```
 

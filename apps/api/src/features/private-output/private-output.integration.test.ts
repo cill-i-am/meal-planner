@@ -1,6 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import type {
@@ -18,20 +17,21 @@ import { Miniflare, Response as LocalResponse } from "miniflare";
 import type { WorkerdStructuredLog } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
+import { EventLog } from "./event-log.test-utils.js";
 import { emptyPrivateDiscoveryContinuityUpdates } from "./private-discovery-continuity.js";
-import { encodeKimiCompletion } from "./private-discovery-kimi-stream.test-fixtures.js";
+import { encodeKimiCompletion } from "./private-discovery-kimi-stream.fixture.js";
 import type { PrivateOutputMutationPort } from "./private-output-binding.js";
 import { runOutputFencedMutation } from "./private-output-mutation.js";
 import {
   NativePrivateHistory,
   nativePrivateChatInput as nativeChatInput,
   requestNativePrivateChat,
-} from "./private-output-native.test-fixture.js";
+} from "./private-output-native.fixture.js";
 import {
   privateOutputControlWorker,
   privateOutputRuntimeWorker,
-} from "./private-output-runtime.test-fixture.js";
+} from "./private-output-runtime.fixture.js";
 import type { PrivateSessionBinding } from "./private-output.contract.js";
 import {
   privateDirectoryKey,
@@ -51,7 +51,7 @@ const syntheticModelConfig = JSON.stringify({
   timeoutMs: 5000,
 });
 let modelConfiguration: string | undefined;
-let modelCalls: unknown[] = [];
+let modelCalls = new EventLog<unknown>();
 const nativeLogs: WorkerdStructuredLog[] = [];
 let modelResponse: () => Promise<LocalResponse> = () =>
   Promise.resolve(new LocalResponse(null, { status: 503 }));
@@ -73,7 +73,7 @@ const makeRuntime = (selectedManifest = manifest) => {
             },
           },
         },
-        // Every fetch stays in this process. No network fallback, including unexpected URLs.
+
         dev: {
           outboundService: {
             handler: async (request) => {
@@ -99,13 +99,13 @@ beforeAll(async () => {
   );
   manifest = await bundleWorkerFixture(
     fileURLToPath(
-      new URL("private-output-control.test-fixture.ts", import.meta.url)
+      new URL("private-output-control.fixture.ts", import.meta.url)
     ),
     temporaryDirectory
   );
   legacyManifest = await bundleWorkerFixture(
     fileURLToPath(
-      new URL("private-output-upgrade.test-fixture.ts", import.meta.url)
+      new URL("private-output-upgrade.fixture.ts", import.meta.url)
     ),
     temporaryDirectory
   );
@@ -116,13 +116,18 @@ afterAll(async () => {
   await rm(temporaryDirectory, { force: true, recursive: true });
 });
 
-const binding = async (): Promise<PrivateSessionBinding> => ({
-  accountKey: await privateOutputKey("account", crypto.randomUUID()),
-  householdKey: await privateOutputKey("household", crypto.randomUUID()),
-  linkageSubject: "a".repeat(64),
-  personId: `person_${crypto.randomUUID()}`,
-  sessionReference: crypto.randomUUID(),
-});
+const binding = async () => {
+  const checkedResult:
+    | Awaited<Promise<PrivateSessionBinding>>
+    | Promise<PrivateSessionBinding> = {
+    accountKey: await privateOutputKey("account", crypto.randomUUID()),
+    householdKey: await privateOutputKey("household", crypto.randomUUID()),
+    linkageSubject: "a".repeat(64),
+    personId: `person_${crypto.randomUUID()}`,
+    sessionReference: crypto.randomUUID(),
+  };
+  return checkedResult;
+};
 const command = (
   input: Record<string, unknown> & {
     readonly sessionReference: string;
@@ -150,16 +155,17 @@ const expectStatus = async (
   const response = await pending;
   expect(response.status).toBe(status);
 };
-const successful = async <A>(
-  input: Parameters<typeof command>[0]
-): Promise<A> => {
+const successful = async <A>(input: Parameters<typeof command>[0]) => {
   const response = await command(input);
   expect(response.status, await response.clone().text()).toBe(200);
-  return (
-    (await response.json()) as {
-      readonly result: A;
-    }
-  ).result;
+  {
+    const checkedResult: A | Promise<A> = (
+      (await response.json()) as {
+        readonly result: A;
+      }
+    ).result;
+    return checkedResult;
+  }
 };
 const begin = async (
   input: PrivateSessionBinding,
@@ -200,8 +206,10 @@ const open = async (
   if (socket === null) {
     throw new Error("Expected the child's physical WebSocket");
   }
-  const frames: SessionFrame[] = [];
-  const probes: string[] = [];
+  const closed = Promise.withResolvers<undefined>();
+  socket.addEventListener("close", () => closed.resolve(undefined));
+  const frames = new EventLog<SessionFrame>();
+  const probes = new EventLog<string>();
   const Probe = Schema.Struct({
     text: Schema.String,
     type: Schema.Literal("PrivateTransportProbe"),
@@ -220,6 +228,7 @@ const open = async (
     .toBe(true);
   return {
     binding: input,
+    closed: closed.promise,
     frames,
     generation,
     get messages() {
@@ -298,33 +307,40 @@ const emit = (
   generation: string,
   payload: string
 ) =>
-  successful({
+  successful<number>({
     action: "emit",
     generation,
     payload,
     sessionReference: input.sessionReference,
   });
-const mutationPort = (sessionReference: string): PrivateOutputMutationPort => ({
-  beginMutation: (input) =>
-    successful({ ...input, action: "mutation-begin", sessionReference }),
-  completeMutation: (input) =>
-    successful({ ...input, action: "mutation-complete", sessionReference }),
-  findPendingMutation: (input) =>
-    successful({ ...input, action: "mutation-find-pending", sessionReference }),
-  markDispatched: (input) =>
-    successful({ ...input, action: "mutation-dispatch", sessionReference }),
-  prepareMutation: (input) =>
-    successful({ ...input, action: "mutation-prepare", sessionReference }),
-  readMutation: (input) =>
-    successful({ ...input, action: "mutation-read", sessionReference }),
-});
+const mutationPort = (sessionReference: string) => {
+  const checkedResult: PrivateOutputMutationPort = {
+    beginMutation: (input) =>
+      successful({ ...input, action: "mutation-begin", sessionReference }),
+    completeMutation: (input) =>
+      successful({ ...input, action: "mutation-complete", sessionReference }),
+    findPendingMutation: (input) =>
+      successful({
+        ...input,
+        action: "mutation-find-pending",
+        sessionReference,
+      }),
+    markDispatched: (input) =>
+      successful({ ...input, action: "mutation-dispatch", sessionReference }),
+    prepareMutation: (input) =>
+      successful({ ...input, action: "mutation-prepare", sessionReference }),
+    readMutation: (input) =>
+      successful({ ...input, action: "mutation-read", sessionReference }),
+  };
+  return checkedResult;
+};
 
 describe("private output on physical native WebSockets", () => {
   it("emits only from the physical child and suppresses passive and already-running output after revocation", async () => {
     const session = await binding();
     const connection = await open(session);
     await emit(session, connection.generation, "synthetic-private-before");
-    await delay(10);
+    await connection.messages.waitForCount(1);
     expect(connection.messages).toEqual(["synthetic-private-before"]);
     const stalledProducer = Promise.withResolvers<null>();
     const delayedOutput = stalledProducer.promise.then(() =>
@@ -345,15 +361,16 @@ describe("private output on physical native WebSockets", () => {
     );
     expect(canonicalCommitted).toBe(true);
     stalledProducer.resolve(null);
-    await delayedOutput;
-    await emit(session, connection.generation, "synthetic-passive-after");
-    await delay(10);
+    await expect(delayedOutput).resolves.toBe(0);
+    await expect(
+      emit(session, connection.generation, "synthetic-passive-after")
+    ).resolves.toBe(0);
     expect(connection.messages).toEqual(["synthetic-private-before"]);
     const fresh = await open(session);
     expect(fresh.generation).not.toBe(connection.generation);
     await emit(session, connection.generation, "synthetic-old-generation");
     await emit(session, fresh.generation, "synthetic-fresh-authorized");
-    await delay(10);
+    await fresh.messages.waitForCount(1);
     expect(fresh.messages).toEqual(["synthetic-fresh-authorized"]);
     fresh.socket.close();
   });
@@ -403,7 +420,7 @@ describe("private output on physical native WebSockets", () => {
     await enqueueAt(expiresAt - 1, "synthetic-before-expiry");
     await enqueueAt(expiresAt, "synthetic-at-expiry");
     await enqueueAt(expiresAt + 1, "synthetic-after-expiry");
-    await delay(10);
+    await connection.messages.waitForCount(1);
     expect(connection.messages).toEqual(["synthetic-before-expiry"]);
     connection.socket.close();
   });
@@ -427,7 +444,7 @@ describe("private output on physical native WebSockets", () => {
       const session = await binding();
       const connection = await open(session);
       connection.socket.send(JSON.stringify(message));
-      await delay(20);
+      await connection.closed;
       expect(connection.messages).toEqual([]);
       connection.socket.close();
       await expectStatus(
@@ -543,8 +560,9 @@ describe("private output on physical native WebSockets", () => {
     expect(
       await port.readMutation({ ...input, operationId: retained.operationId })
     ).toEqual({ phase: "settled" });
-    await emit(session, connection.generation, "synthetic-after-lost-ack");
-    await delay(10);
+    await expect(
+      emit(session, connection.generation, "synthetic-after-lost-ack")
+    ).resolves.toBe(0);
     expect(connection.messages).toEqual([]);
   });
 
@@ -565,10 +583,10 @@ describe("private output on physical native WebSockets", () => {
       await release.promise;
     };
     const first = runOutputFencedMutation(port, input, canonical);
+    await claimed.promise;
     const second = runOutputFencedMutation(port, input, canonical);
     const outcomes = Promise.allSettled([first, second]);
-    await claimed.promise;
-    await delay(20);
+    await expect(second).rejects.toBeDefined();
     expect(writes).toBe(1);
     await successful({
       action: "initialize",
@@ -605,7 +623,7 @@ describe("private output on physical native WebSockets", () => {
     const retained = await port.beginMutation(input);
     const operation = { ...input, operationId: retained.operationId };
     await port.prepareMutation(operation);
-    // The durable dispatch commits, but its caller loses the acknowledgement before canonical dispatch.
+
     await port.markDispatched(operation);
     await runtime.dispose();
     runtime = makeRuntime();
@@ -779,7 +797,7 @@ describe("durable native private conversation", () => {
   });
 
   it("replays an exact native run and completion receipt across restart without duplicate messages", async () => {
-    modelCalls = [];
+    modelCalls = new EventLog<unknown>();
     modelResponse = () => Promise.resolve(completedNativeResponse());
     const session = await binding();
     const first = await open(session);
@@ -802,7 +820,6 @@ describe("durable native private conversation", () => {
       version: 2,
     });
 
-    // The caller loses its acknowledgement, then redelivers the same native run.
     await runtime.dispose();
     runtime = makeRuntime();
     const resumed = await open(session);
@@ -860,7 +877,7 @@ describe("durable native private conversation", () => {
   });
 
   it("shares a duplicate live run and admits only one competing next run with stable native history", async () => {
-    modelCalls = [];
+    modelCalls = new EventLog<unknown>();
     const firstRelease = Promise.withResolvers<LocalResponse>();
     modelResponse = () => firstRelease.promise;
     const session = await binding();
@@ -872,7 +889,8 @@ describe("durable native private conversation", () => {
     });
     expect(first.status).toBe(200);
     const firstBody = first.text();
-    await expect.poll(() => modelCalls.length).toBe(1);
+    await modelCalls.waitForCount(1);
+    expect(modelCalls).toHaveLength(1);
     const duplicate = await chatRequest(connection, {
       body: firstInput,
       method: "POST",
@@ -903,7 +921,8 @@ describe("durable native private conversation", () => {
       throw new Error("Expected one admitted next native run");
     }
     const winnerBody = winner.text();
-    await expect.poll(() => modelCalls.length).toBe(2);
+    await modelCalls.waitForCount(2);
+    expect(modelCalls).toHaveLength(2);
     secondRelease.resolve(completedNativeResponse());
     await winnerBody;
     const beforeReconnect = await readChat(connection);
@@ -937,7 +956,7 @@ describe("durable native private conversation", () => {
   });
 
   it("rejects a delayed old-generation POST and new messages after completion without retaining output", async () => {
-    modelCalls = [];
+    modelCalls = new EventLog<unknown>();
     modelResponse = () => Promise.resolve(completedNativeResponse());
     const session = await binding();
     const first = await open(session);
@@ -988,7 +1007,7 @@ describe("durable native private conversation", () => {
   it.each(["post-first", "complete-first"] as const)(
     "commits only the valid completion admission order: %s",
     async (order) => {
-      modelCalls = [];
+      modelCalls = new EventLog<unknown>();
       const release = Promise.withResolvers<LocalResponse>();
       modelResponse = () => release.promise;
       const session = await binding();
@@ -1006,7 +1025,8 @@ describe("durable native private conversation", () => {
         });
         expect(admitted.status).toBe(200);
         const settled = admitted.text();
-        await expect.poll(() => modelCalls.length).toBe(1);
+        await modelCalls.waitForCount(1);
+        expect(modelCalls).toHaveLength(1);
         expect(await exchange(connection, complete)).toMatchObject({
           reason: "assistant_turn_pending",
           type: "Rejected",
@@ -1059,7 +1079,7 @@ describe("durable native private conversation", () => {
   ] as const)(
     "rejects native POST with %s before participant persistence",
     async (scenario) => {
-      modelCalls = [];
+      modelCalls = new EventLog<unknown>();
       modelResponse = () => Promise.resolve(completedNativeResponse());
       const session = await binding();
       const connection = await open(session);
@@ -1107,7 +1127,7 @@ describe("durable native private conversation", () => {
   );
 
   it("rejects foreign bindings, threads and generations without exposing or closing the owner's conversation", async () => {
-    modelCalls = [];
+    modelCalls = new EventLog<unknown>();
     modelResponse = () => Promise.resolve(completedNativeResponse());
     const owner = await binding();
     const foreign = await binding();
@@ -1279,7 +1299,7 @@ const openDirectory = async (
   if (socket === null) {
     throw new Error("Expected directory physical socket");
   }
-  const frames: DirectoryFrame[] = [];
+  const frames = new EventLog<DirectoryFrame>();
   socket.addEventListener("message", (event) =>
     frames.push(JSON.parse(String(event.data)) as DirectoryFrame)
   );
@@ -1580,7 +1600,7 @@ describe("ordered native storage upgrade", () => {
         action: "lose-ack",
         sessionReference: session.sessionReference,
       });
-      // Failing the migrated session's ACK proves the old registration retained its session target.
+
       await expect(port.prepareMutation(operation)).rejects.toThrow();
       expect(await port.readMutation(operation)).toEqual({ phase });
       await expectStatus(
@@ -1656,7 +1676,8 @@ it("rejects expired directory and session reads or mutations without another cli
       }),
     })
   );
-  await expect.poll(() => directory.frames.length).toBe(2);
+  await directory.frames.waitForCount(2);
+  expect(directory.frames).toHaveLength(2);
   await successful({
     action: "command-at-time",
     generation: session.generation,
@@ -1669,7 +1690,8 @@ it("rejects expired directory and session reads or mutations without another cli
     }),
     sessionReference: owner.sessionReference,
   });
-  await expect.poll(() => session.frames.length).toBe(2);
+  await session.frames.waitForCount(2);
+  expect(session.frames).toHaveLength(2);
   await successful(
     directoryCommand(owner, {
       action: "directory-command-at-time",
@@ -1710,7 +1732,7 @@ it("rejects expired directory and session reads or mutations without another cli
 
 it("reconstructs every long multibyte and escaped native message with stable identities across restart", async () => {
   expect(modelConfiguration).toBeUndefined();
-  modelCalls = [];
+  modelCalls = new EventLog<unknown>();
   const session = await binding();
   const connection = await open(session);
   const texts = Array.from(
@@ -1724,7 +1746,7 @@ it("reconstructs every long multibyte and escaped native message with stable ide
       body: nativeChatInput(connection, text, index),
       method: "POST",
     });
-    // No model is configured: the participant remains canonical and the attempt settles as failed.
+
     expect(failed.status).toBe(400);
     // eslint-disable-next-line no-await-in-loop -- Release this response before the next durable admission.
     await failed.text();
@@ -1758,7 +1780,7 @@ it("reconstructs every long multibyte and escaped native message with stable ide
   });
   expect(modelCalls).toHaveLength(0);
   resumed.socket.close();
-}, 15_000);
+});
 
 it("keeps fixture producers and directory HTTP, SDK, and storage capabilities absent from the production bundle", async () => {
   const productionManifest = await bundleWorkerFixture(
@@ -1866,4 +1888,4 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
     await runtime.dispose();
     runtime = fixtureRuntime;
   }
-}, 30_000);
+});

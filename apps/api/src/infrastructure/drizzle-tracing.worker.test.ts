@@ -5,7 +5,7 @@ import type { AnyD1Database } from "drizzle-orm/d1";
 import { integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { expect, it } from "vitest";
 
-import { RecordingDrizzleTracer } from "./drizzle-tracing.test-fixture.js";
+import { RecordingDrizzleTracer } from "./drizzle-tracing.fixture.js";
 
 const bindings = env as unknown as {
   readonly ProviderAccountingDatabase: AnyD1Database;

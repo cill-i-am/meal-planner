@@ -54,31 +54,34 @@ const isWorkflowInstanceNotFound = <E>(cause: Cause.Cause<E>) => {
 /** Translate the native binding into a status-aware start/redrive boundary. */
 export const makeHouseholdBatchWorkflowLauncher = <E, R>(
   workflow: HouseholdBatchWorkflowBinding<E, R>
-): HouseholdBatchWorkflowLauncher<E | Error, R> => ({
-  create: workflow.create,
-  reconcile: (id) =>
-    Effect.gen(function* reconcileHouseholdBatchWorkflow() {
-      const instance = yield* workflow.get(id);
-      const { status } = yield* instance.status();
-      if (activeWorkflowStatuses.has(status)) {
-        return { _tag: "Active" as const };
-      }
-      if (status === "complete") {
-        return { _tag: "Complete" as const };
-      }
-      if (status === "errored" || status === "terminated") {
-        yield* instance.restart();
-        return { _tag: "Redriven" as const };
-      }
-      return yield* Effect.fail(
-        new Error(`batch workflow status is unavailable: ${status}`)
-      );
-    }).pipe(
-      Effect.catchCauseIf(isWorkflowInstanceNotFound, () =>
-        Effect.succeed({ _tag: "NotStarted" as const })
-      )
-    ),
-});
+) => {
+  const checkedResult: HouseholdBatchWorkflowLauncher<E | Error, R> = {
+    create: workflow.create,
+    reconcile: (id) =>
+      Effect.gen(function* reconcileHouseholdBatchWorkflow() {
+        const instance = yield* workflow.get(id);
+        const { status } = yield* instance.status();
+        if (activeWorkflowStatuses.has(status)) {
+          return { _tag: "Active" as const };
+        }
+        if (status === "complete") {
+          return { _tag: "Complete" as const };
+        }
+        if (status === "errored" || status === "terminated") {
+          yield* instance.restart();
+          return { _tag: "Redriven" as const };
+        }
+        return yield* Effect.fail(
+          new Error(`batch workflow status is unavailable: ${status}`)
+        );
+      }).pipe(
+        Effect.catchCauseIf(isWorkflowInstanceNotFound, () =>
+          Effect.succeed({ _tag: "NotStarted" as const })
+        )
+      ),
+  };
+  return checkedResult;
+};
 
 /** Production Queue handler: start or status-aware redrive one stable Workflow. */
 export const handleHouseholdImportBatchQueueMessage = <E, R>(

@@ -40,21 +40,24 @@ export type ProfileParameters = typeof ProfileParameters.Type;
 export const applyProfileParameters = (
   profile: ProfileConfiguration,
   parameters: ProfileParameters
-): ProfileConfiguration => ({
-  ...profile,
-  ...parameters.batterySoc,
-  batteryChargeLimit:
-    parameters.batteryPower?.charge ?? profile.batteryChargeLimit,
-  batteryDischargeLimit:
-    parameters.batteryPower?.discharge ?? profile.batteryDischargeLimit,
-  gridExportEnabled:
-    parameters.gridExport?.enabled ?? profile.gridExportEnabled,
-  gridExportLimit: parameters.gridExport?.limit ?? profile.gridExportLimit,
-  gridImportEnabled:
-    parameters.gridImport?.enabled ?? profile.gridImportEnabled,
-  gridImportLimit: parameters.gridImport?.limit ?? profile.gridImportLimit,
-  solarLimit: parameters.solarLimit ?? profile.solarLimit,
-});
+) => {
+  const checkedResult: ProfileConfiguration = {
+    ...profile,
+    ...parameters.batterySoc,
+    batteryChargeLimit:
+      parameters.batteryPower?.charge ?? profile.batteryChargeLimit,
+    batteryDischargeLimit:
+      parameters.batteryPower?.discharge ?? profile.batteryDischargeLimit,
+    gridExportEnabled:
+      parameters.gridExport?.enabled ?? profile.gridExportEnabled,
+    gridExportLimit: parameters.gridExport?.limit ?? profile.gridExportLimit,
+    gridImportEnabled:
+      parameters.gridImport?.enabled ?? profile.gridImportEnabled,
+    gridImportLimit: parameters.gridImport?.limit ?? profile.gridImportLimit,
+    solarLimit: parameters.solarLimit ?? profile.solarLimit,
+  };
+  return checkedResult;
+};
 
 const validateCeiling = (
   limit: typeof WritablePowerLimit.Type,
@@ -65,7 +68,6 @@ const validateCeiling = (
   }
   if (
     ceiling.kind === "limited" &&
-    // Whole-watt requests can meet ceilings with sub-microwatt kW conversion noise.
     (limit.kind === "unlimited" || limit.watts - ceiling.watts > 1e-6)
   ) {
     return failure("InvalidInput");

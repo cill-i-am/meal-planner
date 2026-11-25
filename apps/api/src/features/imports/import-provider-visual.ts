@@ -34,30 +34,31 @@ export { InstalledVisualModel } from "./import-provider-kernel.js";
 
 const VisualMaximumCostMicroUsd = 100_000;
 
-const visualPrompt = (
-  frames: readonly VisualFrameArtifact[]
-): Prompt.RawInput => [
-  {
-    content: [
-      {
-        text:
-          `Record only visible text in all ${frames.length} supplied source images. ` +
-          `Return exactly ${frames.length} entries in the frames array, in image order. ` +
-          "Keep an empty observations array for an image without readable text; never omit a frame slot. " +
-          "The adapter owns the source frame identity and timing. " +
-          "Do not infer ingredients, quantities, steps, or other unseen facts. " +
-          "Record at most 256 observations across all frames.",
-        type: "text",
-      },
-      ...frames.map((frame) => ({
-        data: frame.bytes,
-        mediaType: frame.mimeType,
-        type: "file" as const,
-      })),
-    ],
-    role: "user",
-  },
-];
+const visualPrompt = (frames: readonly VisualFrameArtifact[]) => {
+  const checkedResult: Prompt.RawInput = [
+    {
+      content: [
+        {
+          text:
+            `Record only visible text in all ${frames.length} supplied source images. ` +
+            `Return exactly ${frames.length} entries in the frames array, in image order. ` +
+            "Keep an empty observations array for an image without readable text; never omit a frame slot. " +
+            "The adapter owns the source frame identity and timing. " +
+            "Do not infer ingredients, quantities, steps, or other unseen facts. " +
+            "Record at most 256 observations across all frames.",
+          type: "text",
+        },
+        ...frames.map((frame) => ({
+          data: frame.bytes,
+          mediaType: frame.mimeType,
+          type: "file" as const,
+        })),
+      ],
+      role: "user",
+    },
+  ];
+  return checkedResult;
+};
 
 export const makeInstalledVisualEvidenceExtractor = (input: {
   readonly correlationId: ImportCorrelationId;
@@ -103,12 +104,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                             request.frames.length
                           ),
                         prompt: visualPrompt(request.frames),
-                        // Visual evidence is optional. A provider response
-                        // that cannot be normalized must not abort otherwise
-                        // valid transcript processing or leave the budget
-                        // poisoned. Record honest empty evidence and charge
-                        // the full bounded reservation; strict forced-tool
-                        // envelope and argument validation still fail closed.
+
                         providerNormalizationFallback: () =>
                           emptyVisualProviderSemantics(request.frames.length),
                         schema,
@@ -146,10 +142,7 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
                       outputMicroUsdPerToken: 0.85,
                     }
                   );
-                  // A schema-valid response proves this bounded visual call
-                  // completed. When the provider omits trustworthy usage,
-                  // charge the reservation maximum against the safety ledger
-                  // while the returned estimate remains explicitly uncertain.
+
                   const cost =
                     meteredCost._tag === "Known"
                       ? meteredCost
@@ -202,19 +195,23 @@ export const makeInstalledVisualEvidenceExtractor = (input: {
               .pipe(
                 Effect.mapError(
                   // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
-                  (error): VisualEvidenceExtractionFailure => {
+                  (error) => {
                     const providerError =
                       isProviderKnownZeroCostFailure(error) &&
                       isSafeProviderFailureCode(error.error)
                         ? error.error
                         : undefined;
-                    return adapterFailure(
-                      "VisualEvidenceExtractionFailure",
-                      providerError ??
-                        (isSafeProviderFailureCode(error)
-                          ? error
-                          : "outcome_unknown")
-                    );
+                    {
+                      const checkedResult: VisualEvidenceExtractionFailure =
+                        adapterFailure(
+                          "VisualEvidenceExtractionFailure",
+                          providerError ??
+                            (isSafeProviderFailureCode(error)
+                              ? error
+                              : "outcome_unknown")
+                        );
+                      return checkedResult;
+                    }
                   }
                 )
               ),

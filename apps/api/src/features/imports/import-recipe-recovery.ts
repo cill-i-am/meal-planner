@@ -185,74 +185,77 @@ export const recipeRecoveryWorkflowInstanceId = (
 
 export const makeRecipeRecoveryWorkflowStarter = (
   workflow: WorkflowHandleLike
-): RecipeRecoveryWorkflowStarter => ({
-  start: Effect.fn("RecipeRecoveryWorkflowStarter.start")(
-    function* startRecipeRecoveryWorkflow(
-      attempt,
-      trace,
-      organizationId,
-      preparationOutcome
-    ) {
-      const id = recipeRecoveryWorkflowInstanceId(
-        attempt.importId,
-        attempt.acquisitionGeneration
-      );
-      const params = yield* Schema.decodeUnknownEffect(
-        RecipeRecoveryWorkflowInput,
-        { onExcessProperty: "error" }
-      )({
-        acquisitionGeneration: attempt.acquisitionGeneration,
-        attemptOrdinal: attempt.ordinal,
-        executionGeneration: attempt.executionGeneration,
-        importId: attempt.importId,
-        organizationId,
+) => {
+  const checkedResult: RecipeRecoveryWorkflowStarter = {
+    start: Effect.fn("RecipeRecoveryWorkflowStarter.start")(
+      function* startRecipeRecoveryWorkflow(
+        attempt,
         trace,
-      }).pipe(Effect.mapError(() => workflowStartUnavailable()));
-      return yield* workflow.createBatch([{ id, params }]).pipe(
-        Effect.flatMap((created) => {
-          const [createdInstance] = created;
-          if (created.length === 1 && createdInstance !== undefined) {
-            return reconcileWorkflowInstance(
-              createdInstance,
-              attempt,
-              preparationOutcome
-            );
-          }
-          if (created.length === 0) {
-            return workflow
-              .get(id)
-              .pipe(
-                Effect.flatMap((instance) =>
-                  reconcileWorkflowInstance(
-                    instance,
-                    attempt,
-                    preparationOutcome
-                  )
-                )
+        organizationId,
+        preparationOutcome
+      ) {
+        const id = recipeRecoveryWorkflowInstanceId(
+          attempt.importId,
+          attempt.acquisitionGeneration
+        );
+        const params = yield* Schema.decodeUnknownEffect(
+          RecipeRecoveryWorkflowInput,
+          { onExcessProperty: "error" }
+        )({
+          acquisitionGeneration: attempt.acquisitionGeneration,
+          attemptOrdinal: attempt.ordinal,
+          executionGeneration: attempt.executionGeneration,
+          importId: attempt.importId,
+          organizationId,
+          trace,
+        }).pipe(Effect.mapError(() => workflowStartUnavailable()));
+        return yield* workflow.createBatch([{ id, params }]).pipe(
+          Effect.flatMap((created) => {
+            const [createdInstance] = created;
+            if (created.length === 1 && createdInstance !== undefined) {
+              return reconcileWorkflowInstance(
+                createdInstance,
+                attempt,
+                preparationOutcome
               );
-          }
-          return Effect.fail(workflowStartUnavailable());
-        }),
-        Effect.catchCauseIf(
-          (cause) => !Cause.hasInterrupts(cause),
-          () =>
-            workflow
-              .get(id)
-              .pipe(
-                Effect.flatMap((instance) =>
-                  reconcileWorkflowInstance(
-                    instance,
-                    attempt,
-                    preparationOutcome
+            }
+            if (created.length === 0) {
+              return workflow
+                .get(id)
+                .pipe(
+                  Effect.flatMap((instance) =>
+                    reconcileWorkflowInstance(
+                      instance,
+                      attempt,
+                      preparationOutcome
+                    )
+                  )
+                );
+            }
+            return Effect.fail(workflowStartUnavailable());
+          }),
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterrupts(cause),
+            () =>
+              workflow
+                .get(id)
+                .pipe(
+                  Effect.flatMap((instance) =>
+                    reconcileWorkflowInstance(
+                      instance,
+                      attempt,
+                      preparationOutcome
+                    )
                   )
                 )
-              )
-        ),
-        Effect.catchCauseIf(
-          (cause) => !Cause.hasInterrupts(cause),
-          () => Effect.fail(workflowStartUnavailable())
-        )
-      );
-    }
-  ),
-});
+          ),
+          Effect.catchCauseIf(
+            (cause) => !Cause.hasInterrupts(cause),
+            () => Effect.fail(workflowStartUnavailable())
+          )
+        );
+      }
+    ),
+  };
+  return checkedResult;
+};

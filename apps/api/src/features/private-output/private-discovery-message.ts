@@ -16,7 +16,7 @@ export interface PrivateDiscoveryReviewedProposal {
   >;
 }
 
-const factDescription = (fact: ProfileFactValue): string => {
+const factDescription = (fact: ProfileFactValue) => {
   switch (fact._tag) {
     case "FoodPreference": {
       const sentiment = {
@@ -24,7 +24,10 @@ const factDescription = (fact: ProfileFactValue): string => {
         like: "preference",
         strong_dislike: "strong dislike",
       }[fact.sentiment];
-      return `your ${sentiment} for the ${fact.targetKind} “${fact.label}”`;
+      {
+        const checkedResult = `your ${sentiment} for the ${fact.targetKind} “${fact.label}”`;
+        return checkedResult;
+      }
     }
     case "HardConstraint": {
       const category = {
@@ -35,27 +38,34 @@ const factDescription = (fact: ProfileFactValue): string => {
       }[fact.category];
       const handling =
         fact.handling === "exclude" ? "exclude" : "requires adaptation";
-      return `your ${category} “${fact.label}” (${handling})`;
+      {
+        const checkedResult = `your ${category} “${fact.label}” (${handling})`;
+        return checkedResult;
+      }
     }
     case "NoKnownHardConstraints": {
-      return "your statement that you have no known hard food constraints";
+      const checkedResult =
+        "your statement that you have no known hard food constraints";
+      return checkedResult;
     }
     default: {
-      return fact satisfies never;
+      const checkedResult: string = fact satisfies never;
+      return checkedResult;
     }
   }
 };
 const proposalDescription = ({
   card,
   proposal,
-}: PrivateDiscoveryReviewedProposal): string => {
+}: PrivateDiscoveryReviewedProposal) => {
   const { change, reviewedFact } = proposal;
   const prefix =
     card === null
       ? "I've drafted a private proposal to"
       : "I've updated the private proposal to";
   if (change._tag === "AddConfirmedProfileFact") {
-    return `${prefix} add ${factDescription(change.fact)}.`;
+    const checkedResult = `${prefix} add ${factDescription(change.fact)}.`;
+    return checkedResult;
   }
   if (reviewedFact === null) {
     throw new Error("Reviewed profile proposal requires its current fact");
@@ -63,77 +73,96 @@ const proposalDescription = ({
   const before = factDescription(reviewedFact);
   switch (change._tag) {
     case "ConfirmProfileFact": {
-      return `${prefix} confirm ${before}.`;
+      const checkedResult = `${prefix} confirm ${before}.`;
+      return checkedResult;
     }
     case "ReplaceOrdinaryProfileFact": {
-      return `${prefix} replace ${before} with ${factDescription(change.fact)}.`;
+      const checkedResult = `${prefix} replace ${before} with ${factDescription(change.fact)}.`;
+      return checkedResult;
     }
     case "RemoveOrdinaryProfileFact": {
-      return `${prefix} remove ${before}.`;
+      const checkedResult = `${prefix} remove ${before}.`;
+      return checkedResult;
     }
     case "ConfirmHardConstraintReduction": {
-      return change.replacement === null
-        ? `${prefix} remove ${before}; separate safety confirmation is required.`
-        : `${prefix} replace ${before} with ${factDescription(change.replacement)}; separate safety confirmation is required.`;
+      const checkedResult: string =
+        change.replacement === null
+          ? `${prefix} remove ${before}; separate safety confirmation is required.`
+          : `${prefix} replace ${before} with ${factDescription(change.replacement)}; separate safety confirmation is required.`;
+      return checkedResult;
     }
     default: {
-      return change satisfies never;
+      const checkedResult: string = change satisfies never;
+      return checkedResult;
     }
   }
 };
-const fieldDescription = (
-  label: string,
-  field: MealFallbackNeed["reason"]
-): string[] => {
+const fieldDescription = (label: string, field: MealFallbackNeed["reason"]) => {
   switch (field._tag) {
     case "Answered": {
-      return [`${label}: ${field.value}`];
+      const checkedResult: string[] = [`${label}: ${field.value}`];
+      return checkedResult;
     }
     case "NoInformation": {
-      return [`${label}: no information supplied`];
+      const checkedResult: string[] = [`${label}: no information supplied`];
+      return checkedResult;
     }
     case "Declined": {
-      return [`${label}: discussion declined`];
+      const checkedResult: string[] = [`${label}: discussion declined`];
+      return checkedResult;
     }
     case "Unanswered": {
-      return [];
+      const checkedResult: string[] = [];
+      return checkedResult;
     }
     default: {
-      return field satisfies never;
+      const checkedResult: string[] = field satisfies never;
+      return checkedResult;
     }
   }
 };
-const optionDescription = (
-  field: MealFallbackNeed["acceptableOption"]
-): string[] => {
+const optionDescription = (field: MealFallbackNeed["acceptableOption"]) => {
   if (field._tag !== "Answered") {
-    return fieldDescription("acceptable option", field);
+    const checkedResult: string[] = fieldDescription(
+      "acceptable option",
+      field
+    );
+    return checkedResult;
   }
   const { value } = field;
-  return [
-    `${value.kind} option: ${value.description}`,
-    ...(value.quantity === null ? [] : [`quantity: ${value.quantity}`]),
-    ...(value.substitutions === null
-      ? []
-      : [`substitution scope: ${value.substitutions}`]),
-  ];
+  {
+    const checkedResult: string[] = [
+      `${value.kind} option: ${value.description}`,
+      ...(value.quantity === null ? [] : [`quantity: ${value.quantity}`]),
+      ...(value.substitutions === null
+        ? []
+        : [`substitution scope: ${value.substitutions}`]),
+    ];
+    return checkedResult;
+  }
 };
-const needDescription = (need: MealFallbackNeed): string => {
+const needDescription = (need: MealFallbackNeed) => {
   const prefix = `I've noted this alternative meal need privately for ${need.subject}`;
   if (need.disposition._tag === "Declined") {
-    return `${prefix}: discussion of this alternative-meal need was declined.`;
+    const checkedResult = `${prefix}: discussion of this alternative-meal need was declined.`;
+    return checkedResult;
   }
   if (need.disposition._tag === "Withdrawn") {
-    return `${prefix}: this alternative-meal need was withdrawn.`;
+    const checkedResult = `${prefix}: this alternative-meal need was withdrawn.`;
+    return checkedResult;
   }
   const details = [
     ...fieldDescription("reason", need.reason),
     ...optionDescription(need.acceptableOption),
     ...fieldDescription("manageable extra preparation", need.extraPreparation),
   ];
-  return details.length === 0
-    ? `${prefix}: an alternative meal is needed.`
-    : `${prefix}: ${details.join("; ")}`;
+  {
+    const checkedResult: string =
+      details.length === 0
+        ? `${prefix}: an alternative meal is needed.`
+        : `${prefix}: ${details.join("; ")}`;
+    return checkedResult;
+  }
 };
 
 /** Wording follows validated private state and reviewed draft effects, not model claims. */
@@ -142,9 +171,10 @@ export const renderPrivateDiscoveryMessage = (
   after: PrivateDiscoveryContinuity,
   decision: PrivateDiscoveryReplyDecision,
   proposals: readonly PrivateDiscoveryReviewedProposal[]
-): string => {
+) => {
   if (decision._tag === "Stop") {
-    return "We can stop here.";
+    const checkedResult = "We can stop here.";
+    return checkedResult;
   }
   const previous = new Map(
     before.mealFallbackNeeds.map((need) => [need.id, need])
@@ -165,5 +195,8 @@ export const renderPrivateDiscoveryMessage = (
       ? decision.question
       : "If that's enough for now, you can finish this conversation."
   );
-  return sections.join("\n\n");
+  {
+    const checkedResult: string = sections.join("\n\n");
+    return checkedResult;
+  }
 };

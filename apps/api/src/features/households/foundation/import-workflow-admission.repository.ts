@@ -33,13 +33,11 @@ const mapQueryFailure = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
 export const makeImportWorkflowAdmissionRepository = (
   database: EffectSQLiteDoDatabase
 ) => ({
-  inspect: (
-    dispatchId: HouseholdDispatchId
-  ): Effect.Effect<
-    Option.Option<typeof HouseholdImportWorkflowDispatchView.Type>,
-    typeof HouseholdWorkflowAdmissionPersistenceFailure.Type
-  > =>
-    Effect.gen(function* inspectImportWorkflowDispatch() {
+  inspect: (dispatchId: HouseholdDispatchId) => {
+    const checkedResult: Effect.Effect<
+      Option.Option<typeof HouseholdImportWorkflowDispatchView.Type>,
+      typeof HouseholdWorkflowAdmissionPersistenceFailure.Type
+    > = Effect.gen(function* inspectImportWorkflowDispatch() {
       const [row] = yield* database
         .select()
         .from(householdOutbox)
@@ -68,7 +66,9 @@ export const makeImportWorkflowAdmissionRepository = (
         state: row.state,
       }).pipe(Effect.mapError(persistenceFailure));
       return Option.some(view);
-    }),
+    });
+    return checkedResult;
+  },
 
   recordDispatch: (input: {
     readonly dispatchId: HouseholdDispatchId;

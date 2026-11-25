@@ -1,8 +1,6 @@
 import { defineRule } from "@oxlint/plugins";
 import type { ESTree } from "@oxlint/plugins";
 
-// Vendored from dmmulroy/anti-slop at 6d538555cb151d4121ed51a27db81890eacf8ae9.
-// Only repository-formatting/style adaptations were applied; rule behavior is unchanged.
 type Parameter = ESTree.ParamPattern;
 type ParameterOwner =
   | ESTree.ArrowFunctionExpression
@@ -13,34 +11,52 @@ type ParameterOwner =
   | ESTree.TSFunctionType
   | ESTree.TSMethodSignature;
 
-const parameterAnnotation = (
-  parameter: Parameter
-): ESTree.TSTypeAnnotation | null | undefined => {
+const parameterAnnotation = (parameter: Parameter) => {
   if (parameter.type === "TSParameterProperty") {
-    return parameterAnnotation(parameter.parameter);
+    const checkedResult: ESTree.TSTypeAnnotation | null | undefined =
+      parameterAnnotation(parameter.parameter);
+    return checkedResult;
   }
   if (parameter.type === "RestElement") {
-    return parameter.typeAnnotation ?? parameterAnnotation(parameter.argument);
+    const checkedResult: ESTree.TSTypeAnnotation | null | undefined =
+      parameter.typeAnnotation ?? parameterAnnotation(parameter.argument);
+    return checkedResult;
   }
   if (parameter.type === "AssignmentPattern") {
-    return parameter.typeAnnotation ?? parameter.left.typeAnnotation;
+    const checkedResult: ESTree.TSTypeAnnotation | null | undefined =
+      parameter.typeAnnotation ?? parameter.left.typeAnnotation;
+    return checkedResult;
   }
-  return parameter.typeAnnotation;
+  {
+    const checkedResult: ESTree.TSTypeAnnotation | null | undefined =
+      parameter.typeAnnotation;
+    return checkedResult;
+  }
 };
 
-const parameterName = (parameter: Parameter, sourceText: string): string => {
+const parameterName = (parameter: Parameter, sourceText: string) => {
   if (parameter.type === "TSParameterProperty") {
-    return parameterName(parameter.parameter, sourceText);
+    const checkedResult: string = parameterName(
+      parameter.parameter,
+      sourceText
+    );
+    return checkedResult;
   }
   if (parameter.type === "AssignmentPattern") {
-    return parameterName(parameter.left, sourceText);
+    const checkedResult: string = parameterName(parameter.left, sourceText);
+    return checkedResult;
   }
   if (parameter.type === "RestElement") {
-    return parameterName(parameter.argument, sourceText);
+    const checkedResult: string = parameterName(parameter.argument, sourceText);
+    return checkedResult;
   }
-  return parameter.type === "Identifier"
-    ? parameter.name
-    : sourceText.replace(/\s*:\s*unknown\s*$/u, "");
+  {
+    const checkedResult: string =
+      parameter.type === "Identifier"
+        ? parameter.name
+        : sourceText.replace(/\s*:\s*unknown\s*$/u, "");
+    return checkedResult;
+  }
 };
 
 /** Disallow unknown inputs except explicitly named error-cause enrichment. */

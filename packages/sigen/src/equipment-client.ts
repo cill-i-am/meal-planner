@@ -68,7 +68,7 @@ export const makeEquipmentClient = (read: ProviderRead) => {
       }
       const devices: (typeof Device.Type)[] = [];
       const seen = new Set<string>();
-      // Decode each node at the provider boundary, with explicit tree and response bounds.
+
       const pending: {
         value: unknown;
         parent: typeof SerialNumber.Type | null;

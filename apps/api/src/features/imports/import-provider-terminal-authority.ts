@@ -114,7 +114,6 @@ export const persistHouseholdProviderTerminalAuthority = <Failure>(input: {
         "Expected matching household terminal checkpoint authority"
       );
     }
-    // The durable caller needs only the validated ownership identity. Persisting
-    // the decoded checkpoint would send an Effect DateTime through native cloning.
+
     return checkpoint.ownershipId;
   });

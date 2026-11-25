@@ -230,20 +230,23 @@ export const MealPlanSummary = Schema.Struct({
 });
 export type MealPlanSummary = typeof MealPlanSummary.Type;
 
-export const toMealPlanSummary = (plan: MealPlan): MealPlanSummary => ({
-  activeVersion: plan._tag === "Draft" ? null : plan.active.number,
-  planId: plan.planId,
-  proposedGapCount:
-    plan._tag === "Approved"
-      ? 0
-      : plan.proposed.coverage.filter(
-          ({ resolution }) => resolution._tag === "Gap"
-        ).length,
-  revision: plan.revision,
-  startDate: plan.request.startDate,
-  state: plan._tag,
-  weeks: plan.request.weeks,
-});
+export const toMealPlanSummary = (plan: MealPlan) => {
+  const checkedResult: MealPlanSummary = {
+    activeVersion: plan._tag === "Draft" ? null : plan.active.number,
+    planId: plan.planId,
+    proposedGapCount:
+      plan._tag === "Approved"
+        ? 0
+        : plan.proposed.coverage.filter(
+            ({ resolution }) => resolution._tag === "Gap"
+          ).length,
+    revision: plan.revision,
+    startDate: plan.request.startDate,
+    state: plan._tag,
+    weeks: plan.request.weeks,
+  };
+  return checkedResult;
+};
 
 export const MealPlanChange = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("RefreshInputs") }),

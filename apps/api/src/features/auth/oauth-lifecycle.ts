@@ -44,19 +44,24 @@ const findTokenAccount = async (
   model: "oauthAccessToken" | "oauthRefreshToken",
   field: "authorizationCodeId" | "token",
   value: string
-): Promise<UserId | null> => {
+) => {
   const row = await ctx.context.adapter.findOne({
     model,
     where: [{ field, value }],
   });
-  return parseTokenOwner(row)?.userId ?? null;
+  {
+    const checkedResult:
+      | Awaited<Promise<UserId | null>>
+      | Promise<UserId | null> = parseTokenOwner(row)?.userId ?? null;
+    return checkedResult;
+  }
 };
 
 const findAuthorizationCodeAccount = async (
   ctx: OAuthContext,
   options: OAuthOptions<string[]>,
   code: string
-): Promise<UserId | null> => {
+) => {
   const identifier = await getOAuthProviderApi(ctx, options).hashToken(
     code,
     "authorization_code"
@@ -70,10 +75,14 @@ const findAuthorizationCodeAccount = async (
     if (Option.isNone(owner)) {
       throw invalidGrant();
     }
-    return owner.value.userId;
+    {
+      const checkedResult:
+        | Awaited<Promise<UserId | null>>
+        | Promise<UserId | null> = owner.value.userId;
+      return checkedResult;
+    }
   }
-  // Native replay cleanup deletes issued rows by this same code hash. The code
-  // itself was consumed, so those rows retain the account needed for its fence.
+
   const [accessAccount, refreshAccount] = await Promise.all([
     findTokenAccount(
       ctx,
@@ -95,7 +104,12 @@ const findAuthorizationCodeAccount = async (
   ) {
     throw invalidGrant();
   }
-  return accessAccount ?? refreshAccount;
+  {
+    const checkedResult:
+      | Awaited<Promise<UserId | null>>
+      | Promise<UserId | null> = accessAccount ?? refreshAccount;
+    return checkedResult;
+  }
 };
 
 /** Resolve only serialization identity; the native endpoint validates all OAuth authority. */
@@ -103,9 +117,12 @@ export const resolveOAuthLifecycleAccount = async (
   ctx: OAuthContext,
   options: OAuthOptions<string[]>,
   body: typeof OAuthLifecycleRequest.Type
-): Promise<UserId | null> => {
+) => {
   if (!oauthLifecyclePaths.has(body.path)) {
-    return null;
+    const checkedResult:
+      | Awaited<Promise<UserId | null>>
+      | Promise<UserId | null> = null;
+    return checkedResult;
   }
   const provider = getOAuthProviderApi(ctx, options);
   if (body.path === "/oauth2/token") {
@@ -133,12 +150,16 @@ export const resolveOAuthLifecycleAccount = async (
         )
       );
     }
-    // An exchange can be between code consumption and token creation. With no
-    // persisted owner there is no safe claim to enter, so never dispatch it.
+
     if (account === null) {
       throw invalidGrant();
     }
-    return account;
+    {
+      const checkedResult:
+        | Awaited<Promise<UserId | null>>
+        | Promise<UserId | null> = account;
+      return checkedResult;
+    }
   }
   if (body.path === "/oauth2/revoke") {
     const token = stripAccessTokenAuthorizationScheme(
@@ -146,7 +167,10 @@ export const resolveOAuthLifecycleAccount = async (
     );
     const hint = body.parameters["token_type_hint"];
     if (token.length === 0) {
-      return null;
+      const checkedResult:
+        | Awaited<Promise<UserId | null>>
+        | Promise<UserId | null> = null;
+      return checkedResult;
     }
     if (hint !== "refresh_token") {
       const account = await findTokenAccount(
@@ -156,7 +180,10 @@ export const resolveOAuthLifecycleAccount = async (
         await provider.hashToken(token, "access_token")
       );
       if (account !== null) {
-        return account;
+        const checkedResult:
+          | Awaited<Promise<UserId | null>>
+          | Promise<UserId | null> = account;
+        return checkedResult;
       }
     }
     if (hint !== "access_token") {
@@ -167,15 +194,28 @@ export const resolveOAuthLifecycleAccount = async (
         await provider.hashToken(token, "refresh_token")
       );
       if (account !== null) {
-        return account;
+        const checkedResult:
+          | Awaited<Promise<UserId | null>>
+          | Promise<UserId | null> = account;
+        return checkedResult;
       }
     }
-    // An unknown revocation token has no mutable grant. Preserve the native
-    // RFC 7009 response (including successful repeats) without a claim.
-    return null;
+
+    {
+      const checkedResult:
+        | Awaited<Promise<UserId | null>>
+        | Promise<UserId | null> = null;
+      return checkedResult;
+    }
   }
   const session = await getSessionFromCtx(ctx);
-  return session === null
-    ? null
-    : Schema.decodeUnknownSync(UserId)(session.user.id);
+  {
+    const checkedResult:
+      | Awaited<Promise<UserId | null>>
+      | Promise<UserId | null> =
+      session === null
+        ? null
+        : Schema.decodeUnknownSync(UserId)(session.user.id);
+    return checkedResult;
+  }
 };

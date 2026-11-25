@@ -25,8 +25,7 @@ const quantityPattern = new RegExp(
 );
 const unitPattern =
   /^(?:kilograms?|grams?|millilitres?|milliliters?|litres?|liters?|tablespoons?|teaspoons?|ounces?|pounds?|cups?|kg|mg|ml|tbsp|tsp|oz|lb|g|l)\b\s*/iu;
-// A supported prefix is insufficient when the source continues the number in
-// notation this parser cannot represent, such as 1,000, 1⁄2 or 2 × 400.
+
 const numericContinuation =
   /^(?:[\p{N}.,/⁄\p{Pd}−+×*]|[\p{P}\p{S}]\s*\p{N}|(?:to|x)\s*\d|[eE][+-]?\d)/iu;
 
@@ -40,7 +39,7 @@ const hasIncompleteNumericPrefix = (text: string, match: RegExpExecArray) => {
   );
 };
 
-const parseAmount = (text: string): number => {
+const parseAmount = (text: string) => {
   const expanded = text.replaceAll(
     /[½¼¾⅓⅔⅛⅜⅝⅞]/gu,
     (value) => ` ${fractions[value]}`
@@ -53,7 +52,10 @@ const parseAmount = (text: string): number => {
         ? (numerator ?? Number.NaN)
         : (numerator ?? Number.NaN) / denominator;
   }
-  return total;
+  {
+    const checkedResult: number = total;
+    return checkedResult;
+  }
 };
 
 const quantityFromPhrase = (text: string) => {
@@ -118,7 +120,7 @@ const durationFromPhrase = (phrase: string | null) => {
     ),
   ];
   const [match] = matches;
-  // A second timing phrase is ambiguous even when its number is unsupported.
+
   const unitMentions = phrase.match(
     /(?<!\p{L})(?:seconds?|secs?|minutes?|mins?|hours?|hrs?)\b/giu
   );
@@ -173,29 +175,32 @@ const instructionFromPhrase = (text: string, index: number) => {
   };
 };
 
-const servingsFromPhrase = (
-  original: string | null
-): RecipeCandidate["servings"] => {
+const servingsFromPhrase = (original: string | null) => {
   if (
     original === null ||
     !/^(?:serves|servings:?|portions:?|makes|yield:?)\s+/iu.test(original)
   ) {
-    return null;
+    const checkedResult: RecipeCandidate["servings"] = null;
+    return checkedResult;
   }
   const parsed = quantityFromPhrase(
     original.replace(/^(?:serves|servings:?|portions:?|makes|yield:?)\s+/iu, "")
   );
   if (parsed === null) {
-    return null;
+    const checkedResult: RecipeCandidate["servings"] = null;
+    return checkedResult;
   }
-  return {
-    max: parsed.quantity.max,
-    original,
-    quantity: parsed.quantity.value,
-    unit: /^(?:serves|servings:?|portions:?)\s+/iu.test(original)
-      ? "serving"
-      : (parsed.quantity.unit ?? (parsed.rest || null)),
-  };
+  {
+    const checkedResult: RecipeCandidate["servings"] = {
+      max: parsed.quantity.max,
+      original,
+      quantity: parsed.quantity.value,
+      unit: /^(?:serves|servings:?|portions:?)\s+/iu.test(original)
+        ? "serving"
+        : (parsed.quantity.unit ?? (parsed.rest || null)),
+    };
+    return checkedResult;
+  }
 };
 
 /** Only parse explicit local phrases; the normal grounder remains authoritative. */
@@ -208,8 +213,10 @@ export const normalizeClairicRecipePhrases = (input: {
   readonly cook: string | null;
   readonly inactive: string | null;
   readonly total: string | null;
-}): RecipeCandidate =>
-  Schema.decodeUnknownSync(RecipeCandidate)({
+}) => {
+  const checkedResult: RecipeCandidate = Schema.decodeUnknownSync(
+    RecipeCandidate
+  )({
     ...emptyRecipeDetails,
     ingredients:
       input.ingredients.length === 0
@@ -228,3 +235,5 @@ export const normalizeClairicRecipePhrases = (input: {
       total: durationFromPhrase(input.total),
     },
   });
+  return checkedResult;
+};

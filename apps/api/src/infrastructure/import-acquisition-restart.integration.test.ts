@@ -5,17 +5,20 @@ import { fileURLToPath } from "node:url";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { workerObservability } from "../../infrastructure/worker-observability.js";
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { bundleWorkerFixture } from "../test/native-worker.fixture.js";
+import { workerObservability } from "./worker-observability.js";
 
 const { date: compatibilityDate, flags: compatibilityFlags } =
   workerObservability.compatibility;
 const fixturePath = fileURLToPath(
-  new URL("import-acquisition-restart.test-fixture.ts", import.meta.url)
+  new URL(
+    "../features/imports/import-acquisition-restart.fixture.ts",
+    import.meta.url
+  )
 );
 const householdDomainFixturePath = fileURLToPath(
   new URL(
-    "../households/household-domain-service.test-fixture.js",
+    "../features/households/household-domain-service.fixture.js",
     import.meta.url
   )
 );
@@ -137,5 +140,5 @@ describe("native acquisition restart recovery", () => {
     expect(result.objects.every((key) => key.includes("/generations/1/"))).toBe(
       true
     );
-  }, 90_000);
+  });
 });

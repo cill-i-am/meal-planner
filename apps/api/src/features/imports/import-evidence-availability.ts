@@ -23,10 +23,13 @@ export const inspectHouseholdEvidenceReferences = Effect.fn(
     references,
     (reference) =>
       bucket.head(reference.key).pipe(
-        Effect.map((object): InspectedEvidenceReference => ({
-          availability: object === null ? "missing" : "available",
-          reference,
-        }))
+        Effect.map((object) => {
+          const checkedResult: InspectedEvidenceReference = {
+            availability: object === null ? "missing" : "available",
+            reference,
+          };
+          return checkedResult;
+        })
       ),
     { concurrency: 2 }
   );

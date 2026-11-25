@@ -7,13 +7,13 @@ import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { workerObservability } from "../../infrastructure/worker-observability.js";
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
 import { ImportCorrelationId } from "./import-observability.js";
 
 const { date: compatibilityDate, flags: compatibilityFlags } =
   workerObservability.compatibility;
 const fixturePath = fileURLToPath(
-  new URL("import-workflow-input.test-fixture.ts", import.meta.url)
+  new URL("import-workflow-input.fixture.ts", import.meta.url)
 );
 const temporaryDirectories: string[] = [];
 let runtime: Miniflare;

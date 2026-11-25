@@ -40,7 +40,6 @@ import { makeTariffsClient } from "./tariffs-client.js";
 import { makeThirdPartyClient } from "./third-party-client.js";
 import { makeTimeOfUseClient } from "./time-of-use.js";
 
-// Protocol constants from solidfox/sigenergy-cloud (MIT). See THIRD_PARTY_NOTICES.md.
 const Origin = "https://api-eu.sigencloud.com";
 const PasswordKey = new TextEncoder().encode("sigensigensigenp");
 const Envelope = Schema.Struct({

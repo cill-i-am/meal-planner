@@ -294,7 +294,7 @@ it.each(["write", "rename"] as const)(
         transport.invoke(request("cancel-publication")),
         { signal: controller.signal }
       );
-      // The real file is staged, but the bridge cannot observe a request yet.
+
       await staged.promise;
       await expect(readFile(files.request)).rejects.toMatchObject({
         code: "ENOENT",
@@ -320,8 +320,7 @@ it.each(["write", "rename"] as const)(
       await expect(
         readFile(path.join(rootDirectory, "transport.lock"))
       ).rejects.toMatchObject({ code: "ENOENT" });
-      // A cancelled staged write must never publish. An already-submitted
-      // rename must finish before shutdown, while invocation is still owned.
+
       await (phase === "write"
         ? expect(readFile(files.request)).rejects.toMatchObject({
             code: "ENOENT",
@@ -353,8 +352,7 @@ it.each(["write", "rename"] as const)(
       await transport.close();
       await rm(rootDirectory, { force: true, recursive: true });
     }
-  },
-  15_000
+  }
 );
 
 it("the CLI exits nonzero and records stopped_unknown when a provider response has no usage", async () => {
@@ -394,7 +392,7 @@ it("the CLI exits nonzero and records stopped_unknown when a provider response h
     await closed;
     await rm(rootDirectory, { force: true, recursive: true });
   }
-}, 15_000);
+});
 
 it("rejects changed payload or pricing on replay without changing the original settlement", async () => {
   const rootDirectory = await mkdtemp(
@@ -547,6 +545,5 @@ it.each(["node", "pnpm-tsx", "parent-killed"] as const)(
       await closed;
       await rm(rootDirectory, { force: true, recursive: true });
     }
-  },
-  30_000
+  }
 );

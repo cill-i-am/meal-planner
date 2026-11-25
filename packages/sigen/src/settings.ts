@@ -137,7 +137,7 @@ export const AutomationSettings = Schema.Struct({
 });
 export const PeakShavingSchedule = Schema.Struct({
   ...Snapshot,
-  // Preserve unknown control modes instead of interpreting them as disabled.
+
   providerControlMode: Schema.Number,
   reserveSocPercent: Percent,
   slots: Schema.Array(PeakShavingSlot).check(Schema.isMaxLength(64)),
@@ -151,25 +151,28 @@ type PeakShavingPreset = Pick<
 export const samePeakShavingPreset = (
   expected: PeakShavingPreset,
   observed: PeakShavingPreset
-): boolean =>
-  expected.reserveSocPercent === observed.reserveSocPercent &&
-  expected.slots.length === observed.slots.length &&
-  expected.slots.every((slot, index) => {
-    const actual = observed.slots[index];
-    return (
-      actual !== undefined &&
-      slot.providerDays === actual.providerDays &&
-      slot.startTime === actual.startTime &&
-      slot.endTime === actual.endTime &&
-      Math.abs(slot.peakPowerW - actual.peakPowerW) < 0.001
-    );
-  });
+) => {
+  const checkedResult: boolean =
+    expected.reserveSocPercent === observed.reserveSocPercent &&
+    expected.slots.length === observed.slots.length &&
+    expected.slots.every((slot, index) => {
+      const actual = observed.slots[index];
+      return (
+        actual !== undefined &&
+        slot.providerDays === actual.providerDays &&
+        slot.startTime === actual.startTime &&
+        slot.endTime === actual.endTime &&
+        Math.abs(slot.peakPowerW - actual.peakPowerW) < 0.001
+      );
+    });
+  return checkedResult;
+};
 export const ManualOverride = Schema.Struct({
   ...Snapshot,
   batteryPowerW: Schema.NullOr(Schema.Finite),
   batterySocPercent: Schema.NullOr(Percent),
   enabled: Schema.Boolean,
-  // The provider's epoch value is retained without guessing its unit or active state.
+
   providerEndTime: Schema.NullOr(Schema.String),
   providerMode: Schema.NullOr(Schema.String),
 });

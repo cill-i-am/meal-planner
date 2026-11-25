@@ -3,20 +3,20 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
 import * as Bundle from "alchemy/Bundle";
 import { Effect } from "effect";
 import { Miniflare } from "miniflare";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { workerObservability } from "../../infrastructure/worker-observability.js";
-import { bundleWorkerFixture } from "../../test/native-worker.test-fixture.js";
+import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
 
 const run = promisify(execFile);
 const enabled = process.env["MEAL_PLANNER_RUN_CONTAINER_TESTS"] === "1";
-// The native Docker engine requires its configured networking image to exist locally.
+const nativeContainerStartupBudgetMs = 3000;
+
 const containerEgressInterceptorImage =
   "cloudflare/proxy-everything:3cb1195@sha256:0ef6716c52430096900b150d84a3302057d6cd2319dae7987128c85d0733e3c8";
 const docker = async (...args: string[]) => {
@@ -128,9 +128,13 @@ describe.skipIf(!enabled)("native generation container lifetime", () => {
       const [abandonedId] = await processes();
       expect(abandonedId).toBeDefined();
       const acquisition = call("/acquire");
-      await delay(3000);
-      expect(await call("/inspect")).toMatchObject({ running: true });
-      expect(await processes()).toHaveLength(2);
+      await vi.waitFor(
+        async () => {
+          expect(await call("/inspect")).toMatchObject({ running: true });
+          expect(await processes()).toHaveLength(2);
+        },
+        { timeout: nativeContainerStartupBudgetMs }
+      );
       const result = await acquisition;
       expect(result.result._tag).toBe("VerifiedAcquisition");
       expect(result.beforeRelease.running).toBe(true);

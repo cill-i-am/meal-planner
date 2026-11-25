@@ -46,7 +46,7 @@ import type { RecipeImportWorkflowDispatcherService } from "./import-workflow-di
 import {
   makeTestAuthPrincipalResolver,
   makeTestSystemAuthorizer,
-} from "./import.test-fixtures.js";
+} from "./import.fixture.js";
 
 const intentId = "018f47ad-91aa-7c35-b6fe-000000000001";
 const actionId = "a".repeat(64);

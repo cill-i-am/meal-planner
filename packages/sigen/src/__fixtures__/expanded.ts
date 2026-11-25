@@ -1,4 +1,3 @@
-/** Synthetic public-app protocol examples; no populated hardware has been accepted live. */
 import { remainingResponses, smartLoad } from "./remaining.js";
 
 export const loadControl = {

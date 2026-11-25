@@ -51,7 +51,7 @@ export default defineConfig({
           ),
         },
         compatibilityDate: workerObservability.compatibility.date,
-        // Vitest 5 sends transformed modules over its runner WebSocket.
+
         compatibilityFlags: [
           ...workerObservability.compatibility.flags,
           "increase_websocket_message_size",

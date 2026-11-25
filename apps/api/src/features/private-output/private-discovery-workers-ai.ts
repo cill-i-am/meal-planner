@@ -172,7 +172,6 @@ const providerRequest = (
     : { max_tokens: config.maxOutputTokens, top_p: 1 }),
 });
 
-/** App-owned request contract; the maintained adapter owns SDK streaming and tool assembly. */
 class PrivateDiscoveryTextAdapter extends CloudflareTextAdapter<
   WorkersAIPrivateDiscoveryConfiguration["model"]
 > {
@@ -192,7 +191,7 @@ class PrivateDiscoveryTextAdapter extends CloudflareTextAdapter<
         WorkersAIPrivateDiscoveryConfiguration["model"]
       >["chatStream"]
     >[0]
-  ): AsyncIterable<AdapterYieldChunk> {
+  ) {
     let completedTool = false;
     let run: { runId: string; threadId: string } | undefined;
     for await (const chunk of super.chatStream(options)) {
@@ -202,30 +201,30 @@ class PrivateDiscoveryTextAdapter extends CloudflareTextAdapter<
       if (chunk.type === "TOOL_CALL_END") {
         completedTool = true;
       }
-      // Workers AI can close a complete forced-tool proposal without a finish
-      // marker. The middleware still validates its exact schema, tool count,
-      // size and execution fence before accepting any output.
+
       yield chunk.type === "RUN_ERROR" &&
       chunk.code === "incomplete-stream" &&
       completedTool &&
       run !== undefined
-        ? { ...run, finishReason: "tool_calls", type: EventType.RUN_FINISHED }
+        ? ({
+            ...run,
+            finishReason: "tool_calls",
+            type: EventType.RUN_FINISHED,
+          } satisfies AdapterYieldChunk)
         : chunk;
     }
   }
 
   protected override mapOptionsToRequest() {
-    // Preserve the Effect schema's closed definitions instead of the SDK's generic strict downgrade.
     return this.#request;
   }
 
   // oxlint-disable-next-line class-methods-use-this -- The provider hook deliberately suppresses reasoning before SDK history accumulation.
-  protected override extractReasoning(): undefined {
-    // Reasoning never enters TanStack's live events or internal message history.
-  }
+  protected override extractReasoning: () => undefined = () => {
+    // WARNING: Provider reasoning must not enter the persisted conversation.
+  };
 }
 
-/** The published Responses adapter owns streaming and function-call assembly. */
 class PrivateDiscoveryResponsesAdapter extends OpenAIBaseResponsesTextAdapter<"openai/gpt-6-luna"> {
   readonly #config: CloudflareResponsesPrivateDiscoveryConfiguration;
   readonly #instructions: string;
@@ -272,19 +271,22 @@ class PrivateDiscoveryResponsesAdapter extends OpenAIBaseResponsesTextAdapter<"o
   }
 }
 
-const safeReplyChunks = (reply: PrivateChatReply): StreamChunk[] => [
-  {
-    messageId: reply.messageId,
-    role: "assistant",
-    type: EventType.TEXT_MESSAGE_START,
-  },
-  {
-    delta: reply.text,
-    messageId: reply.messageId,
-    type: EventType.TEXT_MESSAGE_CONTENT,
-  },
-  { messageId: reply.messageId, type: EventType.TEXT_MESSAGE_END },
-];
+const safeReplyChunks = (reply: PrivateChatReply) => {
+  const checkedResult: StreamChunk[] = [
+    {
+      messageId: reply.messageId,
+      role: "assistant",
+      type: EventType.TEXT_MESSAGE_START,
+    },
+    {
+      delta: reply.text,
+      messageId: reply.messageId,
+      type: EventType.TEXT_MESSAGE_CONTENT,
+    },
+    { messageId: reply.messageId, type: EventType.TEXT_MESSAGE_END },
+  ];
+  return checkedResult;
+};
 
 const streamDiscovery = (
   environment: PrivateDiscoveryModelEnvironment,
@@ -425,7 +427,6 @@ const streamDiscovery = (
     return failureSettlement;
   };
   const settleAfterAbort = async () => {
-    // The application settles without waiting for the published binding bridge to return.
     try {
       await settleFailure(failed("outcome_unknown"));
     } catch {
@@ -510,8 +511,7 @@ const streamDiscovery = (
         if (toolCallId === undefined) {
           return reject(failed("invalid_output", "tool_call"));
         }
-        // The adapter and agent loop each report completion. Only the terminal
-        // event after the accepted tool result may reach the participant.
+
         if (!emittedReply) {
           return null;
         }
@@ -551,7 +551,7 @@ const streamDiscovery = (
       if (controller.signal.aborted) {
         return reject(failed("outcome_unknown"));
       }
-      // The SDK can finish an empty provider stream without emitting a terminal chunk or a tool phase.
+
       if (accepted === undefined) {
         return reject(failed("invalid_output", "tool_call"));
       }
@@ -600,7 +600,7 @@ const streamDiscovery = (
         await input.chat.accept({
           output: prepared,
           provenance,
-          // Parsed SDK usage may be interim. Unknown accounting never credits a reservation.
+
           usage: unknownUsage,
         })
       );
@@ -640,62 +640,65 @@ const streamDiscovery = (
 
 export const makePrivateDiscoveryModel = (
   environment: PrivateDiscoveryModelEnvironment
-): PrivateDiscoveryStreamingModel => ({
-  generate: (input) =>
-    Effect.tryPromise({
-      catch: (error) =>
-        error instanceof PrivateDiscoveryFailure
-          ? error
-          : failure("outcome_unknown"),
-      try: async (signal) => {
-        let result: PrivateDiscoveryResult | undefined;
-        let problem: PrivateDiscoveryFailure | undefined;
-        const controller = new AbortController();
-        const cancellation = AbortSignal.any([input.signal, signal]);
-        const abort = () => controller.abort(cancellation.reason);
-        cancellation.addEventListener("abort", abort, { once: true });
-        if (cancellation.aborted) {
-          abort();
-        }
-        try {
-          const stream = streamDiscovery(environment, {
-            abortController: controller,
-            beforeDispatch: input.beforeDispatch,
-            chat: {
-              accept: (received) => {
-                result = received;
-                return {
-                  createdAt: Date.now(),
-                  messageId: crypto.randomUUID(),
-                  text: "Validated private discovery proposal.",
-                  type: "PrivateDiscoveryReply",
-                };
+) => {
+  const checkedResult: PrivateDiscoveryStreamingModel = {
+    generate: (input) =>
+      Effect.tryPromise({
+        catch: (error) =>
+          error instanceof PrivateDiscoveryFailure
+            ? error
+            : failure("outcome_unknown"),
+        try: async (signal) => {
+          let result: PrivateDiscoveryResult | undefined;
+          let problem: PrivateDiscoveryFailure | undefined;
+          const controller = new AbortController();
+          const cancellation = AbortSignal.any([input.signal, signal]);
+          const abort = () => controller.abort(cancellation.reason);
+          cancellation.addEventListener("abort", abort, { once: true });
+          if (cancellation.aborted) {
+            abort();
+          }
+          try {
+            const stream = streamDiscovery(environment, {
+              abortController: controller,
+              beforeDispatch: input.beforeDispatch,
+              chat: {
+                accept: (received) => {
+                  result = received;
+                  return {
+                    createdAt: Date.now(),
+                    messageId: crypto.randomUUID(),
+                    text: "Validated private discovery proposal.",
+                    type: "PrivateDiscoveryReply",
+                  };
+                },
+                fail: (error) => {
+                  problem = error;
+                },
+                messages: [],
+                middleware: [],
+                runId: crypto.randomUUID(),
+                threadId: crypto.randomUUID(),
               },
-              fail: (error) => {
-                problem = error;
-              },
-              messages: [],
-              middleware: [],
-              runId: crypto.randomUUID(),
-              threadId: crypto.randomUUID(),
-            },
-            context: input.context,
-          });
-          // This non-chat host consumes the same native SDK stream; it has no separate inference path.
-          for await (const _chunk of stream) {
-            /* The caller receives the validated domain result. */
+              context: input.context,
+            });
+
+            for await (const _chunk of stream) {
+              // WARNING: Driving the stream is required for the persistence callbacks.
+            }
+            if (problem) {
+              throw problem;
+            }
+            if (result === undefined) {
+              throw failure("invalid_output", null, null, "tool_call");
+            }
+            return result;
+          } finally {
+            cancellation.removeEventListener("abort", abort);
           }
-          if (problem) {
-            throw problem;
-          }
-          if (result === undefined) {
-            throw failure("invalid_output", null, null, "tool_call");
-          }
-          return result;
-        } finally {
-          cancellation.removeEventListener("abort", abort);
-        }
-      },
-    }),
-  stream: (input) => streamDiscovery(environment, input),
-});
+        },
+      }),
+    stream: (input) => streamDiscovery(environment, input),
+  };
+  return checkedResult;
+};

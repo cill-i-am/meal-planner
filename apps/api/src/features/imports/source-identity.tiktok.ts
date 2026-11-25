@@ -50,31 +50,23 @@ const TikTokHandoffItemMetadata = Schema.Struct({
 const TikTokHandlePattern = /^[A-Za-z0-9._]{1,24}$/u;
 const TikTokCanonicalIdPattern = /^\d+$/u;
 
-const sanitizeLocator = (url: URL): string => {
+const sanitizeLocator = (url: URL) => {
   const path = url.pathname.replace(/\/+$/u, "") || "/";
-  return `${url.origin}${path}`;
+  {
+    const checkedResult = `${url.origin}${path}`;
+    return checkedResult;
+  }
 };
 
-const makeIdentity = (canonicalId: string): CanonicalSourceIdentity => ({
-  canonicalId: Schema.decodeUnknownSync(SourceCanonicalId)(canonicalId),
-  kind: "tiktok",
-});
+const makeIdentity = (canonicalId: string) => {
+  const checkedResult: CanonicalSourceIdentity = {
+    canonicalId: Schema.decodeUnknownSync(SourceCanonicalId)(canonicalId),
+    kind: "tiktok",
+  };
+  return checkedResult;
+};
 
-const parseCanonicalPath = (
-  url: URL
-):
-  | {
-      readonly _tag: "UnsupportedIdentity";
-      readonly canonicalUrl: ValidatedVideoUrl;
-      readonly identity: CanonicalSourceIdentity;
-    }
-  | {
-      readonly _tag: "VideoIdentity";
-      readonly canonicalUrl: ValidatedVideoUrl;
-      readonly identity: CanonicalSourceIdentity;
-      readonly videoUrl: ValidatedVideoUrl;
-    }
-  | undefined => {
+const parseCanonicalPath = (url: URL) => {
   const videoMatch = /^\/@[^/]+\/video\/(?<canonicalId>\d+)\/?$/u.exec(
     url.pathname
   );
@@ -83,38 +75,85 @@ const parseCanonicalPath = (
     const canonicalUrl = Schema.decodeUnknownSync(ValidatedVideoUrl)(
       sanitizeLocator(url)
     );
-    return {
-      _tag: "VideoIdentity",
-      canonicalUrl,
-      identity: makeIdentity(videoId),
-      videoUrl: canonicalUrl,
-    };
+    {
+      const checkedResult:
+        | {
+            readonly _tag: "UnsupportedIdentity";
+            readonly canonicalUrl: ValidatedVideoUrl;
+            readonly identity: CanonicalSourceIdentity;
+          }
+        | {
+            readonly _tag: "VideoIdentity";
+            readonly canonicalUrl: ValidatedVideoUrl;
+            readonly identity: CanonicalSourceIdentity;
+            readonly videoUrl: ValidatedVideoUrl;
+          }
+        | undefined = {
+        _tag: "VideoIdentity",
+        canonicalUrl,
+        identity: makeIdentity(videoId),
+        videoUrl: canonicalUrl,
+      };
+      return checkedResult;
+    }
   }
 
   const photoMatch =
     /^\/@[^/]*\/(?:photo|photos)\/(?<canonicalId>\d+)\/?$/u.exec(url.pathname);
   const photoId = photoMatch?.groups?.["canonicalId"];
   if (photoId !== undefined) {
-    return {
+    const checkedResult:
+      | {
+          readonly _tag: "UnsupportedIdentity";
+          readonly canonicalUrl: ValidatedVideoUrl;
+          readonly identity: CanonicalSourceIdentity;
+        }
+      | {
+          readonly _tag: "VideoIdentity";
+          readonly canonicalUrl: ValidatedVideoUrl;
+          readonly identity: CanonicalSourceIdentity;
+          readonly videoUrl: ValidatedVideoUrl;
+        }
+      | undefined = {
       _tag: "UnsupportedIdentity",
       canonicalUrl: Schema.decodeUnknownSync(ValidatedVideoUrl)(
         sanitizeLocator(url)
       ),
       identity: makeIdentity(photoId),
     };
+    return checkedResult;
   }
-  return undefined;
+  {
+    const checkedResult:
+      | {
+          readonly _tag: "UnsupportedIdentity";
+          readonly canonicalUrl: ValidatedVideoUrl;
+          readonly identity: CanonicalSourceIdentity;
+        }
+      | {
+          readonly _tag: "VideoIdentity";
+          readonly canonicalUrl: ValidatedVideoUrl;
+          readonly identity: CanonicalSourceIdentity;
+          readonly videoUrl: ValidatedVideoUrl;
+        }
+      | undefined = undefined;
+    return checkedResult;
+  }
 };
 
 const getAttribute = (
   element: DefaultTreeAdapterTypes.Element,
   name: "id" | "type"
-): string | undefined =>
-  element.attrs.find((attribute) => attribute.name === name)?.value;
+) => {
+  const checkedResult: string | undefined = element.attrs.find(
+    (attribute) => attribute.name === name
+  )?.value;
+  return checkedResult;
+};
 
 const findHydrationContent = (
   nodes: readonly DefaultTreeAdapterTypes.ChildNode[]
-): string | undefined => {
+) => {
   const pending = nodes.toReversed();
 
   while (pending.length > 0) {
@@ -131,13 +170,14 @@ const findHydrationContent = (
       getAttribute(node, "id") === "__UNIVERSAL_DATA_FOR_REHYDRATION__" &&
       getAttribute(node, "type")?.toLowerCase() === "application/json"
     ) {
-      return node.childNodes
+      const checkedResult: string | undefined = node.childNodes
         .filter(
           (child): child is DefaultTreeAdapterTypes.TextNode =>
             child.nodeName === "#text"
         )
         .map((child) => child.value)
         .join("");
+      return checkedResult;
     }
 
     if ("childNodes" in node) {
@@ -149,28 +189,36 @@ const findHydrationContent = (
       }
     }
   }
-  return undefined;
+  {
+    const checkedResult: string | undefined = undefined;
+    return checkedResult;
+  }
 };
 
-const parseHandoffMetadata = (html: string): Schema.Json | undefined => {
+const parseHandoffMetadata = (html: string) => {
   const content = findHydrationContent(parse(html).childNodes);
   if (content === undefined) {
-    return undefined;
+    const checkedResult: Schema.Json | undefined = undefined;
+    return checkedResult;
   }
-  return Option.getOrUndefined(
-    Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))(content)
-  );
+  {
+    const checkedResult: Schema.Json | undefined = Option.getOrUndefined(
+      Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Json))(content)
+    );
+    return checkedResult;
+  }
 };
 
-const parseHandoffCanonical = (
-  decodedJson: Schema.Json
-): string | undefined => {
+const parseHandoffCanonical = (decodedJson: Schema.Json) => {
   const metadata = Schema.decodeUnknownOption(TikTokHandoffMetadata)(
     decodedJson
   );
-  return Option.isSome(metadata)
-    ? metadata.value.__DEFAULT_SCOPE__["seo.abtest"].canonical
-    : undefined;
+  {
+    const checkedResult: string | undefined = Option.isSome(metadata)
+      ? metadata.value.__DEFAULT_SCOPE__["seo.abtest"].canonical
+      : undefined;
+    return checkedResult;
+  }
 };
 
 const isJsonObject = (
@@ -178,14 +226,13 @@ const isJsonObject = (
 ): value is Schema.JsonObject =>
   Schema.is(Schema.Record(Schema.String, Schema.Json))(value);
 
-const parseHandoffItem = (
-  decodedJson: Schema.Json
-): CanonicalIdentityResolution | undefined => {
+const parseHandoffItem = (decodedJson: Schema.Json) => {
   const metadata = Schema.decodeUnknownOption(TikTokHandoffItemMetadata)(
     decodedJson
   );
   if (Option.isNone(metadata)) {
-    return undefined;
+    const checkedResult: CanonicalIdentityResolution | undefined = undefined;
+    return checkedResult;
   }
 
   const item =
@@ -194,30 +241,37 @@ const parseHandoffItem = (
     !TikTokCanonicalIdPattern.test(item.id) ||
     !TikTokHandlePattern.test(item.author.uniqueId)
   ) {
-    return undefined;
+    const checkedResult: CanonicalIdentityResolution | undefined = undefined;
+    return checkedResult;
   }
 
   const hasVideo = isJsonObject(item.video);
   const hasImagePost = isJsonObject(item.imagePost);
   if (hasVideo === hasImagePost) {
-    return undefined;
+    const checkedResult: CanonicalIdentityResolution | undefined = undefined;
+    return checkedResult;
   }
 
   const canonicalUrl = parseTikTokHttpUrl(
     `https://www.tiktok.com/@${item.author.uniqueId}/${hasVideo ? "video" : "photo"}/${item.id}`
   );
-  return canonicalUrl === undefined
-    ? undefined
-    : parseCanonicalPath(canonicalUrl);
+  {
+    const checkedResult: CanonicalIdentityResolution | undefined =
+      canonicalUrl === undefined ? undefined : parseCanonicalPath(canonicalUrl);
+    return checkedResult;
+  }
 };
 
 const resolutionsMatch = (
   left: CanonicalIdentityResolution,
   right: CanonicalIdentityResolution
-): boolean =>
-  left._tag === right._tag &&
-  left.identity.kind === right.identity.kind &&
-  left.identity.canonicalId === right.identity.canonicalId;
+) => {
+  const checkedResult: boolean =
+    left._tag === right._tag &&
+    left.identity.kind === right.identity.kind &&
+    left.identity.canonicalId === right.identity.canonicalId;
+  return checkedResult;
+};
 
 const resolveHandoffResponse = (html: string) =>
   Effect.gen(function* resolveHandoffResponseEffect() {
@@ -272,25 +326,28 @@ const resolveShortLink = (
 export const makeTikTokCanonicalSourceIdentityResolver = (
   fetcher: TikTokFetcher,
   options?: TikTokHttpPolicyOptions
-): CanonicalSourceIdentityResolver => {
+) => {
   const transport = makeTikTokHttpTransport(fetcher, options);
-  return {
-    resolve: Effect.fn("TikTokCanonicalSourceIdentityResolver.resolve")(
-      function* resolve(source) {
-        const url = parseTikTokHttpUrl(source.url);
-        if (url === undefined) {
-          return yield* Effect.fail(invalidSource());
-        }
+  {
+    const checkedResult: CanonicalSourceIdentityResolver = {
+      resolve: Effect.fn("TikTokCanonicalSourceIdentityResolver.resolve")(
+        function* resolve(source) {
+          const url = parseTikTokHttpUrl(source.url);
+          if (url === undefined) {
+            return yield* Effect.fail(invalidSource());
+          }
 
-        const parsed = parseCanonicalPath(url);
-        if (parsed !== undefined) {
-          return parsed;
+          const parsed = parseCanonicalPath(url);
+          if (parsed !== undefined) {
+            return parsed;
+          }
+          if (!isTikTokShortLink(url)) {
+            return yield* Effect.fail(invalidSource());
+          }
+          return yield* resolveShortLink(transport, url);
         }
-        if (!isTikTokShortLink(url)) {
-          return yield* Effect.fail(invalidSource());
-        }
-        return yield* resolveShortLink(transport, url);
-      }
-    ),
-  };
+      ),
+    };
+    return checkedResult;
+  }
 };

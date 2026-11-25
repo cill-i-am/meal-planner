@@ -11,7 +11,7 @@ import {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
 } from "./import-observability.js";
-import { makeRecordingTraceStore } from "./import-provider-adapters.test-fixture.js";
+import { makeRecordingTraceStore } from "./import-provider-adapters.fixture.js";
 import {
   failAfter,
   makeProviderDispatchGate,
@@ -116,7 +116,7 @@ describe("provider dispatch observability", () => {
   });
 
   it("emits the closed timeout event without leaking the failed operation", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     const exit = await Effect.runPromise(
       Effect.gen(function* timeoutProvider() {
         const fiber = yield* Effect.forkChild(
@@ -146,7 +146,7 @@ describe("provider dispatch observability", () => {
   });
 
   it("emits the closed poison event only after an unknown-cost settlement", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     const gate = makeProviderDispatchGate({
       correlationId,
       now: () => now,
@@ -210,7 +210,7 @@ describe("provider dispatch observability", () => {
   });
 
   it("correlates dispatch and durable settlement without provider data", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     const gate = makeProviderDispatchGate({
       correlationId,
       now: () => now,
@@ -266,7 +266,7 @@ describe("provider dispatch observability", () => {
   });
 
   it("does not report a dispatch when budget authority rejects before invocation", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     const rejectingRepository: ProviderAccountingRepository = {
       ...repository,
       reserve: (input) =>
@@ -301,7 +301,7 @@ describe("provider dispatch observability", () => {
   });
 
   it("does not let a trace defect mask the original provider failure", async () => {
-    const log = vi.spyOn(console, "log").mockImplementation(vi.fn());
+    const log = vi.spyOn(console, "log");
     const providerFailure = {
       _tag: "ProviderFailure",
       code: "provider_unavailable",

@@ -12,7 +12,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { Schema } from "effect";
-import { expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
 
 import { EvaluationInvocation } from "./accounted-transport.js";
 import { readRun } from "./model.js";
@@ -50,9 +58,7 @@ it("retains the checked-in stopped comparison evidence fingerprints", () => {
   }
 });
 
-// Seven fresh CLI processes load extraction dependencies; the deadline includes
-// startup variance on CI as well as the receipt assertions.
-it("preserves reconciled and normal CLI unknown receipts without inventing provider response, latency, spend or external calls", () => {
+describe("capture CLI unknown receipts", () => {
   const receipt = readRun(fixture).outputs[0]?.transportReceipt;
   if (receipt === undefined) {
     throw new Error("Missing recorded reconciliation receipt");
@@ -65,16 +71,36 @@ it("preserves reconciled and normal CLI unknown receipts without inventing provi
       }),
     })
   )(receipt).result;
-  const directory = mkdtempSync(
-    path.join(os.tmpdir(), "recipe-capture-replay-")
-  );
-  const plan = path.join(directory, "scripted-replay.plan.json");
-  const output = path.join(directory, "scripted-replay.run.json");
-  const receiptFile = path.join(
-    directory,
-    `${createHash("sha256").update(identity.dispatchId).digest("hex")}.result.json`
-  );
-  try {
+  const nativeReceipt = {
+    ledger: Schema.decodeUnknownSync(Schema.Struct({ ledger: Schema.Json }))(
+      receipt
+    ).ledger,
+    reason: "Inspect persisted ledger; no automatic retry is authorized",
+    status: "stopped_unknown",
+  };
+  const invocation = Schema.decodeUnknownSync(
+    Schema.Struct({
+      requests: Schema.Array(
+        Schema.Struct({ invocation: Schema.NullOr(EvaluationInvocation) })
+      ),
+    })
+  )(JSON.parse(readFileSync(sourcePlan, "utf-8"))).requests.find(
+    (request) => request.invocation?.dispatchId === identity.dispatchId
+  )?.invocation;
+  if (invocation === undefined || invocation === null) {
+    throw new Error("Missing original invocation");
+  }
+  let planDirectory: string;
+  let plan: string;
+  let directory: string;
+  let receiptFile: string;
+  let publishedRequest: string;
+  const dispatchFile = createHash("sha256")
+    .update(identity.dispatchId)
+    .digest("hex");
+  beforeAll(() => {
+    planDirectory = mkdtempSync(path.join(os.tmpdir(), "recipe-capture-plan-"));
+    plan = path.join(planDirectory, "scripted-replay.plan.json");
     cli([
       "rebind-grounder",
       "--plan",
@@ -86,6 +112,22 @@ it("preserves reconciled and normal CLI unknown receipts without inventing provi
       "--reason",
       "Regression replay of persisted transport evidence; no provider invocation",
     ]);
+  });
+  afterAll(() => {
+    rmSync(planDirectory, { force: true, recursive: true });
+  });
+  beforeEach(() => {
+    directory = mkdtempSync(path.join(os.tmpdir(), "recipe-capture-replay-"));
+    const bridge = path.join(directory, "bridge");
+    mkdirSync(bridge);
+    receiptFile = path.join(directory, `${dispatchFile}.result.json`);
+    publishedRequest = path.join(bridge, `${dispatchFile}.request.json`);
+  });
+  afterEach(() => {
+    rmSync(directory, { force: true, recursive: true });
+  });
+  it("preserves reconciled receipts without inventing provider response, latency or spend", () => {
+    const output = path.join(directory, "scripted-replay.run.json");
     writeFileSync(receiptFile, JSON.stringify(receipt));
     cli(["collect", "--plan", plan, "--results", directory, "--out", output]);
     const run = readRun(output);
@@ -106,13 +148,8 @@ it("preserves reconciled and normal CLI unknown receipts without inventing provi
       requestIdentity: "request_sha256",
       status: "failed",
     });
-    const nativeReceipt = {
-      ledger: Schema.decodeUnknownSync(Schema.Struct({ ledger: Schema.Json }))(
-        receipt
-      ).ledger,
-      reason: "Inspect persisted ledger; no automatic retry is authorized",
-      status: "stopped_unknown",
-    };
+  });
+  it("reports a native unknown without a published request", () => {
     writeFileSync(receiptFile, JSON.stringify(nativeReceipt));
     const nativeOutput = path.join(directory, "native-unknown.run.json");
     cli([
@@ -140,24 +177,9 @@ it("preserves reconciled and normal CLI unknown receipts without inventing provi
       status: "failed",
       transportReceipt: nativeReceipt,
     });
-    const invocation = Schema.decodeUnknownSync(
-      Schema.Struct({
-        requests: Schema.Array(
-          Schema.Struct({ invocation: Schema.NullOr(EvaluationInvocation) })
-        ),
-      })
-    )(JSON.parse(readFileSync(sourcePlan, "utf-8"))).requests.find(
-      (request) => request.invocation?.dispatchId === identity.dispatchId
-    )?.invocation;
-    if (invocation === undefined || invocation === null) {
-      throw new Error("Missing original invocation");
-    }
-    const bridge = path.join(directory, "bridge");
-    mkdirSync(bridge);
-    const publishedRequest = path.join(
-      bridge,
-      `${createHash("sha256").update(identity.dispatchId).digest("hex")}.request.json`
-    );
+  });
+  it("links a native unknown to the exact published request", () => {
+    writeFileSync(receiptFile, JSON.stringify(nativeReceipt));
     writeFileSync(
       publishedRequest,
       JSON.stringify({ ...invocation, requestSha256: identity.requestSha256 })
@@ -180,6 +202,9 @@ it("preserves reconciled and normal CLI unknown receipts without inventing provi
       requestIdentity: "request_sha256",
       transportReceipt: nativeReceipt,
     });
+  });
+  it("rejects a published request with the wrong body", () => {
+    writeFileSync(receiptFile, JSON.stringify(nativeReceipt));
     writeFileSync(
       publishedRequest,
       JSON.stringify({
@@ -199,6 +224,8 @@ it("preserves reconciled and normal CLI unknown receipts without inventing provi
         path.join(directory, "wrong-published.run.json"),
       ])
     ).toThrow("Unknown native receipt published request identity differs");
+  });
+  it("rejects a native unknown without the matching dispatch", () => {
     writeFileSync(
       receiptFile,
       JSON.stringify(nativeReceipt).replaceAll(
@@ -217,6 +244,8 @@ it("preserves reconciled and normal CLI unknown receipts without inventing provi
         path.join(directory, "wrong-native.run.json"),
       ])
     ).toThrow("Unknown native receipt lacks the matching reserved dispatch");
+  });
+  it("rejects an interrupted receipt with a different request identity", () => {
     writeFileSync(
       receiptFile,
       JSON.stringify(receipt).replaceAll(
@@ -235,7 +264,5 @@ it("preserves reconciled and normal CLI unknown receipts without inventing provi
         path.join(directory, "rejected.run.json"),
       ])
     ).toThrow("Interrupted receipt request identity differs");
-  } finally {
-    rmSync(directory, { force: true, recursive: true });
-  }
-}, 60_000);
+  });
+});

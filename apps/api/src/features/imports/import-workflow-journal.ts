@@ -15,9 +15,14 @@ export type PostAcquisitionJournalCheckpoint =
 
 export const postAcquisitionRestartOptions = (
   checkpoint: PostAcquisitionJournalCheckpoint
-): {
-  readonly from: {
-    readonly name: "record-acquisition-v2" | "resolve-acquire-store-verify-v2";
-    readonly type: "do";
-  };
-} => ({ from: { name: checkpoint.lastSuccessfulStep, type: "do" } });
+) => {
+  const checkedResult: {
+    readonly from: {
+      readonly name:
+        | "record-acquisition-v2"
+        | "resolve-acquire-store-verify-v2";
+      readonly type: "do";
+    };
+  } = { from: { name: checkpoint.lastSuccessfulStep, type: "do" } };
+  return checkedResult;
+};

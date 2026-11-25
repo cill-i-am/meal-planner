@@ -4,15 +4,21 @@ export const fencePrivateChatResponse = (
   authorized: () => boolean,
   signal: AbortSignal,
   onComplete?: () => void
-): Response => {
+) => {
   if (!authorized() || signal.aborted) {
     void response.body?.cancel();
     onComplete?.();
-    return new Response(null, { status: 403 });
+    {
+      const checkedResult: Response = new Response(null, { status: 403 });
+      return checkedResult;
+    }
   }
   if (response.body === null) {
     onComplete?.();
-    return response;
+    {
+      const checkedResult: Response = response;
+      return checkedResult;
+    }
   }
   const reader = response.body.getReader();
   let finished = false;
@@ -20,7 +26,7 @@ export const fencePrivateChatResponse = (
     try {
       await reader.cancel();
     } catch {
-      // An upstream read may already have failed when revocation cancels it.
+      // WARNING: A failed cancellation must not interrupt transport cleanup.
     }
   };
   const abort = () => {
@@ -51,7 +57,7 @@ export const fencePrivateChatResponse = (
             await reader.cancel();
             return;
           }
-          // No await or forwarding queue intervenes between authority and delivery.
+
           controller.enqueue(next.value);
         } catch {
           if (!finished) {
@@ -64,9 +70,12 @@ export const fencePrivateChatResponse = (
     },
     { highWaterMark: 0 }
   );
-  return new Response(body, {
-    headers: response.headers,
-    status: response.status,
-    statusText: response.statusText,
-  });
+  {
+    const checkedResult: Response = new Response(body, {
+      headers: response.headers,
+      status: response.status,
+      statusText: response.statusText,
+    });
+    return checkedResult;
+  }
 };

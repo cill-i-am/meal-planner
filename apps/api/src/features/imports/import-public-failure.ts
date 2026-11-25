@@ -20,56 +20,71 @@ export const PublicIntentFailure = Schema.Struct({
 });
 export type PublicIntentFailure = typeof PublicIntentFailure.Type;
 
-const sourceUnavailable = (message: string): PublicIntentFailure => ({
-  code: "source_unavailable",
-  message,
-  recovery: "create_new_intent",
-});
+const sourceUnavailable = (message: string) => {
+  const checkedResult: PublicIntentFailure = {
+    code: "source_unavailable",
+    message,
+    recovery: "create_new_intent",
+  };
+  return checkedResult;
+};
 
 export const publicIntentFailureForAcquisitionOutcome = (
   outcome: Exclude<
     AcquisitionTaskOutcome,
     { readonly _tag: "VerifiedAcquisition" }
   >
-): PublicIntentFailure => {
+) => {
   switch (outcome._tag) {
     case "Unavailable": {
-      return sourceUnavailable("The source is unavailable.");
+      const checkedResult: PublicIntentFailure = sourceUnavailable(
+        "The source is unavailable."
+      );
+      return checkedResult;
     }
     case "UnsupportedCarousel": {
-      return {
+      const checkedResult: PublicIntentFailure = {
         code: "unsupported_source",
         message: "This source type is not supported.",
         recovery: "create_new_intent",
       };
+      return checkedResult;
     }
     case "TerminalMedia": {
-      return {
+      const checkedResult: PublicIntentFailure = {
         code: "invalid_media",
         message: "The source does not contain supported media.",
         recovery: "create_new_intent",
       };
+      return checkedResult;
     }
     case "RetryExhausted": {
-      return sourceUnavailable("The source is temporarily unavailable.");
+      const checkedResult: PublicIntentFailure = sourceUnavailable(
+        "The source is temporarily unavailable."
+      );
+      return checkedResult;
     }
     default: {
-      return outcome satisfies never;
+      const checkedResult: PublicIntentFailure = outcome satisfies never;
+      return checkedResult;
     }
   }
 };
 
 export const publicIntentFailureForProviderStage = (
   stage: ProviderTaskStage
-): PublicIntentFailure =>
-  stage === "recipe"
-    ? {
-        code: "recipe_extraction_failed",
-        message: "A recipe could not be extracted from this source.",
-        recovery: "create_new_intent",
-      }
-    : {
-        code: "analysis_failed",
-        message: "The source could not be analyzed.",
-        recovery: "create_new_intent",
-      };
+) => {
+  const checkedResult: PublicIntentFailure =
+    stage === "recipe"
+      ? {
+          code: "recipe_extraction_failed",
+          message: "A recipe could not be extracted from this source.",
+          recovery: "create_new_intent",
+        }
+      : {
+          code: "analysis_failed",
+          message: "The source could not be analyzed.",
+          recovery: "create_new_intent",
+        };
+  return checkedResult;
+};

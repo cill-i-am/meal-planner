@@ -18,8 +18,8 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
 import { user } from "../auth/auth.database-schema.js";
+import { makeNativeAuthTestService } from "../auth/auth.fixture.js";
 import { makeMealPlannerAuth } from "../auth/auth.js";
-import { makeNativeAuthTestService } from "../auth/auth.test-fixture.js";
 import { HouseholdCreatorLive } from "../households/membership.js";
 import { FamilyStoreLive } from "./family-store.d1.js";
 import { familyHttpApiLayer } from "./http.js";
@@ -298,7 +298,7 @@ it("enforces the native auth boundary and retries a partial creator link through
     }
     const response5 = await request(`/v1/families/${savedFamily.id}`, "GET");
     expect(response5.status).toBe(200);
-    // Reads do not perform household writes.
+
     expect(calls).toHaveLength(1);
 
     const response = await request(
@@ -344,7 +344,7 @@ it("enforces the native auth boundary and retries a partial creator link through
         expect(response7.status).toBe(404);
       })
     );
-    // Verify the configured rate boundary using actual repeated reads, rather than assuming its key format.
+
     let limited: Response | undefined;
     for (let i = 0; i < 65; i += 1) {
       // eslint-disable-next-line no-await-in-loop -- Stop at the first rejected request; each response determines whether to send another.

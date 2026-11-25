@@ -81,12 +81,13 @@ export interface ProviderAccountingServiceError {
   readonly _tag: "ProviderAccountingServiceError";
   readonly code: ProviderAccountingServiceErrorCode;
 }
-const failure = (
-  code: ProviderAccountingServiceErrorCode
-): ProviderAccountingServiceError => ({
-  _tag: "ProviderAccountingServiceError",
-  code,
-});
+const failure = (code: ProviderAccountingServiceErrorCode) => {
+  const checkedResult: ProviderAccountingServiceError = {
+    _tag: "ProviderAccountingServiceError",
+    code,
+  };
+  return checkedResult;
+};
 const persistenceEffect = <A>(operation: () => PromiseLike<A>) =>
   Effect.tryPromise({
     catch: () => failure("persistence_unavailable"),
@@ -311,11 +312,14 @@ const sweepExpiredRecipeReplays = (database: ProviderAccountingDatabase) =>
         onExcessProperty: "ignore",
       })(result).pipe(Effect.mapError(() => failure("persistence_corrupt")))
     ),
-    Effect.map((result): ProviderAccountingResponse => ({
-      accountingScope: ProviderAccountingScope,
-      deletedCount: result.meta.changes,
-      outcome: "expired_recipe_replays_swept",
-    }))
+    Effect.map((result) => {
+      const checkedResult: ProviderAccountingResponse = {
+        accountingScope: ProviderAccountingScope,
+        deletedCount: result.meta.changes,
+        outcome: "expired_recipe_replays_swept",
+      };
+      return checkedResult;
+    })
   );
 
 export interface ProviderAccountingService {
@@ -382,26 +386,29 @@ const settlementPlan = (request: SettlementRequest) => {
 export const makeD1ProviderAccountingService = (input: {
   readonly database: ProviderAccountingDatabase;
   readonly now: () => typeof ImportTimestamp.Type;
-}): ProviderAccountingService => ({
-  reconcile: Effect.fn("ProviderAccountingService.reconcile")(
-    function* reconcileUnknownCost(request) {
-      if (request.operation === "sweep_expired_recipe_replays") {
-        return yield* sweepExpiredRecipeReplays(input.database);
+}) => {
+  const checkedResult: ProviderAccountingService = {
+    reconcile: Effect.fn("ProviderAccountingService.reconcile")(
+      function* reconcileUnknownCost(request) {
+        if (request.operation === "sweep_expired_recipe_replays") {
+          return yield* sweepExpiredRecipeReplays(input.database);
+        }
+        const settlement = settlementPlan(request);
+        const row = yield* settleGlobalUnknown(
+          input.database,
+          request,
+          settlement,
+          input.now()
+        );
+        return yield* Schema.decodeUnknownEffect(ProviderAccountingResponse)({
+          accountingScope: row.accounting_scope,
+          conservativeChargeMicroUsd: row.conservative_charge_micro_usd,
+          dispatchId: row.dispatch_id,
+          importId: request.importId,
+          outcome: settlement.outcome,
+        }).pipe(Effect.mapError(() => failure("persistence_corrupt")));
       }
-      const settlement = settlementPlan(request);
-      const row = yield* settleGlobalUnknown(
-        input.database,
-        request,
-        settlement,
-        input.now()
-      );
-      return yield* Schema.decodeUnknownEffect(ProviderAccountingResponse)({
-        accountingScope: row.accounting_scope,
-        conservativeChargeMicroUsd: row.conservative_charge_micro_usd,
-        dispatchId: row.dispatch_id,
-        importId: request.importId,
-        outcome: settlement.outcome,
-      }).pipe(Effect.mapError(() => failure("persistence_corrupt")));
-    }
-  ),
-});
+    ),
+  };
+  return checkedResult;
+};

@@ -2,7 +2,7 @@ import { Schema } from "effect";
 import { Response as LocalResponse } from "miniflare";
 
 import { emptyPrivateDiscoveryContinuityUpdates } from "../features/private-output/private-discovery-continuity.js";
-import { encodeKimiCompletion } from "../features/private-output/private-discovery-kimi-stream.test-fixtures.js";
+import { encodeKimiCompletion } from "../features/private-output/private-discovery-kimi-stream.fixture.js";
 import { PrivateDiscoveryContext } from "../features/private-output/private-discovery-model.js";
 import type { DiscoveryProfileCardChange } from "../features/private-output/private-discovery-model.js";
 

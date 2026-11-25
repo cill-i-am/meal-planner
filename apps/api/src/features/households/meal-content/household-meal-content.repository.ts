@@ -150,10 +150,8 @@ export interface PreparedReservationIntent {
 }
 
 /** Stable intent text to digest before opening the HouseholdObject SQL transaction. */
-export const preparedReservationIntent = (
-  input: PreparedReservationIntent
-): string =>
-  JSON.stringify({
+export const preparedReservationIntent = (input: PreparedReservationIntent) => {
+  const checkedResult: string = JSON.stringify({
     actorId: input.actorId,
     allocations: [...input.allocations].toSorted(
       (left, right) =>
@@ -164,6 +162,8 @@ export const preparedReservationIntent = (
     mutationId: input.mutationId,
     planId: input.planId,
   });
+  return checkedResult;
+};
 
 /**
  * Atomically replace this plan's stock reservations inside the plan save transaction.

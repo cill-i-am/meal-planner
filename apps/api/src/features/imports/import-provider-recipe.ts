@@ -90,68 +90,72 @@ const recipeReplaySha256 = (valueJson: string) =>
 
 const RecipeReplayMaximumBytes = 262_144;
 
-const recipeConservativeReplay = (
-  request: RecipeEvidenceAssembly
-): NonNullable<
-  ProviderDispatchRequest<
-    RecipeDispatchOutcome,
-    SafeProviderFailureCode
-  >["conservativeReplay"]
-> => ({
-  decode: (replay) =>
-    Effect.gen(function* decodeRecipeReplay() {
-      const valueByteLength = new TextEncoder().encode(
-        replay.valueJson
-      ).byteLength;
-      if (
-        replay.evidenceFingerprint !== request.evidenceFingerprint ||
-        replay.generation !== request.generation ||
-        replay.importId !== request.importId ||
-        valueByteLength === 0 ||
-        valueByteLength > RecipeReplayMaximumBytes ||
-        (yield* recipeReplaySha256(replay.valueJson)) !== replay.valueSha256
-      ) {
-        return yield* Effect.fail("malformed_response" as const);
-      }
-      const parsed = yield* Effect.try({
-        catch: () => "malformed_response" as const,
-        try: () => JSON.parse(replay.valueJson),
-      });
-      const failed = decodeFailedRecipeReplay(parsed);
-      if (Option.isSome(failed)) {
+const recipeConservativeReplay = (request: RecipeEvidenceAssembly) => {
+  const checkedResult: NonNullable<
+    ProviderDispatchRequest<
+      RecipeDispatchOutcome,
+      SafeProviderFailureCode
+    >["conservativeReplay"]
+  > = {
+    decode: (replay) =>
+      Effect.gen(function* decodeRecipeReplay() {
+        const valueByteLength = new TextEncoder().encode(
+          replay.valueJson
+        ).byteLength;
+        if (
+          replay.evidenceFingerprint !== request.evidenceFingerprint ||
+          replay.generation !== request.generation ||
+          replay.importId !== request.importId ||
+          valueByteLength === 0 ||
+          valueByteLength > RecipeReplayMaximumBytes ||
+          (yield* recipeReplaySha256(replay.valueJson)) !== replay.valueSha256
+        ) {
+          return yield* Effect.fail("malformed_response" as const);
+        }
+        const parsed = yield* Effect.try({
+          catch: () => "malformed_response" as const,
+          try: () => JSON.parse(replay.valueJson),
+        });
+        const failed = decodeFailedRecipeReplay(parsed);
+        if (Option.isSome(failed)) {
+          return {
+            _tag: "Failed" as const,
+            code: failed.value.code,
+          };
+        }
+        const extraction = yield* Schema.decodeUnknownEffect(RecipeExtraction, {
+          onExcessProperty: "error",
+        })(parsed).pipe(Effect.mapError(() => "malformed_response" as const));
         return {
-          _tag: "Failed" as const,
-          code: failed.value.code,
+          _tag: "Extracted" as const,
+          extraction,
         };
-      }
-      const extraction = yield* Schema.decodeUnknownEffect(RecipeExtraction, {
-        onExcessProperty: "error",
-      })(parsed).pipe(Effect.mapError(() => "malformed_response" as const));
-      return {
-        _tag: "Extracted" as const,
-        extraction,
-      };
-    }),
-  encode: (value) =>
-    Effect.gen(function* encodeRecipeReplay() {
-      const encodedValue =
-        value._tag === "Failed"
-          ? value
-          : Schema.encodeSync(RecipeExtraction)(value.extraction);
-      const valueJson = JSON.stringify(encodedValue);
-      const valueByteLength = new TextEncoder().encode(valueJson).byteLength;
-      if (valueByteLength === 0 || valueByteLength > RecipeReplayMaximumBytes) {
-        return yield* Effect.fail("malformed_response" as const);
-      }
-      return {
-        evidenceFingerprint: request.evidenceFingerprint,
-        generation: request.generation,
-        importId: request.importId,
-        valueJson,
-        valueSha256: yield* recipeReplaySha256(valueJson),
-      };
-    }),
-});
+      }),
+    encode: (value) =>
+      Effect.gen(function* encodeRecipeReplay() {
+        const encodedValue =
+          value._tag === "Failed"
+            ? value
+            : Schema.encodeSync(RecipeExtraction)(value.extraction);
+        const valueJson = JSON.stringify(encodedValue);
+        const valueByteLength = new TextEncoder().encode(valueJson).byteLength;
+        if (
+          valueByteLength === 0 ||
+          valueByteLength > RecipeReplayMaximumBytes
+        ) {
+          return yield* Effect.fail("malformed_response" as const);
+        }
+        return {
+          evidenceFingerprint: request.evidenceFingerprint,
+          generation: request.generation,
+          importId: request.importId,
+          valueJson,
+          valueSha256: yield* recipeReplaySha256(valueJson),
+        };
+      }),
+  };
+  return checkedResult;
+};
 
 const recipePromptText = (input: RecipeEvidenceAssembly) =>
   [
@@ -193,8 +197,7 @@ const RecipeTransportUsage = Schema.Struct({
   ),
   total_tokens: RecipeTransportTokenCount,
 });
-// Provider metadata is extensible, but supplied completion controls must still
-// establish a completed JSON response without refusal or tool execution.
+
 const RecipeJsonModeCompletionControls = {
   finish_reason: Schema.optionalKey(Schema.Literal("stop")),
   function_call: Schema.optionalKey(Schema.Null),
@@ -232,23 +235,24 @@ const decodeRecipeCandidate = Schema.decodeUnknownResult(RecipeCandidate, {
 const recipeCandidateJsonSchema = Schema.decodeUnknownSync(Schema.Json)(
   toStrictJsonSchema(RecipeCandidate)
 );
-export const makeInstalledRecipeRequest = (
-  request: RecipeEvidenceAssembly
-): RecipeWorkersAiRequest => ({
-  max_tokens: 16_384,
-  messages: [
-    {
-      content: [
-        recipePromptText(request),
-        `Your output must satisfy this exact JSON Schema, including every required field and nested type. Return only a JSON object conforming to it:\n${JSON.stringify(recipeCandidateJsonSchema)}`,
-        "For each ingredient, name contains only the food name; original retains the complete evidence phrase, including its amount, unit and preparation.",
-      ].join("\n\n"),
-      role: "user",
-    },
-  ],
-  response_format: { type: "json_object" },
-  temperature: 0,
-});
+export const makeInstalledRecipeRequest = (request: RecipeEvidenceAssembly) => {
+  const checkedResult: RecipeWorkersAiRequest = {
+    max_tokens: 16_384,
+    messages: [
+      {
+        content: [
+          recipePromptText(request),
+          `Your output must satisfy this exact JSON Schema, including every required field and nested type. Return only a JSON object conforming to it:\n${JSON.stringify(recipeCandidateJsonSchema)}`,
+          "For each ingredient, name contains only the food name; original retains the complete evidence phrase, including its amount, unit and preparation.",
+        ].join("\n\n"),
+        role: "user",
+      },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0,
+  };
+  return checkedResult;
+};
 
 export type RecipeProviderOutcome =
   | {
@@ -262,17 +266,7 @@ export type RecipeProviderOutcome =
       readonly code: SafeProviderFailureCode;
     };
 
-const decodeRecipeResponse = (
-  raw: Schema.Json
-): {
-  readonly outcome: RecipeProviderOutcome;
-  readonly failure?: {
-    readonly decodeReason:
-      | "json_mode_envelope_invalid"
-      | "json_mode_schema_invalid";
-    readonly decodeStage: "json_mode_envelope" | "recipe_schema";
-  };
-} => {
+const decodeRecipeResponse = (raw: Schema.Json) => {
   const envelope = decodeRecipeJsonModeTransportEnvelope(raw);
   if (
     envelope._tag === "Failure" ||
@@ -284,23 +278,41 @@ const decodeRecipeResponse = (
         )
     )
   ) {
-    return {
+    const checkedResult: {
+      readonly outcome: RecipeProviderOutcome;
+      readonly failure?: {
+        readonly decodeReason:
+          | "json_mode_envelope_invalid"
+          | "json_mode_schema_invalid";
+        readonly decodeStage: "json_mode_envelope" | "recipe_schema";
+      };
+    } = {
       failure: {
         decodeReason: "json_mode_envelope_invalid",
         decodeStage: "json_mode_envelope",
       },
       outcome: { _tag: "Failed", code: "malformed_response" },
     };
+    return checkedResult;
   }
   const selection = decodeRecipeCandidate(envelope.success.response);
   if (selection._tag === "Failure") {
-    return {
+    const checkedResult: {
+      readonly outcome: RecipeProviderOutcome;
+      readonly failure?: {
+        readonly decodeReason:
+          | "json_mode_envelope_invalid"
+          | "json_mode_schema_invalid";
+        readonly decodeStage: "json_mode_envelope" | "recipe_schema";
+      };
+    } = {
       failure: {
         decodeReason: "json_mode_schema_invalid",
         decodeStage: "recipe_schema",
       },
       outcome: { _tag: "Failed", code: "malformed_response" },
     };
+    return checkedResult;
   }
   const usage =
     envelope.success.usage === undefined
@@ -313,28 +325,50 @@ const decodeRecipeResponse = (
     (usage === undefined ||
       usage.prompt_tokens + usage.completion_tokens !== usage.total_tokens)
   ) {
-    return {
+    const checkedResult: {
+      readonly outcome: RecipeProviderOutcome;
+      readonly failure?: {
+        readonly decodeReason:
+          | "json_mode_envelope_invalid"
+          | "json_mode_schema_invalid";
+        readonly decodeStage: "json_mode_envelope" | "recipe_schema";
+      };
+    } = {
       failure: {
         decodeReason: "json_mode_envelope_invalid",
         decodeStage: "json_mode_envelope",
       },
       outcome: { _tag: "Failed", code: "malformed_response" },
     };
+    return checkedResult;
   }
-  return {
-    outcome: {
-      _tag: "Decoded",
-      inputTokens: usage?.prompt_tokens,
-      outputTokens: usage?.completion_tokens,
-      value: selection.success,
-    },
-  };
+  {
+    const checkedResult: {
+      readonly outcome: RecipeProviderOutcome;
+      readonly failure?: {
+        readonly decodeReason:
+          | "json_mode_envelope_invalid"
+          | "json_mode_schema_invalid";
+        readonly decodeStage: "json_mode_envelope" | "recipe_schema";
+      };
+    } = {
+      outcome: {
+        _tag: "Decoded",
+        inputTokens: usage?.prompt_tokens,
+        outputTokens: usage?.completion_tokens,
+        value: selection.success,
+      },
+    };
+    return checkedResult;
+  }
 };
 
 /** The evaluation collector uses the same strict decoder as live imports. */
-export const decodeInstalledRecipeResponse = (
-  raw: Schema.Json
-): RecipeProviderOutcome => decodeRecipeResponse(raw).outcome;
+export const decodeInstalledRecipeResponse = (raw: Schema.Json) => {
+  const checkedResult: RecipeProviderOutcome =
+    decodeRecipeResponse(raw).outcome;
+  return checkedResult;
+};
 
 const runRecipeJsonMode = Effect.fn("Imports.runRecipeJsonMode")(
   function* runRecipeJsonModeWorkflow(
@@ -489,10 +523,7 @@ export const makeInstalledRecipeExtractor = Effect.fn(
               outputTokens,
               InstalledRecipeTokenPrices
             );
-            // A schema-valid response proves this bounded recipe call
-            // completed. When the provider omits trustworthy usage, charge
-            // the reservation maximum against the safety ledger without
-            // representing it as known provider spend.
+
             const cost =
               meteredCost._tag === "Known"
                 ? meteredCost
@@ -538,20 +569,24 @@ export const makeInstalledRecipeExtractor = Effect.fn(
           ),
           Effect.mapError(
             // eslint-disable-next-line promise/prefer-await-to-callbacks -- Effect callbacks preserve the adapter error contract.
-            (error): RecipeExtractionFailure => {
+            (error) => {
               const providerError =
                 isProviderKnownZeroCostFailure(error) &&
                 isSafeProviderFailureCode(error.error)
                   ? error.error
                   : undefined;
 
-              return new RecipeExtractionFailure({
-                code:
-                  providerError ??
-                  (isSafeProviderFailureCode(error)
-                    ? error
-                    : "outcome_unknown"),
-              });
+              {
+                const checkedResult: RecipeExtractionFailure =
+                  new RecipeExtractionFailure({
+                    code:
+                      providerError ??
+                      (isSafeProviderFailureCode(error)
+                        ? error
+                        : "outcome_unknown"),
+                  });
+                return checkedResult;
+              }
             }
           )
         ),

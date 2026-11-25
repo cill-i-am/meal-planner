@@ -91,46 +91,66 @@ const pipelineFailure = (
   code: RecipeDraftPipelineFailure["code"],
   reasonCode?: ProviderTaskDiagnosticReasonCode,
   evidenceStoreFailureCode?: EvidenceStoreFailureCode
-): RecipeDraftPipelineFailure => {
+) => {
   if (reasonCode === undefined) {
-    return evidenceStoreFailureCode === undefined
-      ? new RecipeDraftPipelineFailure({ code })
-      : new RecipeDraftPipelineFailure({ code, evidenceStoreFailureCode });
+    const checkedResult: RecipeDraftPipelineFailure =
+      evidenceStoreFailureCode === undefined
+        ? new RecipeDraftPipelineFailure({ code })
+        : new RecipeDraftPipelineFailure({ code, evidenceStoreFailureCode });
+    return checkedResult;
   }
-  return evidenceStoreFailureCode === undefined
-    ? new RecipeDraftPipelineFailure({ code, reasonCode })
-    : new RecipeDraftPipelineFailure({
-        code,
-        evidenceStoreFailureCode,
-        reasonCode,
-      });
+  {
+    const checkedResult: RecipeDraftPipelineFailure =
+      evidenceStoreFailureCode === undefined
+        ? new RecipeDraftPipelineFailure({ code, reasonCode })
+        : new RecipeDraftPipelineFailure({
+            code,
+            evidenceStoreFailureCode,
+            reasonCode,
+          });
+    return checkedResult;
+  }
 };
 
-const transcriptEvidenceReason = (error: {
-  readonly reasonCode?: string;
-}): ProviderTaskDiagnosticReasonCode => {
+const transcriptEvidenceReason = (error: { readonly reasonCode?: string }) => {
   if (error.reasonCode === "transcript_native_checksum_mismatch") {
-    return "transcript_native_checksum_mismatch";
+    const checkedResult: ProviderTaskDiagnosticReasonCode =
+      "transcript_native_checksum_mismatch";
+    return checkedResult;
   }
   if (error.reasonCode === "transcript_native_checksum_missing") {
-    return "transcript_native_checksum_missing";
+    const checkedResult: ProviderTaskDiagnosticReasonCode =
+      "transcript_native_checksum_missing";
+    return checkedResult;
   }
-  return "transcript_evidence_invalid";
+  {
+    const checkedResult: ProviderTaskDiagnosticReasonCode =
+      "transcript_evidence_invalid";
+    return checkedResult;
+  }
 };
 
-const visualEvidenceReason = (error: {
-  readonly reasonCode?: string;
-}): ProviderTaskDiagnosticReasonCode => {
+const visualEvidenceReason = (error: { readonly reasonCode?: string }) => {
   if (error.reasonCode === "visual_manifest_native_checksum_mismatch") {
-    return "visual_manifest_native_checksum_mismatch";
+    const checkedResult: ProviderTaskDiagnosticReasonCode =
+      "visual_manifest_native_checksum_mismatch";
+    return checkedResult;
   }
   if (error.reasonCode === "visual_manifest_native_checksum_missing") {
-    return "visual_manifest_native_checksum_missing";
+    const checkedResult: ProviderTaskDiagnosticReasonCode =
+      "visual_manifest_native_checksum_missing";
+    return checkedResult;
   }
   if (error.reasonCode === "visual_frame_native_checksum_mismatch") {
-    return "visual_frame_native_checksum_mismatch";
+    const checkedResult: ProviderTaskDiagnosticReasonCode =
+      "visual_frame_native_checksum_mismatch";
+    return checkedResult;
   }
-  return "visual_evidence_invalid";
+  {
+    const checkedResult: ProviderTaskDiagnosticReasonCode =
+      "visual_evidence_invalid";
+    return checkedResult;
+  }
 };
 
 const RecipeFailureRecoveryPolicy = Schema.Literals([
@@ -197,8 +217,11 @@ const RecipeExtractionFailureDispositionByCode = {
 /** Total, compile-time exhaustive projection into persistence and recovery. */
 export const projectRecipeExtractionFailure = (
   code: RecipeExtractionFailureCode
-): RecipeExtractionFailureDisposition =>
-  RecipeExtractionFailureDispositionByCode[code];
+) => {
+  const checkedResult: RecipeExtractionFailureDisposition =
+    RecipeExtractionFailureDispositionByCode[code];
+  return checkedResult;
+};
 
 const completedVisualStatuses = new Set([
   "visual_evidence_empty",
@@ -241,23 +264,36 @@ const recoveryEvidenceMismatchReason = (input: {
   readonly expectedSourceMediaSha256: Sha256Hex;
   readonly expectedTranscriptSha256: Sha256Hex;
   readonly expectedVisualManifestSha256: Sha256Hex;
-}): ProviderTaskDiagnosticReasonCode | null => {
+}) => {
   if (input.actualGeneration !== input.expectedGeneration) {
-    return "recovery_generation_mismatch";
+    const checkedResult: ProviderTaskDiagnosticReasonCode | null =
+      "recovery_generation_mismatch";
+    return checkedResult;
   }
   if (input.actualSourceMediaSha256 !== input.expectedSourceMediaSha256) {
-    return "recovery_source_hash_mismatch";
+    const checkedResult: ProviderTaskDiagnosticReasonCode | null =
+      "recovery_source_hash_mismatch";
+    return checkedResult;
   }
   if (input.actualTranscriptSha256 !== input.expectedTranscriptSha256) {
-    return "recovery_transcript_hash_mismatch";
+    const checkedResult: ProviderTaskDiagnosticReasonCode | null =
+      "recovery_transcript_hash_mismatch";
+    return checkedResult;
   }
   if (input.actualVisualManifestSha256 !== input.expectedVisualManifestSha256) {
-    return "recovery_visual_hash_mismatch";
+    const checkedResult: ProviderTaskDiagnosticReasonCode | null =
+      "recovery_visual_hash_mismatch";
+    return checkedResult;
   }
   if (input.actualEvidenceFingerprint !== input.expectedEvidenceFingerprint) {
-    return "recovery_assembly_fingerprint_mismatch";
+    const checkedResult: ProviderTaskDiagnosticReasonCode | null =
+      "recovery_assembly_fingerprint_mismatch";
+    return checkedResult;
   }
-  return null;
+  {
+    const checkedResult: ProviderTaskDiagnosticReasonCode | null = null;
+    return checkedResult;
+  }
 };
 
 const sourceEvidenceItems = (evidence: VerifiedAcquisitionEvidence) => {

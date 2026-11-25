@@ -5,7 +5,7 @@ export const configuredPublicOrigin = (input: {
   readonly configured: string;
   readonly dev: boolean;
   readonly stage: string;
-}): string => {
+}) => {
   let origin = input.configured;
   if (origin === "") {
     const hostname = deployedWebsiteHostname(input.dev, input.stage);
@@ -14,8 +14,8 @@ export const configuredPublicOrigin = (input: {
     } else if (hostname) {
       origin = `https://${hostname}`;
     } else {
-      // Preview stages require an explicit OAuth issuer.
-      return "";
+      const checkedResult = "";
+      return checkedResult;
     }
   }
   const url = new URL(origin);
@@ -37,5 +37,8 @@ export const configuredPublicOrigin = (input: {
       "MEAL_PLANNER_PUBLIC_ORIGIN must be a canonical HTTPS origin (HTTP loopback is allowed only in development)."
     );
   }
-  return origin;
+  {
+    const checkedResult: string = origin;
+    return checkedResult;
+  }
 };

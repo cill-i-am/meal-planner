@@ -79,7 +79,6 @@ export const makeAlchemyMealPlannerAuth = (
   options: AlchemyMealPlannerAuthOptions
 ) =>
   Effect.gen(function* makeAlchemyAuth() {
-    // This service and Alchemy's per-execution auth memo share the request scope.
     yield* Scope.Scope;
     const security = makeMealPlannerAuthConfiguration({
       ...options,
@@ -98,14 +97,19 @@ export const makeAlchemyMealPlannerAuth = (
     }).pipe(
       Effect.provideService(Database, {
         provider: "sqlite",
-        // Existing relations-v2 adapter and output fence remain authoritative.
-        // Drizzle Kit owns schema changes for this D1 database.
+
         runtime: Effect.succeed(database),
       })
     );
     const provideRuntime = <A, E>(
       effect: Effect.Effect<A, E, RuntimeContext>
-    ): Effect.Effect<A, E> => Effect.provideContext(effect, context);
+    ) => {
+      const checkedResult: Effect.Effect<A, E> = Effect.provideContext(
+        effect,
+        context
+      );
+      return checkedResult;
+    };
     const callNative = <A>(
       operation: (native: MealPlannerAuth) => Promise<A>
     ) =>
@@ -181,8 +185,7 @@ export const makeAlchemyMealPlannerAuth = (
         provideRuntime(
           Effect.gen(function* fetchGuardedAuthHttp() {
             const native = yield* auth.auth;
-            // The guard must execute the native handler's Promise inside its
-            // ALS frame; deferring an Effect beyond the frame loses fence errors.
+
             const response = yield* Effect.promise(() =>
               fetchGuardedMealPlannerAuth(native, security, request)
             );

@@ -30,13 +30,21 @@ const changeStanding = (
     ProfileChangeContext,
     "actorPersonId" | "personId" | "personKind"
   >
-): ProfileFactStanding => {
+) => {
   if (context.actorPersonId === context.personId) {
-    return { _tag: "confirmed", basis: "self" };
+    const checkedResult: ProfileFactStanding = {
+      _tag: "confirmed",
+      basis: "self",
+    };
+    return checkedResult;
   }
-  return context.personKind === "dependant"
-    ? { _tag: "confirmed", basis: "household_adult" }
-    : { _tag: "provisional" };
+  {
+    const checkedResult: ProfileFactStanding =
+      context.personKind === "dependant"
+        ? { _tag: "confirmed", basis: "household_adult" }
+        : { _tag: "provisional" };
+    return checkedResult;
+  }
 };
 
 /** Freeze durable intent; interview commands remain self-scoped across admission changes. */
@@ -46,7 +54,7 @@ export const recordProfileCommand = (
     ProfileChangeContext,
     "actorPersonId" | "personId" | "personKind" | "source"
   >
-): Effect.Effect<RecordedProfileCommand, HouseholdProfileRejected> => {
+) => {
   const standing: ProfileFactStanding =
     context.source === "interview"
       ? { _tag: "confirmed", basis: "self" }
@@ -54,57 +62,91 @@ export const recordProfileCommand = (
   switch (command._tag) {
     case "AddProfileFact": {
       if (standing._tag === "provisional") {
-        return command.fact._tag === "NoKnownHardConstraints"
-          ? reject("safety_confirmation_required")
-          : Effect.succeed({
-              _tag: "AddProvisionalProfileFact",
-              fact: command.fact,
-            });
+        const checkedResult: Effect.Effect<
+          RecordedProfileCommand,
+          HouseholdProfileRejected
+        > =
+          command.fact._tag === "NoKnownHardConstraints"
+            ? reject("safety_confirmation_required")
+            : Effect.succeed({
+                _tag: "AddProvisionalProfileFact",
+                fact: command.fact,
+              });
+        return checkedResult;
       }
-      return Effect.succeed({
-        _tag: "AddConfirmedProfileFact",
-        basis: standing.basis,
-        fact: command.fact,
-      });
+      {
+        const checkedResult: Effect.Effect<
+          RecordedProfileCommand,
+          HouseholdProfileRejected
+        > = Effect.succeed({
+          _tag: "AddConfirmedProfileFact",
+          basis: standing.basis,
+          fact: command.fact,
+        });
+        return checkedResult;
+      }
     }
     case "ConfirmProfileFact": {
-      return standing._tag === "provisional"
-        ? reject("self_required")
-        : Effect.succeed({ ...command, basis: standing.basis });
+      const checkedResult: Effect.Effect<
+        RecordedProfileCommand,
+        HouseholdProfileRejected
+      > =
+        standing._tag === "provisional"
+          ? reject("self_required")
+          : Effect.succeed({ ...command, basis: standing.basis });
+      return checkedResult;
     }
     case "ConfirmHardConstraintReduction": {
-      return standing._tag === "provisional"
-        ? reject("self_required")
-        : Effect.succeed(command);
+      const checkedResult: Effect.Effect<
+        RecordedProfileCommand,
+        HouseholdProfileRejected
+      > =
+        standing._tag === "provisional"
+          ? reject("self_required")
+          : Effect.succeed(command);
+      return checkedResult;
     }
     case "ReplaceOrdinaryProfileFact":
     case "RemoveOrdinaryProfileFact": {
-      return Effect.succeed(command);
+      const checkedResult: Effect.Effect<
+        RecordedProfileCommand,
+        HouseholdProfileRejected
+      > = Effect.succeed(command);
+      return checkedResult;
     }
     default: {
-      return Effect.die(command satisfies never);
+      const checkedResult: Effect.Effect<
+        RecordedProfileCommand,
+        HouseholdProfileRejected
+      > = Effect.die(command satisfies never);
+      return checkedResult;
     }
   }
 };
-const updateFact = (
-  fact: ProfileFact,
-  context: ProfileChangeContext
-): ProfileFact => ({
-  ...fact,
-  source: context.source,
-  updatedAtEpochMs: context.now,
-  updatedBy: context.actorId,
-  updatedInVersion: context.version,
-});
+const updateFact = (fact: ProfileFact, context: ProfileChangeContext) => {
+  const checkedResult: ProfileFact = {
+    ...fact,
+    source: context.source,
+    updatedAtEpochMs: context.now,
+    updatedBy: context.actorId,
+    updatedInVersion: context.version,
+  };
+  return checkedResult;
+};
 
-const key = (value: ProfileFactValue): string => {
+const key = (value: ProfileFactValue) => {
   if (value._tag === "NoKnownHardConstraints") {
-    return value._tag;
+    const checkedResult: string = value._tag;
+    return checkedResult;
   }
   const label = value.label.toLocaleLowerCase("en").replaceAll(/\s+/gu, " ");
-  return value._tag === "FoodPreference"
-    ? `${value._tag}:${value.targetKind}:${label}`
-    : `${value._tag}:${value.category}:${label}`;
+  {
+    const checkedResult: string =
+      value._tag === "FoodPreference"
+        ? `${value._tag}:${value.targetKind}:${label}`
+        : `${value._tag}:${value.category}:${label}`;
+    return checkedResult;
+  }
 };
 
 const validateFacts = (facts: readonly ProfileFact[]) => {
@@ -185,8 +227,11 @@ export const applyProfileCommand = (
   facts: readonly ProfileFact[],
   command: RecordedProfileCommand,
   context: ProfileChangeContext
-): Effect.Effect<readonly ProfileFact[], HouseholdProfileRejected> =>
-  Effect.gen(function* applyProfileCommandEffect() {
+) => {
+  const checkedResult: Effect.Effect<
+    readonly ProfileFact[],
+    HouseholdProfileRejected
+  > = Effect.gen(function* applyProfileCommandEffect() {
     if (
       command._tag === "AddProvisionalProfileFact" ||
       command._tag === "AddConfirmedProfileFact"
@@ -242,3 +287,5 @@ export const applyProfileCommand = (
       }
     }
   });
+  return checkedResult;
+};

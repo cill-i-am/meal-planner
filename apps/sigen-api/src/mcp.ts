@@ -57,7 +57,7 @@ export const handleMcp = (request: Request) =>
             content: [{ text: JSON.stringify(value), type: "text" as const }],
             structuredContent: value,
           })),
-          // This callback maps an Effect failure; it is not a Promise callback.
+
           // eslint-disable-next-line promise/prefer-await-to-callbacks
           Effect.orElseSucceed((error) => ({
             content: [{ text: error.reason, type: "text" as const }],

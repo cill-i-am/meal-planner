@@ -123,7 +123,6 @@ const makeNativeStarter = (
   makeImportWorkflowStarter({
     createBatch: (batch) =>
       Effect.promise(async () => {
-        // Workerd rejects this invalid ID before engine initialization; the production starter retains the canonical ID for reconciliation.
         const instances =
           await environment.ImportAcquisitionTestWorkflow.createBatch(
             injectNativePreStartRefusal
@@ -345,18 +344,24 @@ const waitForTerminalStatus = async (
   return workflow.get(id).then((instance) => instance.status());
 };
 
-/** Explicit test recovery preserves the terminal defect and the original native checkpoint. */
-const recoverNativeDefects = async (
+const recoverNativeDefects: (
   workflow: NativeWorkflowBinding,
   id: string,
   scenario: (typeof Command.Type)["scenario"],
   status: Awaited<ReturnType<NativeWorkflowInstance["status"]>>,
-  terminalDefects: readonly string[] = [],
-  remaining = 5
-): Promise<{
+  terminalDefects?: readonly string[],
+  remaining?: number
+) => Promise<{
   readonly status: typeof status;
   readonly terminalDefects: readonly string[];
-}> => {
+}> = async (
+  workflow,
+  id,
+  scenario,
+  status,
+  terminalDefects = [],
+  remaining = 5
+) => {
   if (
     status.status !== "errored" ||
     ![
@@ -365,11 +370,33 @@ const recoverNativeDefects = async (
       "dispatch-committed-reconcile-unavailable",
     ].includes(scenario)
   ) {
-    return { status, terminalDefects };
+    const checkedResult:
+      | Awaited<
+          Promise<{
+            readonly status: typeof status;
+            readonly terminalDefects: readonly string[];
+          }>
+        >
+      | Promise<{
+          readonly status: typeof status;
+          readonly terminalDefects: readonly string[];
+        }> = { status, terminalDefects };
+    return checkedResult;
   }
   const failures = [...terminalDefects, status.error?.name ?? "missing-error"];
   if (remaining === 0) {
-    return { status, terminalDefects: failures };
+    const checkedResult:
+      | Awaited<
+          Promise<{
+            readonly status: typeof status;
+            readonly terminalDefects: readonly string[];
+          }>
+        >
+      | Promise<{
+          readonly status: typeof status;
+          readonly terminalDefects: readonly string[];
+        }> = { status, terminalDefects: failures };
+    return checkedResult;
   }
   const instance = await workflow.get(id);
   await instance.restart({
@@ -381,27 +408,52 @@ const recoverNativeDefects = async (
       type: "do",
     },
   });
-  return recoverNativeDefects(
-    workflow,
-    id,
-    scenario,
-    await waitForTerminalStatus(workflow, id),
-    failures,
-    remaining - 1
-  );
+  {
+    const checkedResult:
+      | Awaited<
+          Promise<{
+            readonly status: typeof status;
+            readonly terminalDefects: readonly string[];
+          }>
+        >
+      | Promise<{
+          readonly status: typeof status;
+          readonly terminalDefects: readonly string[];
+        }> = recoverNativeDefects(
+      workflow,
+      id,
+      scenario,
+      await waitForTerminalStatus(workflow, id),
+      failures,
+      remaining - 1
+    );
+    return checkedResult;
+  }
 };
 
-const readEventually = async (
+const readEventually: (
   environment: TestEnvironment,
   key: string,
-  remaining = 20
-): Promise<string | null> => {
+  remaining?: number
+) => Promise<string | null> = async (environment, key, remaining = 20) => {
   const value = await environment.BATCH_WORKFLOW_STATE.get(key);
   if (value !== null || remaining === 0) {
-    return value;
+    const checkedResult:
+      | Awaited<Promise<string | null>>
+      | Promise<string | null> = value;
+    return checkedResult;
   }
   await Effect.runPromise(Effect.sleep(10));
-  return readEventually(environment, key, remaining - 1);
+  {
+    const checkedResult:
+      | Awaited<Promise<string | null>>
+      | Promise<string | null> = readEventually(
+      environment,
+      key,
+      remaining - 1
+    );
+    return checkedResult;
+  }
 };
 
 export default {

@@ -124,8 +124,7 @@ export const ControlChange = Schema.Union([
     enabled: Schema.Boolean,
     operation: Schema.Literal("set_peak_shaving_schedule"),
     reserveSocPercent: WholePercent,
-    // Existing persisted commands may contain opaque or overnight provider windows.
-    // New windows are checked against the verified schedule contract before dispatch.
+
     slots: Schema.Array(
       Schema.Struct({ ...PeakShavingSlot.fields, peakPowerW: Watts })
     ).check(Schema.isMaxLength(64)),
@@ -295,20 +294,23 @@ export const ApprovalScope = Schema.Union([
     stationId: StationId,
   }),
 ]);
-export const approvalScope = (
-  stationId: StationId,
-  change: ControlChange
-): typeof ApprovalScope.Type => {
+export const approvalScope = (stationId: StationId, change: ControlChange) => {
   if (change.operation === "set_active_energy_profile_limits") {
-    return {
+    const checkedResult: typeof ApprovalScope.Type = {
       operation: change.operation,
       setting: activeProfileLimitScope(change.setting),
       stationId,
       target: change.target,
     };
+    return checkedResult;
   }
   if (change.operation === "set_active_energy_profile_parameters") {
-    return { operation: change.operation, stationId, target: change.target };
+    const checkedResult: typeof ApprovalScope.Type = {
+      operation: change.operation,
+      stationId,
+      target: change.target,
+    };
+    return checkedResult;
   }
   if (
     change.operation === "set_energy_profile_parameters" ||
@@ -317,24 +319,32 @@ export const approvalScope = (
     change.operation === "update_energy_profile" ||
     change.operation === "delete_energy_profile"
   ) {
-    return {
+    const checkedResult: typeof ApprovalScope.Type = {
       operation: change.operation,
       profileId: change.profileId,
       stationId,
     };
+    return checkedResult;
   }
   if (
     change.operation === "set_smart_load_switch" ||
     isLoadControlChange(change)
   ) {
-    return {
+    const checkedResult: typeof ApprovalScope.Type = {
       loadKey: change.loadKey,
       loadPath: change.loadPath,
       operation: change.operation,
       stationId,
     };
+    return checkedResult;
   }
-  return { operation: change.operation, stationId };
+  {
+    const checkedResult: typeof ApprovalScope.Type = {
+      operation: change.operation,
+      stationId,
+    };
+    return checkedResult;
+  }
 };
 export const ApprovalGrant = Schema.Struct({
   createdAt: Timestamp,
@@ -429,7 +439,7 @@ const matchesGridCurrent = (amperes: number, snapshot: ControlSnapshot) => {
     return false;
   }
   const { connectionCurrent } = snapshot.settings;
-  // The app clears the owner value when it equals the installer ceiling (pinned client.py272).
+
   const ownerMatches =
     connectionCurrent.ownerAmps === amperes ||
     (connectionCurrent.ownerAmps === null &&
@@ -517,30 +527,37 @@ const matchesOperatingMode = (
   change: Extract<ControlChange, { operation: "set_operating_mode" }>,
   snapshot: ControlSnapshot,
   reviewed: ControlSnapshot | undefined
-): boolean => {
+) => {
   if (
     snapshot.kind !== "mode" ||
     snapshot.settings.providerMode !== change.providerMode ||
     snapshot.settings.profileId !== change.profileId
   ) {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
   if (change.providerMode !== 9) {
-    return true;
+    const checkedResult = true;
+    return checkedResult;
   }
   if (
     reviewed?.kind !== "mode" ||
     reviewed.settings.selectedProfile === undefined ||
     snapshot.settings.selectedProfile === undefined
   ) {
-    return false;
+    const checkedResult = false;
+    return checkedResult;
   }
-  // Activating a profile can change its top-level active marker; its settings must still match the approved configuration.
+
   const { providerActiveStatus: _beforeActive, ...before } =
     reviewed.settings.selectedProfile;
   const { providerActiveStatus: _afterActive, ...after } =
     snapshot.settings.selectedProfile;
-  return JSON.stringify(before) === JSON.stringify(after);
+  {
+    const checkedResult: boolean =
+      JSON.stringify(before) === JSON.stringify(after);
+    return checkedResult;
+  }
 };
 const matchesExistingControl = (
   change: Exclude<
@@ -552,58 +569,82 @@ const matchesExistingControl = (
   >,
   snapshot: ControlSnapshot,
   reviewed?: ControlSnapshot
-): boolean => {
+) => {
   switch (change.operation) {
     case "start_manual_override": {
-      // The read endpoint omits the accepted duration and power limit. Acknowledgement alone is not full verification.
-      return false;
+      const checkedResult = false;
+      return checkedResult;
     }
     case "set_smart_load_switch": {
-      return matchesSmartLoad(change, snapshot);
+      const checkedResult: boolean = matchesSmartLoad(change, snapshot);
+      return checkedResult;
     }
     case "set_battery_discharge_priority": {
-      return matchesBatteryPriority(change, snapshot);
+      const checkedResult: boolean = matchesBatteryPriority(change, snapshot);
+      return checkedResult;
     }
     case "set_solar_priority": {
-      return matchesSolarPriority(change, snapshot);
+      const checkedResult: boolean = matchesSolarPriority(change, snapshot);
+      return checkedResult;
     }
     case "set_battery_soc_thresholds": {
-      return matchesSoc(change, snapshot);
+      const checkedResult: boolean = matchesSoc(change, snapshot);
+      return checkedResult;
     }
     case "set_peak_shaving_schedule": {
-      return matchesPeakSchedule(change, snapshot);
+      const checkedResult: boolean = matchesPeakSchedule(change, snapshot);
+      return checkedResult;
     }
     case "stop_manual_override": {
-      return snapshot.kind === "manual" && !snapshot.settings.enabled;
+      const checkedResult: boolean =
+        snapshot.kind === "manual" && !snapshot.settings.enabled;
+      return checkedResult;
     }
     case "set_backup_reserve": {
-      return matchesReserve(change, snapshot);
+      const checkedResult: boolean = matchesReserve(change, snapshot);
+      return checkedResult;
     }
     case "set_battery_power_limits": {
-      return matchesBatteryPower(change, snapshot);
+      const checkedResult: boolean = matchesBatteryPower(change, snapshot);
+      return checkedResult;
     }
     case "set_battery_export": {
-      return matchesBatteryExport(change.enabled, snapshot);
+      const checkedResult: boolean = matchesBatteryExport(
+        change.enabled,
+        snapshot
+      );
+      return checkedResult;
     }
 
     case "set_solar_power_limit": {
-      return (
+      const checkedResult: boolean =
         snapshot.kind === "solar" &&
-        matchesPower(snapshot.settings.powerLimit, change.limit)
-      );
+        matchesPower(snapshot.settings.powerLimit, change.limit);
+      return checkedResult;
     }
     case "set_grid_export_limit":
     case "set_grid_import_limit": {
-      return matchesGridPower(change, snapshot);
+      const checkedResult: boolean = matchesGridPower(change, snapshot);
+      return checkedResult;
     }
     case "set_grid_connection_current": {
-      return matchesGridCurrent(change.amperes, snapshot);
+      const checkedResult: boolean = matchesGridCurrent(
+        change.amperes,
+        snapshot
+      );
+      return checkedResult;
     }
     case "set_operating_mode": {
-      return matchesOperatingMode(change, snapshot, reviewed);
+      const checkedResult: boolean = matchesOperatingMode(
+        change,
+        snapshot,
+        reviewed
+      );
+      return checkedResult;
     }
     default: {
-      return absurd<never>(change);
+      const checkedResult: boolean = absurd<never>(change);
+      return checkedResult;
     }
   }
 };
@@ -612,28 +653,28 @@ export const controlMatches = (
   change: ControlChange,
   snapshot: ControlSnapshot,
   reviewed?: ControlSnapshot
-): boolean => {
+) => {
   if (change.operation === "activate_time_of_use_mode") {
-    return (
+    const checkedResult: boolean =
       snapshot.kind === "time_of_use" &&
       timeOfUseMatches(
         snapshot,
         reviewed?.kind === "time_of_use" ? reviewed : undefined
-      )
-    );
+      );
+    return checkedResult;
   }
   if (isLoadControlChange(change)) {
-    return (
+    const checkedResult: boolean =
       snapshot.kind === "smart_load_settings" &&
       loadControlMatches(
         change,
         snapshot,
         reviewed?.kind === "smart_load_settings" ? reviewed : undefined
-      )
-    );
+      );
+    return checkedResult;
   }
   if (isScheduledSettingsChange(change)) {
-    return (
+    const checkedResult: boolean =
       (snapshot.kind === "preheating" || snapshot.kind === "energy_saving") &&
       scheduledSettingsMatch(
         change,
@@ -641,18 +682,25 @@ export const controlMatches = (
         reviewed?.kind === "preheating" || reviewed?.kind === "energy_saving"
           ? reviewed
           : undefined
-      )
-    );
+      );
+    return checkedResult;
   }
   if (isProfileChange(change)) {
-    return (
+    const checkedResult: boolean =
       snapshot.kind === "profile" &&
       profileControlMatches(
         change,
         snapshot,
         reviewed?.kind === "profile" ? reviewed : undefined
-      )
-    );
+      );
+    return checkedResult;
   }
-  return matchesExistingControl(change, snapshot, reviewed);
+  {
+    const checkedResult: boolean = matchesExistingControl(
+      change,
+      snapshot,
+      reviewed
+    );
+    return checkedResult;
+  }
 };

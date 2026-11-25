@@ -16,9 +16,9 @@ import { Effect, Schema, Layer } from "effect";
 import { beforeAll, expect, it } from "vitest";
 
 import * as authSchema from "../auth/auth.database-schema.js";
+import { makeNativeAuthTestService } from "../auth/auth.fixture.js";
 import { makeMealPlannerAuth } from "../auth/auth.js";
 import { makeAuthenticatedOrganizationResolver } from "../auth/auth.principal.js";
-import { makeNativeAuthTestService } from "../auth/auth.test-fixture.js";
 import type { HouseholdPeopleGateway } from "../households/household.gateway.js";
 import { InvitationMembershipLive } from "../households/membership.js";
 import { InvitationAuthorityLive } from "./authority.better-auth.js";

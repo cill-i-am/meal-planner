@@ -19,7 +19,7 @@ import { drizzle } from "drizzle-orm/node-sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PrivateChatPersistence } from "./private-chat-persistence.js";
-import { encodeKimiCompletion } from "./private-discovery-kimi-stream.test-fixtures.js";
+import { encodeKimiCompletion } from "./private-discovery-kimi-stream.fixture.js";
 import {
   privateAssistantTurns,
   privateChatEvents,
@@ -28,12 +28,15 @@ import {
   privateSessionBinding,
 } from "./private-output.database-schema.js";
 
-const collect = async <T>(source: AsyncIterable<T>): Promise<T[]> => {
+const collect = async <T>(source: AsyncIterable<T>) => {
   const values: T[] = [];
   for await (const value of source) {
     values.push(value);
   }
-  return values;
+  {
+    const checkedResult: Awaited<Promise<T[]>> | Promise<T[]> = values;
+    return checkedResult;
+  }
 };
 
 const unexpectedBindingMethod = (): never => {
@@ -43,7 +46,10 @@ const data = (value: string) =>
   value
     .split("\n")
     .filter((line) => line.startsWith("data: "))
-    .map((line): unknown => JSON.parse(line.slice(6)));
+    .map((line) => {
+      const checkedResult: unknown = JSON.parse(line.slice(6));
+      return checkedResult;
+    });
 const cursors = (value: string) =>
   value.split("\n").filter((line) => line.startsWith("id: "));
 
@@ -122,35 +128,38 @@ const userMessage: ModelMessage = {
   id: participant.id,
   role: "user",
 };
-const toolMessages = (): ModelMessage[] => [
-  userMessage,
-  {
-    content: "Synthetic unaccepted model prose",
-    id: otherId,
-    role: "assistant",
-    thinking: [{ content: "Synthetic hidden reasoning" }],
-    toolCalls: [
-      {
-        function: {
-          arguments: '{"private":"Synthetic raw intent"}',
-          name: "submitDiscoveryTurn",
+const toolMessages = () => {
+  const checkedResult: ModelMessage[] = [
+    userMessage,
+    {
+      content: "Synthetic unaccepted model prose",
+      id: otherId,
+      role: "assistant",
+      thinking: [{ content: "Synthetic hidden reasoning" }],
+      toolCalls: [
+        {
+          function: {
+            arguments: '{"private":"Synthetic raw intent"}',
+            name: "submitDiscoveryTurn",
+          },
+          id: "fixture-tool",
+          type: "function",
         },
-        id: "fixture-tool",
-        type: "function",
-      },
-    ],
-  },
-  {
-    content: JSON.stringify({
-      createdAt: reply.createdAt,
-      messageId: reply.id,
-      text: reply.text,
-      type: "PrivateDiscoveryReply",
-    }),
-    role: "tool",
-    toolCallId: "fixture-tool",
-  },
-];
+      ],
+    },
+    {
+      content: JSON.stringify({
+        createdAt: reply.createdAt,
+        messageId: reply.id,
+        text: reply.text,
+        type: "PrivateDiscoveryReply",
+      }),
+      role: "tool",
+      toolCallId: "fixture-tool",
+    },
+  ];
+  return checkedResult;
+};
 const start: StreamChunk = { runId, threadId, type: EventType.RUN_STARTED };
 const terminal: StreamChunk = {
   outcome: { type: "success" },
@@ -590,7 +599,7 @@ describe("private chat SQLite native replay", () => {
     const { admit, database, storage } = setup();
     admit();
     let invocations = 0;
-    const generate = async function* generate(): AsyncGenerator<StreamChunk> {
+    const generate = async function* generate() {
       invocations += 1;
       yield start;
       yield terminal;
@@ -644,7 +653,7 @@ describe("private chat SQLite native replay", () => {
     const { admit, storage } = setup();
     admit();
     const stream = storage.stream({ offset: null, runId, threadId });
-    const failure = async function* failure(): AsyncGenerator<StreamChunk> {
+    const failure = async function* failure() {
       yield start;
       throw new Error("Synthetic safe failure");
     };
@@ -733,7 +742,7 @@ describe("private chat SQLite native replay", () => {
     controller.signal.addEventListener("abort", () => cancelled.resolve(null), {
       once: true,
     });
-    const source = async function* source(): AsyncGenerator<StreamChunk> {
+    const source = async function* source() {
       yield start;
       waiting.resolve(null);
       await cancelled.promise;

@@ -14,7 +14,7 @@ export const AioDevices = Schema.Struct({
 });
 export const AioPowerStatus = Schema.Struct({
   ...Snapshot,
-  // These are separate provider observations; disagreement is not coerced into a single truth.
+
   onOffState: Schema.Boolean,
   powerOn: Schema.Boolean,
   serialNumber: SerialNumber,
@@ -47,7 +47,7 @@ export const StationStatus = Schema.Struct({
   providerNetworkType: Schema.Number,
   providerStatus: Schema.Number,
 });
-// Labels and units are provider display data, not stable metric identifiers.
+
 export const DisplayParameter = Schema.Struct({
   label: Schema.String,
   text: Schema.String,
@@ -74,7 +74,7 @@ export const DeviceValues = Schema.Struct({
       providerTimestamp: Schema.NullOr(Timestamp),
       providerValue: Schema.String,
       serialNumber: SerialNumber,
-      // Unknown device types remain uninterpreted.
+
       unit: Schema.Literals(["W", "%", "unknown"]),
       value: Schema.NullOr(Schema.Finite),
     })

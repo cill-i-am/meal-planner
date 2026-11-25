@@ -12,8 +12,6 @@ import {
 } from "./provider-read.js";
 import type { ProviderRead } from "./provider-read.js";
 
-// Rich multi-phase and extra-device detail shapes have not been observed. They are only checked
-// for emptiness below; their untrusted contents never enter a domain result or public response.
 const UnobservedDetails = Schema.Array(Schema.Unknown).check(
   Schema.isMaxLength(64)
 );
@@ -55,7 +53,6 @@ export const makeBackupEventsClient = (read: ProviderRead) => ({
       });
       const [data, zone] = yield* Effect.all(
         [
-          // The app sends both version headers for this diagnostic payload.
           read(
             `/data-process/station/backup-event?${query}`,
             token,

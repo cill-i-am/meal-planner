@@ -38,8 +38,7 @@ type OutputSocketEnvironment = Pick<
   PrivateInterviewEnvironment,
   "AccountOutputLifecycle" | "HouseholdAgent"
 >;
-// Keep the existing browser slot stable across upgrades; request leases own a
-// separate bounded slot and never replace a connected browser's authority.
+
 const socketSlot = 1;
 const requestSlot = 2;
 /** A private child owns this concrete native socket fence; it is never an RPC target. */
@@ -47,22 +46,24 @@ export class PrivateOutputSocket<TRunResult = unknown> {
   #context: OutputSocketContext;
   #database: SQLiteAsyncDatabase<"sync", TRunResult>;
   #environment: OutputSocketEnvironment;
+  readonly #now: () => number;
   constructor(
     context: OutputSocketContext,
     database: SQLiteAsyncDatabase<"sync", TRunResult>,
-    environment: OutputSocketEnvironment
+    environment: OutputSocketEnvironment,
+    now = () => Date.now()
   ) {
     this.#context = context;
     this.#database = database;
     this.#environment = environment;
+    this.#now = now;
   }
-  restart(): void {
+  restart() {
     const current = this.read();
     const sockets = this.#context.getWebSockets();
     const resumed = new Set<OutputSocket>();
-    // Hibernation preserves native sockets and their server-written attachments.
-    // Keep only an already-connected, unexpired grant with a matching OPEN socket.
-    if (current?.status === "connected" && Date.now() < current.expiresAt) {
+
+    if (current?.status === "connected" && this.#now() < current.expiresAt) {
       for (const socket of sockets) {
         const attachment: unknown = socket.deserializeAttachment();
         if (
@@ -95,25 +96,40 @@ export class PrivateOutputSocket<TRunResult = unknown> {
   begin(
     binding: PrivateParticipantBinding,
     target: Omit<OutputRegistration, "generation">
-  ): Promise<string> {
-    return this.#begin(binding, target, "pending");
+  ) {
+    const checkedResult: Promise<string> = this.#begin(
+      binding,
+      target,
+      "pending"
+    );
+    return checkedResult;
   }
   /** The owning child verifies its immutable binding before requesting a lease. */
   beginRequest(
     binding: PrivateParticipantBinding,
     target: Omit<OutputRegistration, "generation">
-  ): Promise<string> {
+  ) {
     const current = this.readRequest();
-    if (current?.status === "request" && Date.now() < current.expiresAt) {
-      return Promise.resolve(current.generation);
+    if (current?.status === "request" && this.#now() < current.expiresAt) {
+      const checkedResult: Promise<string> = Promise.resolve(
+        current.generation
+      );
+      return checkedResult;
     }
-    return this.#begin(binding, target, "pending_request");
+    {
+      const checkedResult: Promise<string> = this.#begin(
+        binding,
+        target,
+        "pending_request"
+      );
+      return checkedResult;
+    }
   }
   async #begin(
     binding: PrivateParticipantBinding,
     target: Omit<OutputRegistration, "generation">,
     status: "pending" | "pending_request"
-  ): Promise<string> {
+  ) {
     const generation = crypto.randomUUID();
     const singleton = status === "pending" ? socketSlot : requestSlot;
     this.#database
@@ -142,14 +158,18 @@ export class PrivateOutputSocket<TRunResult = unknown> {
       if (!accountRegistered || !householdRegistered) {
         throw new PrivateOutputUnavailable({ reason: "output_disabled" });
       }
-      return generation;
+      {
+        const checkedResult: Awaited<Promise<string>> | Promise<string> =
+          generation;
+        return checkedResult;
+      }
     } catch (error) {
       this.invalidate({ generation });
       throw error;
     }
   }
-  authorize(generation: string, expiresAt: number): void {
-    if (expiresAt <= Date.now()) {
+  authorize(generation: string, expiresAt: number) {
+    if (expiresAt <= this.#now()) {
       throw new PrivateOutputUnavailable({ reason: "authority_unavailable" });
     }
     const updated = this.#database
@@ -168,8 +188,8 @@ export class PrivateOutputSocket<TRunResult = unknown> {
     }
   }
   /** Fresh authority may renew a live request lease, but cannot revive a stale grant. */
-  authorizeRequest(generation: string, expiresAt: number): void {
-    const now = Date.now();
+  authorizeRequest(generation: string, expiresAt: number) {
+    const now = this.#now();
     if (expiresAt <= now) {
       throw new PrivateOutputUnavailable({ reason: "authority_unavailable" });
     }
@@ -194,24 +214,27 @@ export class PrivateOutputSocket<TRunResult = unknown> {
       throw new PrivateOutputUnavailable({ reason: "output_disabled" });
     }
   }
-  accept(
-    request: Request | NativeCloudflare.Request,
-    ready: string
-  ): NativeCloudflare.Response {
+  accept(request: Request | NativeCloudflare.Request, ready: string) {
     if (
       request.method !== "GET" ||
       request.headers.get("Upgrade")?.toLowerCase() !== "websocket"
     ) {
-      return new Response(null, { status: 404 });
+      const checkedResult: NativeCloudflare.Response = new Response(null, {
+        status: 404,
+      });
+      return checkedResult;
     }
     const generation = request.headers.get("private-output-generation");
     const current = this.read();
     if (
       current?.status !== "authorized" ||
       current.generation !== generation ||
-      Date.now() >= current.expiresAt
+      this.#now() >= current.expiresAt
     ) {
-      return new Response(null, { status: 403 });
+      const checkedResult: NativeCloudflare.Response = new Response(null, {
+        status: 403,
+      });
+      return checkedResult;
     }
     this.#database
       .update(privateOutputGeneration)
@@ -222,39 +245,57 @@ export class PrivateOutputSocket<TRunResult = unknown> {
     pair[1].serializeAttachment({ generation });
     this.#context.acceptWebSocket(pair[1]);
     this.send(generation, ready);
-    return new Response(null, { status: 101, webSocket: pair[0] });
+    {
+      const checkedResult: NativeCloudflare.Response = new Response(null, {
+        status: 101,
+        webSocket: pair[0],
+      });
+      return checkedResult;
+    }
   }
-  admitted(socket: NativeCloudflare.WebSocket): string | undefined {
+  admitted(socket: NativeCloudflare.WebSocket) {
     const { generation } = Schema.decodeUnknownSync(Generation)(
       socket.deserializeAttachment()
     );
-    return this.#isConnected(generation) ? generation : undefined;
+    {
+      const checkedResult: string | undefined = this.#isConnected(generation)
+        ? generation
+        : undefined;
+      return checkedResult;
+    }
   }
-  isCurrent(generation: string): boolean {
+  isCurrent(generation: string) {
     const current = this.read(generation);
-    return (
-      (current?.status === "connected" || current?.status === "request") &&
-      current.generation === generation &&
-      Date.now() < current.expiresAt
-    );
+    {
+      const checkedResult: boolean =
+        (current?.status === "connected" || current?.status === "request") &&
+        current.generation === generation &&
+        this.#now() < current.expiresAt;
+      return checkedResult;
+    }
   }
-  isRequestCurrent(generation: string): boolean {
+  isRequestCurrent(generation: string) {
     const current = this.readRequest();
-    return (
-      current?.status === "request" &&
-      current.generation === generation &&
-      Date.now() < current.expiresAt
-    );
+    {
+      const checkedResult: boolean =
+        current?.status === "request" &&
+        current.generation === generation &&
+        this.#now() < current.expiresAt;
+      return checkedResult;
+    }
   }
-  #isConnected(generation: string): boolean {
+  #isConnected(generation: string) {
     const current = this.read();
-    return (
-      current?.status === "connected" &&
-      current.generation === generation &&
-      Date.now() < current.expiresAt
-    );
+    {
+      const checkedResult: boolean =
+        current?.status === "connected" &&
+        current.generation === generation &&
+        this.#now() < current.expiresAt;
+      return checkedResult;
+    }
   }
-  send(generation: string, payload: string): void {
+  send(generation: string, payload: string) {
+    let deliveries = 0;
     for (const socket of this.#context.getWebSockets()) {
       if (socket.readyState !== WebSocket.OPEN) {
         continue;
@@ -262,13 +303,15 @@ export class PrivateOutputSocket<TRunResult = unknown> {
       const attached = Schema.decodeUnknownSync(Generation)(
         socket.deserializeAttachment()
       );
-      // No promise or forwarding emitter intervenes between this read and native physical send.
+
       if (attached.generation === generation && this.#isConnected(generation)) {
         socket.send(payload);
+        deliveries += 1;
       }
     }
+    return deliveries;
   }
-  invalidate(untrusted: typeof Generation.Type): void {
+  invalidate(untrusted: typeof Generation.Type) {
     const { generation } = Schema.decodeUnknownSync(Generation, {
       onExcessProperty: "error",
     })(untrusted);

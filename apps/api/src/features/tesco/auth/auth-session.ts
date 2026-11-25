@@ -12,13 +12,16 @@ import type { TescoAuthorization, TescoAuthSnapshot } from "./auth.model.js";
 
 const AccessTokenRefreshSkewMs = 120_000;
 
-const hasUsableAccessToken = (state: TescoAuthSnapshot, now: number): boolean =>
-  state.accessTokenExpiresAt > now + AccessTokenRefreshSkewMs;
+const hasUsableAccessToken = (state: TescoAuthSnapshot, now: number) => {
+  const checkedResult: boolean =
+    state.accessTokenExpiresAt > now + AccessTokenRefreshSkewMs;
+  return checkedResult;
+};
 
-const hasUsableRefreshToken = (
-  state: TescoAuthSnapshot,
-  now: number
-): boolean => state.refreshTokenExpiresAt > now;
+const hasUsableRefreshToken = (state: TescoAuthSnapshot, now: number) => {
+  const checkedResult: boolean = state.refreshTokenExpiresAt > now;
+  return checkedResult;
+};
 
 export const makeTescoAuthSessionLive = (config: TescoAuthBootstrapConfig) =>
   Layer.effect(

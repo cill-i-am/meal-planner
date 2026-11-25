@@ -59,7 +59,6 @@ const ListingQuery = {
   sortBy: ListingBody.sortBy,
 };
 
-/** The protocol exposes fixed messages, never provider or decoder diagnostics. */
 const failure = <const Code extends string, const Message extends string>(
   error: Code,
   message: Message,

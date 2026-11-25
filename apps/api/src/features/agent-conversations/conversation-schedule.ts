@@ -163,7 +163,7 @@ const allocateMealOption = (
   quantity: MealPlanQuantity,
   content: PlanningContent,
   newId: () => string
-): Extract<MealPlanResolution, { readonly _tag: "MealOption" }> => {
+) => {
   const { events } = builder;
   const option = validateMealOption(choice, quantity, content);
   const eventKey = JSON.stringify([row.key, requirement.date]);
@@ -182,16 +182,26 @@ const allocateMealOption = (
     };
     events.set(eventKey, event);
   } else if (event.unit !== quantity.unit) {
-    return invalid();
+    const checkedResult: Extract<
+      MealPlanResolution,
+      { readonly _tag: "MealOption" }
+    > = invalid();
+    return checkedResult;
   }
   event.amount += quantity.amount;
-  return {
-    _tag: "MealOption",
-    eventId: event.eventId,
-    option: choice.option,
-    quantity,
-    rationale: "Assigned by the reviewed agent schedule.",
-  };
+  {
+    const checkedResult: Extract<
+      MealPlanResolution,
+      { readonly _tag: "MealOption" }
+    > = {
+      _tag: "MealOption",
+      eventId: event.eventId,
+      option: choice.option,
+      quantity,
+      rationale: "Assigned by the reviewed agent schedule.",
+    };
+    return checkedResult;
+  }
 };
 
 const allocatePrepared = (
@@ -438,7 +448,7 @@ export const materializePlanSchedule = (input: {
   readonly proposal: PlanScheduleProposal;
   readonly context: ConversationCanonicalContext;
   readonly newId: () => string;
-}): Extract<MealPlanChange, { readonly _tag: "ReplaceDraftPlan" }> => {
+}) => {
   const { context, newId, proposal } = input;
   const { plan, planningContent: content } = context;
   if (
@@ -447,14 +457,22 @@ export const materializePlanSchedule = (input: {
     plan.revision !== proposal.expectedRevision ||
     content === null
   ) {
-    return invalid();
+    const checkedResult: Extract<
+      MealPlanChange,
+      { readonly _tag: "ReplaceDraftPlan" }
+    > = invalid();
+    return checkedResult;
   }
   const requirements = plan.proposed.coverage.map(
     ({ requirement }) => requirement
   );
   const admitted = new Set(requirements.map(requirementKey));
   if (admitted.size !== requirements.length) {
-    return invalid();
+    const checkedResult: Extract<
+      MealPlanChange,
+      { readonly _tag: "ReplaceDraftPlan" }
+    > = invalid();
+    return checkedResult;
   }
   const { startDate: start, weeks } = plan.request;
   const builder: ScheduleAllocationBuilder = {
@@ -467,14 +485,22 @@ export const materializePlanSchedule = (input: {
   const rowKeys = new Set<string>();
   for (const row of proposal.rows) {
     if (rowKeys.has(row.key)) {
-      return invalid();
+      const checkedResult: Extract<
+        MealPlanChange,
+        { readonly _tag: "ReplaceDraftPlan" }
+      > = invalid();
+      return checkedResult;
     }
     rowKeys.add(row.key);
     const matches = matchRowRequirements(row, requirements, start, weeks);
     for (const requirement of matches) {
       const key = requirementKey(requirement);
       if (!admitted.has(key) || claimed.has(key)) {
-        return invalid();
+        const checkedResult: Extract<
+          MealPlanChange,
+          { readonly _tag: "ReplaceDraftPlan" }
+        > = invalid();
+        return checkedResult;
       }
       claimed.add(key);
       allocateRequirement(builder, row, requirement, content, plan, newId);
@@ -497,7 +523,17 @@ export const materializePlanSchedule = (input: {
     coverage,
   });
   if (change._tag !== "ReplaceDraftPlan") {
-    return invalid();
+    const checkedResult: Extract<
+      MealPlanChange,
+      { readonly _tag: "ReplaceDraftPlan" }
+    > = invalid();
+    return checkedResult;
   }
-  return change;
+  {
+    const checkedResult: Extract<
+      MealPlanChange,
+      { readonly _tag: "ReplaceDraftPlan" }
+    > = change;
+    return checkedResult;
+  }
 };

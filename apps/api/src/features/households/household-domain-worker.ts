@@ -613,7 +613,6 @@ export type HouseholdBatchDomainFailure =
   | HouseholdDomainFailure
   | HouseholdBatchFailure;
 
-/** Private RPC boundary for organization-scoped household state. */
 const HouseholdDomainWorkerRuntime = Effect.gen(function* makeDomainWorker() {
   const households = yield* HouseholdObject;
   const locator = yield* HouseholdObjectLocator;

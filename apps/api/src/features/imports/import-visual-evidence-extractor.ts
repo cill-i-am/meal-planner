@@ -87,15 +87,20 @@ export type VisualEvidenceSemanticObservation =
 /** Derive aggregate outcome only after strict provider observations decode. */
 export const visualEvidenceOutcomeForObservations = (
   observations: readonly { readonly confidence: number }[]
-): "empty" | "found" | "low_confidence" => {
+) => {
   if (observations.length === 0) {
-    return "empty";
+    const checkedResult: "empty" | "found" | "low_confidence" = "empty";
+    return checkedResult;
   }
-  return observations.some(
-    ({ confidence }) => confidence >= VisualConfidenceThreshold
-  )
-    ? "found"
-    : "low_confidence";
+  {
+    const checkedResult: "empty" | "found" | "low_confidence" =
+      observations.some(
+        ({ confidence }) => confidence >= VisualConfidenceThreshold
+      )
+        ? "found"
+        : "low_confidence";
+    return checkedResult;
+  }
 };
 
 const visualEvidenceOutcomeMatchesObservations = (evidence: {
@@ -120,7 +125,6 @@ export const VisualEvidenceSemantics = Schema.Struct({
 );
 export type VisualEvidenceSemantics = typeof VisualEvidenceSemantics.Type;
 
-/** A slot belongs to the image at the same position in the request. */
 const VisualProviderFrameToolArguments = Schema.Struct({
   observations: Schema.Array(
     Schema.Struct({
@@ -160,49 +164,53 @@ export const visualEvidenceProviderSchemas = (frameCount: number) => ({
 
 type VisualProviderFrame = typeof VisualProviderFrameSemantics.Type;
 export const emptyVisualProviderSemantics = (frameCount: number) => ({
-  frames: Array.from({ length: frameCount }, (): VisualProviderFrame => ({
-    observations: [],
-  })),
+  frames: Array.from({ length: frameCount }, () => {
+    const checkedResult: VisualProviderFrame = {
+      observations: [],
+    };
+    return checkedResult;
+  }),
 });
 
 const isJsonObject = (input: Schema.Json): input is Schema.JsonObject =>
   Schema.is(Schema.Record(Schema.String, Schema.Json))(input);
 
-const normalizeProviderConfidence = (
-  input: Schema.Json | undefined
-): number => {
+const normalizeProviderConfidence = (input: Schema.Json | undefined) => {
   if (input === undefined || input === null) {
-    return 0;
+    const checkedResult = 0;
+    return checkedResult;
   }
   if (Schema.is(Schema.Number)(input)) {
-    return input;
+    const checkedResult: number = input;
+    return checkedResult;
   }
   if (!Schema.is(Schema.String)(input)) {
-    return 0;
+    const checkedResult = 0;
+    return checkedResult;
   }
   const trimmed = input.trim();
   const numeric = /^(?:\d+(?:\.\d+)?|\.\d+)$/u.exec(trimmed);
   if (numeric !== null) {
-    return Number(trimmed);
+    const checkedResult = Number(trimmed);
+    return checkedResult;
   }
   const percentage = /^(?<value>\d+(?:\.\d+)?|\.\d+)%$/u.exec(trimmed);
-  return percentage?.groups?.["value"] === undefined
-    ? 0
-    : Number(percentage.groups["value"]);
+  {
+    const checkedResult: number =
+      percentage?.groups?.["value"] === undefined
+        ? 0
+        : Number(percentage.groups["value"]);
+    return checkedResult;
+  }
 };
 
-/**
- * Project an untrusted provider response onto the only semantic fields the
- * adapter may use. Provider-owned metadata and malformed observations are
- * discarded; an unusable payload therefore becomes honest empty visual
- * evidence instead of acquiring authority or aborting transcript processing.
- */
 const projectVisualProviderFrame = (
   input: Schema.Json,
   maximumObservations: number
-): VisualProviderFrame => {
+) => {
   if (!isJsonObject(input) || !Array.isArray(input["observations"])) {
-    return { observations: [] };
+    const checkedResult: VisualProviderFrame = { observations: [] };
+    return checkedResult;
   }
 
   const observations: {
@@ -238,7 +246,10 @@ const projectVisualProviderFrame = (
     });
   }
 
-  return { observations };
+  {
+    const checkedResult: VisualProviderFrame = { observations };
+    return checkedResult;
+  }
 };
 
 /** Preserve empty slots: missing or extra slots cannot shift frame attribution. */

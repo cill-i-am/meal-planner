@@ -18,7 +18,7 @@ export const runOutputFencedMutation = async <A>(
     readonly reconcileOnly?: true;
   },
   canonical: () => Promise<A>
-): Promise<A> => {
+) => {
   const intent = {
     intentKey: input.intentKey,
     key: input.key,
@@ -28,7 +28,8 @@ export const runOutputFencedMutation = async <A>(
     ? await output.findPendingMutation(intent)
     : await output.beginMutation(intent);
   if (retained === null) {
-    return canonical();
+    const checkedResult: Awaited<Promise<A>> | Promise<A> = canonical();
+    return checkedResult;
   }
   if (retained.phase === "dispatched" && !input.replayable) {
     throw new PrivateOutputUnavailable({ reason: "mutation_pending" });
@@ -46,18 +47,22 @@ export const runOutputFencedMutation = async <A>(
   try {
     await output.completeMutation(operation);
   } catch {
-    // A lost completion acknowledgement is recoverable from the exact durable operation.
     const current = await output.readMutation(operation);
     if (current?.phase !== "settled") {
       await output.completeMutation(operation);
     }
   }
-  return result;
+  {
+    const checkedResult: Awaited<Promise<A>> | Promise<A> = result;
+    return checkedResult;
+  }
 };
 
-export const makeAuthOutputFence =
-  (output: PrivateOutputMutationPort): AuthOutputFence =>
-  async ({ accountId, intentKey, replayable, reconcileOnly }, canonical) => {
+export const makeAuthOutputFence = (output: PrivateOutputMutationPort) => {
+  const checkedResult: AuthOutputFence = async (
+    { accountId, intentKey, replayable, reconcileOnly },
+    canonical
+  ) => {
     const mutation = {
       intentKey,
       key: await privateOutputKey("account", accountId),
@@ -71,3 +76,5 @@ export const makeAuthOutputFence =
     }
     return runOutputFencedMutation(output, mutation, canonical);
   };
+  return checkedResult;
+};

@@ -12,7 +12,7 @@ export interface ClairicEvidenceText {
 /** Keep source bytes and order intact; source identity is injected locally. */
 export const assembleClairicEvidenceText = (
   items: readonly RecipeEvidenceItem[]
-): ClairicEvidenceText => {
+) => {
   let state = "";
   const sources: ClairicEvidenceText["sources"][number][] = [];
   for (const item of items) {
@@ -26,7 +26,10 @@ export const assembleClairicEvidenceText = (
     state += item.value;
     sources.push({ end: state.length, item, start });
   }
-  return { sources, state };
+  {
+    const checkedResult: ClairicEvidenceText = { sources, state };
+    return checkedResult;
+  }
 };
 
 export type ClairicSpanEncoding = "unicode-code-points" | "utf16-code-units";
@@ -35,26 +38,36 @@ const codeUnitOffset = (
   text: string,
   offset: number,
   encoding: ClairicSpanEncoding
-): number | null => {
+) => {
   if (!Number.isSafeInteger(offset) || offset < 0) {
-    return null;
+    const checkedResult: number | null = null;
+    return checkedResult;
   }
   if (encoding === "utf16-code-units") {
     if (offset > 0 && (text.codePointAt(offset - 1) ?? 0) > 65_535) {
-      return null;
+      const checkedResult: number | null = null;
+      return checkedResult;
     }
-    return offset <= text.length ? offset : null;
+    {
+      const checkedResult: number | null =
+        offset <= text.length ? offset : null;
+      return checkedResult;
+    }
   }
   let units = 0;
   let points = 0;
   for (const point of text) {
     if (points === offset) {
-      return units;
+      const checkedResult: number | null = units;
+      return checkedResult;
     }
     units += point.length;
     points += 1;
   }
-  return points === offset ? units : null;
+  {
+    const checkedResult: number | null = points === offset ? units : null;
+    return checkedResult;
+  }
 };
 
 /** Encoding must come from an observed provider contract, never a guessed offset. */

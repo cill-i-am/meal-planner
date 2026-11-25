@@ -22,7 +22,7 @@ import { workerObservability } from "../infrastructure/worker-observability.js";
 export const bundleWorkerFixture = async (
   inputPath: string,
   outputDirectory?: string
-): Promise<NonNullable<MiniflareWorkerConfig["manifest"]>> => {
+) => {
   const outputOptions: NonNullable<Parameters<typeof Bundle.build>[1]> = {
     codeSplitting: false,
     format: "esm",
@@ -93,27 +93,32 @@ export const bundleWorkerFixture = async (
   }
   const [entry, ...assets] = output.files;
   const modulesRoot = path.resolve(path.dirname(entry.path));
-  return {
-    mainModule: path.relative(modulesRoot, entry.path),
-    modules: {
-      [path.relative(modulesRoot, entry.path)]: {
-        contents: Schema.is(Schema.String)(entry.content)
-          ? entry.content
-          : new TextDecoder().decode(entry.content),
-        type: "esm",
+  {
+    const checkedResult:
+      | Awaited<Promise<NonNullable<MiniflareWorkerConfig["manifest"]>>>
+      | Promise<NonNullable<MiniflareWorkerConfig["manifest"]>> = {
+      mainModule: path.relative(modulesRoot, entry.path),
+      modules: {
+        [path.relative(modulesRoot, entry.path)]: {
+          contents: Schema.is(Schema.String)(entry.content)
+            ? entry.content
+            : new TextDecoder().decode(entry.content),
+          type: "esm",
+        },
+        ...Object.fromEntries(
+          assets.map((asset) => [
+            path.relative(modulesRoot, asset.path),
+            {
+              contents: Schema.is(Schema.String)(asset.content)
+                ? asset.content
+                : new TextDecoder().decode(asset.content),
+              type: "text",
+            },
+          ])
+        ),
       },
-      ...Object.fromEntries(
-        assets.map((asset) => [
-          path.relative(modulesRoot, asset.path),
-          {
-            contents: Schema.is(Schema.String)(asset.content)
-              ? asset.content
-              : new TextDecoder().decode(asset.content),
-            type: "text",
-          },
-        ])
-      ),
-    },
-    modulesRoot,
-  };
+      modulesRoot,
+    };
+    return checkedResult;
+  }
 };

@@ -134,16 +134,27 @@ export const makeTemporaryArtifactStore = (
   };
 };
 
-const retryableProcess = (
-  reason?: RetryableAcquisitionFailure["reason"]
-): RetryableAcquisitionFailure =>
-  new RetryableAcquisitionError(
-    reason === undefined ? { stage: "process" } : { reason, stage: "process" }
-  );
-const terminalProcess = (): TerminalMediaFailure =>
-  new TerminalMediaError({ code: "invalid_media", stage: "process" });
-const limitExceeded = (): TerminalMediaFailure =>
-  new TerminalMediaError({ code: "limit_exceeded", stage: "process" });
+const retryableProcess = (reason?: RetryableAcquisitionFailure["reason"]) => {
+  const checkedResult: RetryableAcquisitionFailure =
+    new RetryableAcquisitionError(
+      reason === undefined ? { stage: "process" } : { reason, stage: "process" }
+    );
+  return checkedResult;
+};
+const terminalProcess = () => {
+  const checkedResult: TerminalMediaFailure = new TerminalMediaError({
+    code: "invalid_media",
+    stage: "process",
+  });
+  return checkedResult;
+};
+const limitExceeded = () => {
+  const checkedResult: TerminalMediaFailure = new TerminalMediaError({
+    code: "limit_exceeded",
+    stage: "process",
+  });
+  return checkedResult;
+};
 
 const OutputLimitExceeded = Symbol("OutputLimitExceeded");
 const ProcessExited = Symbol("ProcessExited");
@@ -174,19 +185,23 @@ export interface TemporaryWorkspaceEntry {
   readonly size: number;
 }
 
-const temporaryWorkspaceEntryKind = (
-  stats: Stats
-): TemporaryWorkspaceEntry["kind"] => {
+const temporaryWorkspaceEntryKind = (stats: Stats) => {
   if (stats.isSymbolicLink()) {
-    return "symlink";
+    const checkedResult: TemporaryWorkspaceEntry["kind"] = "symlink";
+    return checkedResult;
   }
   if (stats.isDirectory()) {
-    return "directory";
+    const checkedResult: TemporaryWorkspaceEntry["kind"] = "directory";
+    return checkedResult;
   }
   if (stats.isFile()) {
-    return "file";
+    const checkedResult: TemporaryWorkspaceEntry["kind"] = "file";
+    return checkedResult;
   }
-  return "other";
+  {
+    const checkedResult: TemporaryWorkspaceEntry["kind"] = "other";
+    return checkedResult;
+  }
 };
 
 export const validateTemporaryWorkspaceEntries = Effect.fn(
@@ -230,7 +245,7 @@ export const scanTemporaryWorkspace = Effect.fn(
     catch: limitExceeded,
     try: async () => {
       const entries: TemporaryWorkspaceEntry[] = [];
-      const walk = async (directory: string): Promise<void> => {
+      const walk = async (directory: string) => {
         cancellation?.throwIfAborted();
         const names = await readdir(directory);
         cancellation?.throwIfAborted();
@@ -275,162 +290,165 @@ type TemporaryWorkspaceScanner = (
 export const makeMediaProcessRunner = (
   execute: CommandExecutor,
   scanWorkspace: TemporaryWorkspaceScanner = scanTemporaryWorkspace
-): MediaProcessRunner => ({
-  run: Effect.fn("ImportMedia.runProcess")((command, args, options) =>
-    Effect.callback<
-      MediaProcessResult,
-      RetryableAcquisitionFailure | TerminalMediaFailure
-    >((resume, signal) => {
-      const complete = async () => {
-        if (
-          !Number.isFinite(options.deadlineMilliseconds) ||
-          options.deadlineMilliseconds <= 0
-        ) {
-          throw OutputLimitExceeded;
-        }
-        const controller = new AbortController();
-        const abort = () => controller.abort();
-        let deadlineExceeded = false;
-        signal.addEventListener("abort", abort, { once: true });
-        if (signal.aborted) {
-          controller.abort();
-        }
-        const timeout = setTimeout(() => {
-          deadlineExceeded = true;
-          controller.abort();
-        }, options.deadlineMilliseconds);
-        const stdoutChunks: Uint8Array[] = [];
-        let stdoutBytes = 0;
-        let stderrBytes = 0;
-        let outputLimitExceeded = false;
-        const checkWorkspace = async () => {
-          if (options.workspaceRoot === undefined) {
-            return;
+) => {
+  const checkedResult: MediaProcessRunner = {
+    run: Effect.fn("ImportMedia.runProcess")((command, args, options) =>
+      Effect.callback<
+        MediaProcessResult,
+        RetryableAcquisitionFailure | TerminalMediaFailure
+      >((resume, signal) => {
+        const complete = async () => {
+          if (
+            !Number.isFinite(options.deadlineMilliseconds) ||
+            options.deadlineMilliseconds <= 0
+          ) {
+            throw OutputLimitExceeded;
           }
-          try {
-            await Effect.runPromise(
-              scanWorkspace(options.workspaceRoot, controller.signal)
-            );
-          } catch {
-            if (controller.signal.aborted) {
-              return;
-            }
-            outputLimitExceeded = true;
+          const controller = new AbortController();
+          const abort = () => controller.abort();
+          let deadlineExceeded = false;
+          signal.addEventListener("abort", abort, { once: true });
+          if (signal.aborted) {
             controller.abort();
           }
-        };
-        let activePeriodicWorkspaceScan: Promise<void> | undefined;
-        const trackPeriodicWorkspaceScan = async () => {
+          const timeout = setTimeout(() => {
+            deadlineExceeded = true;
+            controller.abort();
+          }, options.deadlineMilliseconds);
+          const stdoutChunks: Uint8Array[] = [];
+          let stdoutBytes = 0;
+          let stderrBytes = 0;
+          let outputLimitExceeded = false;
+          const checkWorkspace = async () => {
+            if (options.workspaceRoot === undefined) {
+              return;
+            }
+            try {
+              await Effect.runPromise(
+                scanWorkspace(options.workspaceRoot, controller.signal)
+              );
+            } catch {
+              if (controller.signal.aborted) {
+                return;
+              }
+              outputLimitExceeded = true;
+              controller.abort();
+            }
+          };
+          let activePeriodicWorkspaceScan: Promise<void> | undefined;
+          const trackPeriodicWorkspaceScan = async () => {
+            try {
+              await checkWorkspace();
+            } finally {
+              activePeriodicWorkspaceScan = undefined;
+            }
+          };
+          const startPeriodicWorkspaceScan = () => {
+            if (activePeriodicWorkspaceScan !== undefined) {
+              return;
+            }
+            activePeriodicWorkspaceScan = trackPeriodicWorkspaceScan();
+          };
+          const joinPeriodicWorkspaceScan = async () => {
+            const activeScan = activePeriodicWorkspaceScan;
+            if (activeScan !== undefined) {
+              await activeScan;
+            }
+          };
           try {
             await checkWorkspace();
-          } finally {
-            activePeriodicWorkspaceScan = undefined;
-          }
-        };
-        const startPeriodicWorkspaceScan = () => {
-          if (activePeriodicWorkspaceScan !== undefined) {
-            return;
-          }
-          activePeriodicWorkspaceScan = trackPeriodicWorkspaceScan();
-        };
-        const joinPeriodicWorkspaceScan = async () => {
-          const activeScan = activePeriodicWorkspaceScan;
-          if (activeScan !== undefined) {
-            await activeScan;
-          }
-        };
-        try {
-          await checkWorkspace();
-          if (outputLimitExceeded) {
-            throw OutputLimitExceeded;
-          }
-          if (controller.signal.aborted) {
-            throw deadlineExceeded ? ProcessTimedOut : ProcessExited;
-          }
-          const workspacePoll = setInterval(startPeriodicWorkspaceScan, 25);
-          let execution:
-            | {
-                readonly _tag: "Failure";
-              }
-            | {
-                readonly _tag: "Success";
-                readonly result: { readonly exitCode: number };
+            if (outputLimitExceeded) {
+              throw OutputLimitExceeded;
+            }
+            if (controller.signal.aborted) {
+              throw deadlineExceeded ? ProcessTimedOut : ProcessExited;
+            }
+            const workspacePoll = setInterval(startPeriodicWorkspaceScan, 25);
+            let execution:
+              | {
+                  readonly _tag: "Failure";
+                }
+              | {
+                  readonly _tag: "Success";
+                  readonly result: { readonly exitCode: number };
+                };
+            try {
+              execution = {
+                _tag: "Success",
+                result: await execute({
+                  args,
+                  command,
+                  signal: controller.signal,
+                  stderr: (chunk) => {
+                    stderrBytes += chunk.byteLength;
+                    if (stderrBytes > MaximumRetainedStderrBytes) {
+                      outputLimitExceeded = true;
+                      controller.abort();
+                    }
+                  },
+                  stdout: (chunk) => {
+                    stdoutBytes += chunk.byteLength;
+                    if (stdoutBytes > MaximumMetadataStdoutBytes) {
+                      outputLimitExceeded = true;
+                      controller.abort();
+                      return;
+                    }
+                    stdoutChunks.push(Uint8Array.from(chunk));
+                  },
+                }),
               };
-          try {
-            execution = {
-              _tag: "Success",
-              result: await execute({
-                args,
-                command,
-                signal: controller.signal,
-                stderr: (chunk) => {
-                  stderrBytes += chunk.byteLength;
-                  if (stderrBytes > MaximumRetainedStderrBytes) {
-                    outputLimitExceeded = true;
-                    controller.abort();
-                  }
-                },
-                stdout: (chunk) => {
-                  stdoutBytes += chunk.byteLength;
-                  if (stdoutBytes > MaximumMetadataStdoutBytes) {
-                    outputLimitExceeded = true;
-                    controller.abort();
-                    return;
-                  }
-                  stdoutChunks.push(Uint8Array.from(chunk));
-                },
-              }),
-            };
-          } catch {
-            execution = { _tag: "Failure" };
+            } catch {
+              execution = { _tag: "Failure" };
+            } finally {
+              clearInterval(workspacePoll);
+            }
+            await joinPeriodicWorkspaceScan();
+            await checkWorkspace();
+            if (outputLimitExceeded) {
+              throw OutputLimitExceeded;
+            }
+            if (controller.signal.aborted) {
+              throw deadlineExceeded ? ProcessTimedOut : ProcessExited;
+            }
+            if (execution._tag === "Failure") {
+              throw ProcessExited;
+            }
+            if (execution.result.exitCode !== 0) {
+              throw ProcessExited;
+            }
+            const stdout = new Uint8Array(stdoutBytes);
+            let offset = 0;
+            for (const chunk of stdoutChunks) {
+              stdout.set(chunk, offset);
+              offset += chunk.byteLength;
+            }
+            return { stderrBytes, stdout };
           } finally {
-            clearInterval(workspacePoll);
+            clearTimeout(timeout);
+            signal.removeEventListener("abort", abort);
           }
-          await joinPeriodicWorkspaceScan();
-          await checkWorkspace();
-          if (outputLimitExceeded) {
-            throw OutputLimitExceeded;
+        };
+        const completion = complete();
+        const observeCompletion = async () => {
+          try {
+            resume(Effect.succeed(await completion));
+          } catch (error) {
+            const normalizedFailure: MediaProcessFailure =
+              error === OutputLimitExceeded || error === ProcessTimedOut
+                ? error
+                : ProcessExited;
+            resume(
+              Effect.fail(processFailure(normalizedFailure, options.failure))
+            );
           }
-          if (controller.signal.aborted) {
-            throw deadlineExceeded ? ProcessTimedOut : ProcessExited;
-          }
-          if (execution._tag === "Failure") {
-            throw ProcessExited;
-          }
-          if (execution.result.exitCode !== 0) {
-            throw ProcessExited;
-          }
-          const stdout = new Uint8Array(stdoutBytes);
-          let offset = 0;
-          for (const chunk of stdoutChunks) {
-            stdout.set(chunk, offset);
-            offset += chunk.byteLength;
-          }
-          return { stderrBytes, stdout };
-        } finally {
-          clearTimeout(timeout);
-          signal.removeEventListener("abort", abort);
-        }
-      };
-      const completion = complete();
-      const observeCompletion = async () => {
-        try {
-          resume(Effect.succeed(await completion));
-        } catch (error) {
-          const normalizedFailure: MediaProcessFailure =
-            error === OutputLimitExceeded || error === ProcessTimedOut
-              ? error
-              : ProcessExited;
-          resume(
-            Effect.fail(processFailure(normalizedFailure, options.failure))
-          );
-        }
-      };
-      const observation = observeCompletion();
-      return Effect.promise(() => observation);
-    })
-  ),
-});
+        };
+        const observation = observeCompletion();
+        return Effect.promise(() => observation);
+      })
+    ),
+  };
+  return checkedResult;
+};
 
 export const NodeCommandExecutor: CommandExecutor = ({
   args,

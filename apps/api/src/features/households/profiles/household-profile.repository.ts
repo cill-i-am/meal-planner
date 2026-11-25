@@ -166,8 +166,8 @@ export const makeHouseholdProfileRepository = (
     readonly actor: Actor;
     readonly personId: HouseholdPersonId;
     readonly beforeVersion: number | null;
-  }): Effect.Effect<ProfileVersionPage, Failure> =>
-    database
+  }) => {
+    const checkedResult: Effect.Effect<ProfileVersionPage, Failure> = database
       .transaction((transaction) =>
         Effect.gen(function* listVersionsEffect() {
           yield* activeAdult(transaction, input.actor);
@@ -198,6 +198,8 @@ export const makeHouseholdProfileRepository = (
         })
       )
       .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
+    return checkedResult;
+  };
 
   type Transaction = Parameters<
     Parameters<EffectSQLiteDoDatabase["transaction"]>[0]
@@ -324,164 +326,168 @@ export const makeHouseholdProfileRepository = (
       );
   };
 
-  const mutate = (
-    input: MutationInput
-  ): Effect.Effect<PersonProfile, Failure> =>
-    Effect.gen(function* mutateEffect() {
-      // The DO driver requires a synchronous transaction; hashing may suspend.
-      const admitted = yield* prepareMutation(database, input, "direct");
-      const digest = yield* intentDigest(admitted.input, "direct");
-      return yield* database
-        .transaction((transaction) =>
-          Effect.gen(function* manualMutation() {
-            const prepared = yield* prepareMutation(
-              transaction,
-              input,
-              "direct"
-            );
-            if (
-              prepared.actorPersonId !== admitted.actorPersonId ||
-              prepared.person.kind !== admitted.person.kind
-            ) {
-              return yield* Effect.fail(reject("stale_version"));
-            }
-            const [interviewReceipt] = yield* transaction
-              .select()
-              .from(householdInterviewProfileReceipts)
-              .where(
-                eq(
-                  householdInterviewProfileReceipts.mutationId,
-                  input.payload.mutationId
+  const mutate = (input: MutationInput) => {
+    const checkedResult: Effect.Effect<PersonProfile, Failure> = Effect.gen(
+      function* mutateEffect() {
+        const admitted = yield* prepareMutation(database, input, "direct");
+        const digest = yield* intentDigest(admitted.input, "direct");
+        return yield* database
+          .transaction((transaction) =>
+            Effect.gen(function* manualMutation() {
+              const prepared = yield* prepareMutation(
+                transaction,
+                input,
+                "direct"
+              );
+              if (
+                prepared.actorPersonId !== admitted.actorPersonId ||
+                prepared.person.kind !== admitted.person.kind
+              ) {
+                return yield* Effect.fail(reject("stale_version"));
+              }
+              const [interviewReceipt] = yield* transaction
+                .select()
+                .from(householdInterviewProfileReceipts)
+                .where(
+                  eq(
+                    householdInterviewProfileReceipts.mutationId,
+                    input.payload.mutationId
+                  )
                 )
-              )
-              .limit(1)
-              .pipe(Effect.mapError(unavailable));
-            if (interviewReceipt !== undefined) {
-              return yield* Effect.fail(reject("mutation_collision"));
-            }
-            return yield* commit(transaction, prepared, digest, "direct");
-          })
-        )
-        .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
-    });
+                .limit(1)
+                .pipe(Effect.mapError(unavailable));
+              if (interviewReceipt !== undefined) {
+                return yield* Effect.fail(reject("mutation_collision"));
+              }
+              return yield* commit(transaction, prepared, digest, "direct");
+            })
+          )
+          .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
+      }
+    );
+    return checkedResult;
+  };
 
-  const mutateInterview = (
-    input: MutationInput
-  ): Effect.Effect<InterviewProfileOutcome, Failure> =>
-    Effect.gen(function* interviewMutation() {
-      const admitted = yield* prepareMutation(database, input, "interview");
-      const digest = yield* intentDigest(admitted.input, "interview");
-      return yield* database
-        .transaction((transaction) =>
-          Effect.gen(function* sealInterviewOutcome() {
-            const prepared = yield* prepareMutation(
-              transaction,
-              input,
-              "interview"
-            );
-            if (
-              prepared.actorPersonId !== admitted.actorPersonId ||
-              prepared.person.kind !== admitted.person.kind
-            ) {
-              return yield* Effect.fail(reject("stale_version"));
-            }
-            const [receipt] = yield* transaction
-              .select()
-              .from(householdInterviewProfileReceipts)
-              .where(
-                eq(
-                  householdInterviewProfileReceipts.mutationId,
-                  input.payload.mutationId
-                )
-              )
-              .limit(1)
-              .pipe(Effect.mapError(unavailable));
-            if (receipt !== undefined) {
-              const actorPersonId = yield* activeAdult(
+  const mutateInterview = (input: MutationInput) => {
+    const checkedResult: Effect.Effect<InterviewProfileOutcome, Failure> =
+      Effect.gen(function* interviewMutation() {
+        const admitted = yield* prepareMutation(database, input, "interview");
+        const digest = yield* intentDigest(admitted.input, "interview");
+        return yield* database
+          .transaction((transaction) =>
+            Effect.gen(function* sealInterviewOutcome() {
+              const prepared = yield* prepareMutation(
                 transaction,
-                input.actor
+                input,
+                "interview"
               );
-              if (actorPersonId !== input.personId) {
-                return yield* Effect.fail(reject("self_required"));
+              if (
+                prepared.actorPersonId !== admitted.actorPersonId ||
+                prepared.person.kind !== admitted.person.kind
+              ) {
+                return yield* Effect.fail(reject("stale_version"));
               }
-              if (receipt.intentDigest !== digest) {
-                return {
-                  reason: "mutation_collision" as const,
-                  type: "rejected" as const,
-                };
-              }
-              return yield* Schema.decodeUnknownEffect(
-                Schema.fromJsonString(InterviewProfileOutcome)
-              )(receipt.outcomeJson).pipe(Effect.mapError(unavailable));
-            }
-            // An existing version already seals this mutation ID. A collision must not
-            // reserve a second receipt that shadows the original manual command.
-            const [versionReceipt] = yield* transaction
-              .select()
-              .from(householdProfileVersions)
-              .where(
-                eq(
-                  householdProfileVersions.mutationId,
-                  input.payload.mutationId
+              const [receipt] = yield* transaction
+                .select()
+                .from(householdInterviewProfileReceipts)
+                .where(
+                  eq(
+                    householdInterviewProfileReceipts.mutationId,
+                    input.payload.mutationId
+                  )
                 )
-              )
-              .limit(1)
-              .pipe(Effect.mapError(unavailable));
-            if (versionReceipt !== undefined) {
-              const actorPersonId = yield* activeAdult(
-                transaction,
-                input.actor
-              );
-              if (actorPersonId !== input.personId) {
-                return yield* Effect.fail(reject("self_required"));
-              }
-              if (versionReceipt.intentDigest !== digest) {
-                return {
-                  reason: "mutation_collision" as const,
-                  type: "rejected" as const,
-                };
-              }
-              const profile = yield* decodeSnapshot(
-                versionReceipt.snapshotJson
-              ).pipe(Effect.mapError(unavailable));
-              return {
-                profileVersion: profile.version,
-                type: "committed" as const,
-              };
-            }
-            const outcome = yield* commit(
-              transaction,
-              prepared,
-              digest,
-              "interview"
-            ).pipe(
-              Effect.map((profile): InterviewProfileOutcome => ({
-                profileVersion: profile.version,
-                type: "committed",
-              })),
-              Effect.catchTag("HouseholdProfileRejected", (failure) =>
-                failure.reason === "profile_unavailable"
-                  ? Effect.fail(failure)
-                  : Effect.succeed<InterviewProfileOutcome>({
-                      reason: failure.reason,
-                      type: "rejected",
-                    })
-              )
-            );
-            yield* transaction
-              .insert(householdInterviewProfileReceipts)
-              .values({
-                intentDigest: digest,
-                mutationId: input.payload.mutationId,
-                outcomeJson: Schema.encodeSync(
+                .limit(1)
+                .pipe(Effect.mapError(unavailable));
+              if (receipt !== undefined) {
+                const actorPersonId = yield* activeAdult(
+                  transaction,
+                  input.actor
+                );
+                if (actorPersonId !== input.personId) {
+                  return yield* Effect.fail(reject("self_required"));
+                }
+                if (receipt.intentDigest !== digest) {
+                  return {
+                    reason: "mutation_collision" as const,
+                    type: "rejected" as const,
+                  };
+                }
+                return yield* Schema.decodeUnknownEffect(
                   Schema.fromJsonString(InterviewProfileOutcome)
-                )(outcome),
-              })
-              .pipe(Effect.mapError(unavailable));
-            return outcome;
-          })
-        )
-        .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
-    });
+                )(receipt.outcomeJson).pipe(Effect.mapError(unavailable));
+              }
+
+              const [versionReceipt] = yield* transaction
+                .select()
+                .from(householdProfileVersions)
+                .where(
+                  eq(
+                    householdProfileVersions.mutationId,
+                    input.payload.mutationId
+                  )
+                )
+                .limit(1)
+                .pipe(Effect.mapError(unavailable));
+              if (versionReceipt !== undefined) {
+                const actorPersonId = yield* activeAdult(
+                  transaction,
+                  input.actor
+                );
+                if (actorPersonId !== input.personId) {
+                  return yield* Effect.fail(reject("self_required"));
+                }
+                if (versionReceipt.intentDigest !== digest) {
+                  return {
+                    reason: "mutation_collision" as const,
+                    type: "rejected" as const,
+                  };
+                }
+                const profile = yield* decodeSnapshot(
+                  versionReceipt.snapshotJson
+                ).pipe(Effect.mapError(unavailable));
+                return {
+                  profileVersion: profile.version,
+                  type: "committed" as const,
+                };
+              }
+              const outcome = yield* commit(
+                transaction,
+                prepared,
+                digest,
+                "interview"
+              ).pipe(
+                Effect.map((profile) => {
+                  const nestedResult: InterviewProfileOutcome = {
+                    profileVersion: profile.version,
+                    type: "committed",
+                  };
+                  return nestedResult;
+                }),
+                Effect.catchTag("HouseholdProfileRejected", (failure) =>
+                  failure.reason === "profile_unavailable"
+                    ? Effect.fail(failure)
+                    : Effect.succeed<InterviewProfileOutcome>({
+                        reason: failure.reason,
+                        type: "rejected",
+                      })
+                )
+              );
+              yield* transaction
+                .insert(householdInterviewProfileReceipts)
+                .values({
+                  intentDigest: digest,
+                  mutationId: input.payload.mutationId,
+                  outcomeJson: Schema.encodeSync(
+                    Schema.fromJsonString(InterviewProfileOutcome)
+                  )(outcome),
+                })
+                .pipe(Effect.mapError(unavailable));
+              return outcome;
+            })
+          )
+          .pipe(Effect.catchTag("SqlError", () => Effect.fail(unavailable())));
+      });
+    return checkedResult;
+  };
   return { get, listVersions, mutate, mutateInterview };
 };

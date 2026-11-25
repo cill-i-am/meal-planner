@@ -51,8 +51,7 @@ export const handlePrivateInterviewRequest = Effect.fn(
         : yield* Schema.decodeUnknownEffect(SessionReference)(
             match?.groups?.["sessionReference"]
           );
-      // Browser WebSockets cannot attach headers. These are expected identities,
-      // never authority: the canonical session and membership reads still decide access.
+
       const headers = new Headers(input.request.headers);
       if (
         url.searchParams.has("expectedUserId") ||
@@ -93,7 +92,7 @@ export const handlePrivateInterviewRequest = Effect.fn(
                 sessionReference,
               }),
       });
-      // Both durable registrations exist before these final canonical reads.
+
       const current = yield* resolve();
       yield* Effect.tryPromise({
         catch: () =>

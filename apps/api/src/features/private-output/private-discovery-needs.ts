@@ -178,7 +178,7 @@ const fail = (stage: PrivateDiscoveryNeedFailure["stage"]): never => {
 export const assertCurrentParticipantEvidence = (
   evidence: Evidence,
   participant: PrivateDiscoveryEvidenceMessage
-): void => {
+) => {
   if (
     participant.role !== "participant" ||
     evidence.messageId !== participant.id ||
@@ -198,18 +198,25 @@ const fieldReopeningEvidence = (
   previous: AnyField,
   revisit: Evidence | null,
   participant: PrivateDiscoveryEvidenceMessage
-): Evidence | null => {
+) => {
   if (previous._tag === "Declined") {
     if (revisit === null) {
-      return fail("need_updates");
+      const checkedResult: Evidence | null = fail("need_updates");
+      return checkedResult;
     }
     assertCurrentParticipantEvidence(revisit, participant);
-    return revisit;
+    {
+      const checkedResult: Evidence | null = revisit;
+      return checkedResult;
+    }
   }
   if (revisit !== null) {
     fail("need_updates");
   }
-  return previous.reopenedBy;
+  {
+    const checkedResult: Evidence | null = previous.reopenedBy;
+    return checkedResult;
+  }
 };
 const answered = <T>(
   previous: AnyField,
@@ -232,19 +239,29 @@ const replaceFieldDisposition = (
       readonly _tag: "Answered";
     }
   >
-): MealFallbackNeed => {
+) => {
   switch (name) {
     case "reason": {
-      return { ...need, reason: value };
+      const checkedResult: MealFallbackNeed = { ...need, reason: value };
+      return checkedResult;
     }
     case "acceptableOption": {
-      return { ...need, acceptableOption: value };
+      const checkedResult: MealFallbackNeed = {
+        ...need,
+        acceptableOption: value,
+      };
+      return checkedResult;
     }
     case "extraPreparation": {
-      return { ...need, extraPreparation: value };
+      const checkedResult: MealFallbackNeed = {
+        ...need,
+        extraPreparation: value,
+      };
+      return checkedResult;
     }
     default: {
-      return name satisfies never;
+      const checkedResult: MealFallbackNeed = name satisfies never;
+      return checkedResult;
     }
   }
 };
@@ -278,19 +295,33 @@ const updateTarget = (update: MealFallbackNeedUpdates["updates"][number]) => {
 const needDisposition = (
   disposition: "active" | "declined" | "withdrawn",
   evidence: Evidence
-): MealFallbackNeed["disposition"] => {
+) => {
   switch (disposition) {
     case "active": {
-      return { _tag: "Active", reopenedBy: evidence };
+      const checkedResult: MealFallbackNeed["disposition"] = {
+        _tag: "Active",
+        reopenedBy: evidence,
+      };
+      return checkedResult;
     }
     case "declined": {
-      return { _tag: "Declined", evidence };
+      const checkedResult: MealFallbackNeed["disposition"] = {
+        _tag: "Declined",
+        evidence,
+      };
+      return checkedResult;
     }
     case "withdrawn": {
-      return { _tag: "Withdrawn", evidence };
+      const checkedResult: MealFallbackNeed["disposition"] = {
+        _tag: "Withdrawn",
+        evidence,
+      };
+      return checkedResult;
     }
     default: {
-      return disposition satisfies never;
+      const checkedResult: MealFallbackNeed["disposition"] =
+        disposition satisfies never;
+      return checkedResult;
     }
   }
 };
@@ -299,7 +330,7 @@ const applyNeedUpdate = (
   need: MealFallbackNeed,
   update: MealFallbackNeedUpdates["updates"][number],
   participant: PrivateDiscoveryEvidenceMessage
-): MealFallbackNeed => {
+) => {
   if (
     need.disposition._tag !== "Active" &&
     update._tag !== "SetNeedDisposition"
@@ -308,7 +339,7 @@ const applyNeedUpdate = (
   }
   switch (update._tag) {
     case "RecordReason": {
-      return {
+      const checkedResult: MealFallbackNeed = {
         ...need,
         reason: answered(
           need.reason,
@@ -318,9 +349,10 @@ const applyNeedUpdate = (
           participant
         ),
       };
+      return checkedResult;
     }
     case "RecordOption": {
-      return {
+      const checkedResult: MealFallbackNeed = {
         ...need,
         acceptableOption: answered(
           need.acceptableOption,
@@ -330,9 +362,10 @@ const applyNeedUpdate = (
           participant
         ),
       };
+      return checkedResult;
     }
     case "RecordPreparation": {
-      return {
+      const checkedResult: MealFallbackNeed = {
         ...need,
         extraPreparation: answered(
           need.extraPreparation,
@@ -342,6 +375,7 @@ const applyNeedUpdate = (
           participant
         ),
       };
+      return checkedResult;
     }
     case "SetFieldDisposition": {
       if (update.disposition === "declined" && update.revisit !== null) {
@@ -359,34 +393,49 @@ const applyNeedUpdate = (
                 participant
               ),
             };
-      return replaceFieldDisposition(need, update.field, value);
+      {
+        const checkedResult: MealFallbackNeed = replaceFieldDisposition(
+          need,
+          update.field,
+          value
+        );
+        return checkedResult;
+      }
     }
     case "ReopenField": {
       if (need[update.field]._tag === "Unanswered") {
         fail("need_updates");
       }
-      return replaceFieldDisposition(
-        need,
-        update.field,
-        unanswered(update.evidence)
-      );
+      {
+        const checkedResult: MealFallbackNeed = replaceFieldDisposition(
+          need,
+          update.field,
+          unanswered(update.evidence)
+        );
+        return checkedResult;
+      }
     }
     case "SetNeedDisposition": {
       const disposition = needDisposition(update.disposition, update.evidence);
       if (need.disposition._tag === disposition._tag) {
         fail("need_updates");
       }
-      return { ...need, disposition };
+      {
+        const checkedResult: MealFallbackNeed = { ...need, disposition };
+        return checkedResult;
+      }
     }
     case "CorrectSubject": {
-      return {
+      const checkedResult: MealFallbackNeed = {
         ...need,
         subject: update.subject,
         subjectEvidence: update.evidence,
       };
+      return checkedResult;
     }
     default: {
-      return update satisfies never;
+      const checkedResult: MealFallbackNeed = update satisfies never;
+      return checkedResult;
     }
   }
 };
@@ -396,7 +445,7 @@ export const applyMealFallbackNeedUpdates = (
   current: MealFallbackNeeds,
   changes: MealFallbackNeedUpdates,
   participant: PrivateDiscoveryEvidenceMessage
-): MealFallbackNeeds => {
+) => {
   if (
     changes.declarations.length > PRIVATE_DISCOVERY_FALLBACK_NEED_LIMIT ||
     changes.updates.length > PRIVATE_DISCOVERY_FALLBACK_UPDATE_LIMIT
@@ -450,7 +499,8 @@ export const applyMealFallbackNeedUpdates = (
         : declaredIds[update.need.index];
     const need = id === undefined ? undefined : needs.get(id);
     if (need === undefined || id === undefined) {
-      return fail("need_updates");
+      const checkedResult: MealFallbackNeeds = fail("need_updates");
+      return checkedResult;
     }
     const target = `${id}:${updateTarget(update)}`;
     if (changed.has(target)) {
@@ -459,7 +509,10 @@ export const applyMealFallbackNeedUpdates = (
     changed.add(target);
     needs.set(id, applyNeedUpdate(need, update, participant));
   }
-  return [...needs.values()];
+  {
+    const checkedResult: MealFallbackNeeds = [...needs.values()];
+    return checkedResult;
+  }
 };
 
 export const selectMealFallbackQuestion = (needs: MealFallbackNeeds) => {

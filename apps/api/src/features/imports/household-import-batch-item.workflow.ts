@@ -52,10 +52,13 @@ interface HouseholdBatchStepUnavailable {
 }
 const batchStepUnavailable = (
   operation: HouseholdBatchStepUnavailable["operation"]
-): HouseholdBatchStepUnavailable => ({
-  _tag: "HouseholdBatchStepUnavailable",
-  operation,
-});
+) => {
+  const checkedResult: HouseholdBatchStepUnavailable = {
+    _tag: "HouseholdBatchStepUnavailable",
+    operation,
+  };
+  return checkedResult;
+};
 
 interface HouseholdImportBatchWorkflowPorts {
   readonly admit: (
@@ -128,7 +131,7 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
     ImportWorkflowReconciler,
     "dispatchAdmission" | "reconcileAdmission"
   >;
-}): HouseholdImportBatchWorkflowPorts => {
+}) => {
   const { household, message, starter } = input;
   const systemAdmission = {
     actor: {
@@ -137,143 +140,146 @@ export const makeHouseholdImportBatchWorkflowPorts = (input: {
     },
     organizationId: message.organizationId,
   };
-  return {
-    admit: (claimed) =>
-      household
-        .admitRecipeImport({
-          admission: {
-            actor: { _tag: "Member", actorId: claimed.actorId },
-            organizationId: message.organizationId,
-          },
-          idempotencyKey: claimed.idempotencyKey,
-          source: claimed.source,
-        })
-        .pipe(
-          Effect.map((value) => ({ _tag: "Admitted" as const, value })),
-          Effect.catchIf(isAuthoritativeAdmissionRejection, () =>
-            Effect.succeed({ _tag: "Rejected" as const })
+  {
+    const checkedResult: HouseholdImportBatchWorkflowPorts = {
+      admit: (claimed) =>
+        household
+          .admitRecipeImport({
+            admission: {
+              actor: { _tag: "Member", actorId: claimed.actorId },
+              organizationId: message.organizationId,
+            },
+            idempotencyKey: claimed.idempotencyKey,
+            source: claimed.source,
+          })
+          .pipe(
+            Effect.map((value) => ({ _tag: "Admitted" as const, value })),
+            Effect.catchIf(isAuthoritativeAdmissionRejection, () =>
+              Effect.succeed({ _tag: "Rejected" as const })
+            ),
+            Effect.flatMap((value) =>
+              Schema.decodeUnknownEffect(BatchImportAdmissionStep)(value).pipe(
+                Effect.orDie
+              )
+            ),
+            Effect.flatMap((value) =>
+              Schema.encodeEffect(BatchImportAdmissionStep)(value).pipe(
+                Effect.orDie
+              )
+            ),
+            Effect.mapError(() => batchStepUnavailable("admit"))
           ),
-          Effect.flatMap((value) =>
-            Schema.decodeUnknownEffect(BatchImportAdmissionStep)(value).pipe(
-              Effect.orDie
-            )
-          ),
-          Effect.flatMap((value) =>
-            Schema.encodeEffect(BatchImportAdmissionStep)(value).pipe(
-              Effect.orDie
-            )
-          ),
-          Effect.mapError(() => batchStepUnavailable("admit"))
-        ),
-    claim: (queueMessage) =>
-      household
-        .claimImportBatchItem({
-          admission: systemAdmission,
-          message: queueMessage,
-        })
-        .pipe(Effect.mapError(() => batchStepUnavailable("claim"))),
-    complete: (admitted, queueMessage) =>
-      household
-        .completeImportBatchItem({
-          admission: systemAdmission,
-          batchId: queueMessage.batchId,
-          expectedGeneration: queueMessage.generation,
-          intentId: admitted.intent.id,
-          itemId: queueMessage.itemId,
-        })
-        .pipe(Effect.mapError(() => batchStepUnavailable("complete"))),
-    dispatch: (admitted, queueMessage) =>
-      Effect.gen(function* dispatchRecipeImportWorkflow() {
-        const importId = yield* Schema.decodeUnknownEffect(ImportId)(
-          admitted.intent.id
-        ).pipe(Effect.orDie);
-        const executionGeneration = yield* Schema.decodeUnknownEffect(
-          ImportIntentExecutionGeneration
-        )(1).pipe(Effect.orDie);
-        const dispatchId = yield* Schema.decodeUnknownEffect(
-          HouseholdDispatchId
-        )(admitted.dispatchId).pipe(Effect.orDie);
-        const workflowIdentity = yield* Schema.decodeUnknownEffect(
-          ImportWorkflowIdentity
-        )(admitted.workflowIdentity).pipe(Effect.orDie);
-        const trace = yield* Schema.decodeUnknownEffect(ImportTraceContext)({
-          correlationId: queueMessage.itemId,
-        }).pipe(Effect.orDie);
-        const record = (outcome: "prepared" | "started" | "unavailable") =>
-          household
-            .recordRecipeImportDispatch({
-              admission: {
-                actor: {
-                  _tag: "System",
-                  purpose: "import_workflow_dispatch",
+      claim: (queueMessage) =>
+        household
+          .claimImportBatchItem({
+            admission: systemAdmission,
+            message: queueMessage,
+          })
+          .pipe(Effect.mapError(() => batchStepUnavailable("claim"))),
+      complete: (admitted, queueMessage) =>
+        household
+          .completeImportBatchItem({
+            admission: systemAdmission,
+            batchId: queueMessage.batchId,
+            expectedGeneration: queueMessage.generation,
+            intentId: admitted.intent.id,
+            itemId: queueMessage.itemId,
+          })
+          .pipe(Effect.mapError(() => batchStepUnavailable("complete"))),
+      dispatch: (admitted, queueMessage) =>
+        Effect.gen(function* dispatchRecipeImportWorkflow() {
+          const importId = yield* Schema.decodeUnknownEffect(ImportId)(
+            admitted.intent.id
+          ).pipe(Effect.orDie);
+          const executionGeneration = yield* Schema.decodeUnknownEffect(
+            ImportIntentExecutionGeneration
+          )(1).pipe(Effect.orDie);
+          const dispatchId = yield* Schema.decodeUnknownEffect(
+            HouseholdDispatchId
+          )(admitted.dispatchId).pipe(Effect.orDie);
+          const workflowIdentity = yield* Schema.decodeUnknownEffect(
+            ImportWorkflowIdentity
+          )(admitted.workflowIdentity).pipe(Effect.orDie);
+          const trace = yield* Schema.decodeUnknownEffect(ImportTraceContext)({
+            correlationId: queueMessage.itemId,
+          }).pipe(Effect.orDie);
+          const record = (outcome: "prepared" | "started" | "unavailable") =>
+            household
+              .recordRecipeImportDispatch({
+                admission: {
+                  actor: {
+                    _tag: "System",
+                    purpose: "import_workflow_dispatch",
+                  },
+                  organizationId: queueMessage.organizationId,
                 },
-                organizationId: queueMessage.organizationId,
-              },
-              dispatchId,
-              originalTrace: trace,
-              outcome,
+                dispatchId,
+                originalTrace: trace,
+                outcome,
+                workflowIdentity,
+              })
+              .pipe(
+                Effect.flatMap((value) =>
+                  Schema.decodeUnknownEffect(
+                    HouseholdRecordRecipeImportDispatchResult
+                  )(value).pipe(Effect.orDie)
+                )
+              );
+          const prepared = yield* record("prepared");
+          if (prepared.state === "dispatched") {
+            return true;
+          }
+          if (prepared.state === "exhausted") {
+            return false;
+          }
+          return yield* starter
+            .dispatchAdmission({
+              executionGeneration,
+              importId,
+              organizationId: message.organizationId,
+              trace,
               workflowIdentity,
             })
             .pipe(
-              Effect.flatMap((value) =>
-                Schema.decodeUnknownEffect(
-                  HouseholdRecordRecipeImportDispatchResult
-                )(value).pipe(Effect.orDie)
+              Effect.andThen(record("started")),
+              Effect.as(true),
+              Effect.catchCauseIf(
+                (cause) => !Cause.hasInterrupts(cause),
+                (cause) =>
+                  starter.reconcileAdmission(workflowIdentity).pipe(
+                    Effect.andThen(record("started")),
+                    Effect.as(true),
+                    Effect.catchCauseIf(
+                      (reconciliationCause) =>
+                        !Cause.hasInterrupts(reconciliationCause),
+                      () =>
+                        isProvenPreStartRefusal(cause)
+                          ? record("unavailable").pipe(
+                              Effect.flatMap((view) =>
+                                view.state === "exhausted"
+                                  ? Effect.succeed(false)
+                                  : Effect.failCause(cause)
+                              )
+                            )
+                          : Effect.failCause(cause)
+                    )
+                  )
               )
             );
-        const prepared = yield* record("prepared");
-        if (prepared.state === "dispatched") {
-          return true;
-        }
-        if (prepared.state === "exhausted") {
-          return false;
-        }
-        return yield* starter
-          .dispatchAdmission({
-            executionGeneration,
-            importId,
-            organizationId: message.organizationId,
-            trace,
-            workflowIdentity,
+        }).pipe(Effect.mapError(() => batchStepUnavailable("dispatch"))),
+      fail: (queueMessage, failureCode) =>
+        household
+          .failImportBatchItem({
+            admission: systemAdmission,
+            batchId: queueMessage.batchId,
+            expectedGeneration: queueMessage.generation,
+            failureCode,
+            itemId: queueMessage.itemId,
           })
-          .pipe(
-            Effect.andThen(record("started")),
-            Effect.as(true),
-            Effect.catchCauseIf(
-              (cause) => !Cause.hasInterrupts(cause),
-              (cause) =>
-                starter.reconcileAdmission(workflowIdentity).pipe(
-                  Effect.andThen(record("started")),
-                  Effect.as(true),
-                  Effect.catchCauseIf(
-                    (reconciliationCause) =>
-                      !Cause.hasInterrupts(reconciliationCause),
-                    () =>
-                      isProvenPreStartRefusal(cause)
-                        ? record("unavailable").pipe(
-                            Effect.flatMap((view) =>
-                              view.state === "exhausted"
-                                ? Effect.succeed(false)
-                                : Effect.failCause(cause)
-                            )
-                          )
-                        : Effect.failCause(cause)
-                  )
-                )
-            )
-          );
-      }).pipe(Effect.mapError(() => batchStepUnavailable("dispatch"))),
-    fail: (queueMessage, failureCode) =>
-      household
-        .failImportBatchItem({
-          admission: systemAdmission,
-          batchId: queueMessage.batchId,
-          expectedGeneration: queueMessage.generation,
-          failureCode,
-          itemId: queueMessage.itemId,
-        })
-        .pipe(Effect.mapError(() => batchStepUnavailable("fail"))),
-  };
+          .pipe(Effect.mapError(() => batchStepUnavailable("fail"))),
+    };
+    return checkedResult;
+  }
 };
 
 /** Production coordination core, exercised under native Workflow in runtime tests. */

@@ -44,7 +44,6 @@ const reviewEnvelope = {
   version: 1,
 };
 
-/** Valid MAC fixtures distinguish signature rejection from strict claim parsing. */
 const signPayload = (payload: string | Uint8Array) =>
   Effect.promise(async () => {
     const encoded = Base64Url.encode(payload);
@@ -272,7 +271,7 @@ describe("MCP import state", () => {
         ]) {
           yield* expectInvalid(state.readTask(value));
         }
-        // Alternate Base64 final padding bits can decode to identical signature bytes.
+
         const alphabet =
           "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
         const last = signature.at(-1) ?? "";

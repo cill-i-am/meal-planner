@@ -20,23 +20,24 @@ const ToolArguments = Schema.Struct({
 
 const pathSegments = (path: string) => path.split("/");
 
-export const matchProductOperation = (
-  method: string,
-  pathname: string
-): ProductOperation | undefined =>
-  ProductOperations.find(({ endpoint }) => {
-    if (method !== endpoint.method) {
-      return false;
+export const matchProductOperation = (method: string, pathname: string) => {
+  const checkedResult: ProductOperation | undefined = ProductOperations.find(
+    ({ endpoint }) => {
+      if (method !== endpoint.method) {
+        return false;
+      }
+      const actual = pathSegments(pathname);
+      const expected = pathSegments(endpoint.path);
+      return (
+        actual.length === expected.length &&
+        expected.every((part, index) =>
+          part.startsWith(":") ? actual[index] !== "" : actual[index] === part
+        )
+      );
     }
-    const actual = pathSegments(pathname);
-    const expected = pathSegments(endpoint.path);
-    return (
-      actual.length === expected.length &&
-      expected.every((part, index) =>
-        part.startsWith(":") ? actual[index] !== "" : actual[index] === part
-      )
-    );
-  });
+  );
+  return checkedResult;
+};
 
 /** Only declared path/query/idempotency fields cross the MCP-to-HTTP boundary. */
 export const productToolRequest = (
@@ -70,7 +71,7 @@ export const productToolRequest = (
       if (familyId !== undefined) {
         headers.set("x-meal-planner-household", String(familyId));
       }
-      // Public contract headers currently contain only the import idempotency key.
+
       const idempotencyKey = input.headers?.["idempotency-key"];
       if (idempotencyKey !== undefined) {
         headers.set("idempotency-key", idempotencyKey);
