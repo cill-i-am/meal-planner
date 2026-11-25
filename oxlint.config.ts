@@ -80,9 +80,7 @@ export default defineConfig({
       },
     },
     {
-      files: [
-        "apps/tesco/src/auth/soft-login-auth-refresh.test.ts",
-      ],
+      files: ["apps/tesco/src/auth/soft-login-auth-refresh.test.ts"],
       rules: {
         "promise/avoid-new": "off",
         "promise/prefer-await-to-callbacks": "off",
