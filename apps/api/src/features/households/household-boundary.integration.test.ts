@@ -53,6 +53,7 @@ import {
 import { workerObservability } from "../../infrastructure/worker-observability.js";
 import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
 import * as authSchema from "../auth/auth.database-schema.js";
+import { EventLog } from "../private-output/event-log.test-utils.js";
 import {
   emptyPrivateDiscoveryContinuity,
   emptyPrivateDiscoveryContinuityUpdates,
@@ -96,8 +97,6 @@ import {
 } from "./evidence/household-evidence.contract.js";
 import { HouseholdMetadata } from "./household.contract.js";
 import { MemberDepartureWorkflowInput } from "./people/member-departure.js";
-
-vi.setConfig({ testTimeout: 30_000 });
 
 const { date: compatibilityDate, flags: compatibilityFlags } =
   workerObservability.compatibility;
@@ -235,7 +234,14 @@ const makeRuntime = (privateAuditLogs?: string[]) =>
           },
           manifest: batchQueueManifest,
           name: "batch-consumer",
-          triggers: [{ name: "household-import-batches", type: "queue" }],
+          triggers: [
+            {
+              maxBatchSize: 1,
+              maxBatchTimeout: 0.01,
+              name: "household-import-batches",
+              type: "queue",
+            },
+          ],
         },
       },
       {
@@ -2284,7 +2290,19 @@ describe("household public API to private Durable Object boundary", () => {
     await expect(replay.json()).resolves.toEqual(
       Schema.encodeSync(RecipeImportBatch)(batch)
     );
-    await delay(50);
+    const queueBarrier = crypto.randomUUID();
+    const batchQueue = await getRuntime().getQueueProducer(
+      "HouseholdImportBatchQueue",
+      "household-domain"
+    );
+    await batchQueue.send({ _tag: "BatchDeliveryBarrier", id: queueBarrier });
+    const observations = await getRuntime().getKVNamespace(
+      "BATCH_QUEUE_RESULTS",
+      "batch-consumer"
+    );
+    await expect
+      .poll(() => observations.get(`barrier:${queueBarrier}`))
+      .toBe("observed");
     await Promise.all(
       batch.items.map((item) =>
         expect(batchQueueDeliveries(item.id)).resolves.toBe(1)
@@ -5379,7 +5397,7 @@ describe("household public API to private Durable Object boundary", () => {
     expect(receipt).not.toHaveProperty("result");
     expect(receipt).not.toHaveProperty("transcriptKey");
 
-    await delay(Math.max(0, expiresAtEpochMs - Date.now() + 100));
+    await vi.waitUntil(() => Date.now() > expiresAtEpochMs, { timeout: 2500 });
     await restartRuntime();
     const expiredReplay = await systemCommand("mutate-evidence-stage", command);
     expect(expiredReplay.status, await expiredReplay.clone().text()).toBe(200);
@@ -5683,7 +5701,7 @@ describe("household public API to private Durable Object boundary", () => {
       HouseholdCommitAcquisitionEvidenceResult
     )(await firstResponse.json());
 
-    await delay(Math.max(0, expiresAtEpochMs - Date.now() + 100));
+    await vi.waitUntil(() => Date.now() > expiresAtEpochMs, { timeout: 2500 });
     await restartRuntime();
 
     const replayResponse = await systemCommand(
@@ -7345,7 +7363,7 @@ const openPrivateConnection = async (
   if (socket === null) {
     throw new Error("Expected a physical private interview WebSocket");
   }
-  const messages: string[] = [];
+  const messages = new EventLog<string>();
   const frames: SessionFrame[] = [];
   socket.addEventListener("message", (event) => {
     const payload: unknown = JSON.parse(String(event.data));
@@ -7431,6 +7449,9 @@ const emitPrivateOutput = async (
     sessionReference: connection.sessionReference,
   });
   expect(response.status, await response.clone().text()).toBe(200);
+  return Schema.decodeUnknownSync(Schema.Struct({ result: Schema.Int }))(
+    await response.json()
+  ).result;
 };
 
 const privateChatRequest = (
@@ -7733,7 +7754,7 @@ describe("canonical private interview output boundary", () => {
     );
     expect(copiedCreation).not.toBe(reservation);
     await emitPrivateOutput(connection, "synthetic-private-authorized");
-    await delay(10);
+    await connection.messages.waitForCount(1);
     expect(connection.messages).toEqual(["synthetic-private-authorized"]);
     const ownDirectory = await openPrivateDirectory(setup.memberCookie);
     ownDirectory.socket.send(
@@ -7812,7 +7833,7 @@ describe("canonical private interview output boundary", () => {
       connection,
       "synthetic-owner-after-copied-reference"
     );
-    await delay(10);
+    await connection.messages.waitForCount(2);
     expect(connection.messages).toEqual([
       "synthetic-private-authorized",
       "synthetic-owner-after-copied-reference",
@@ -7822,6 +7843,7 @@ describe("canonical private interview output boundary", () => {
 
   it("keeps participant transcript content out of shared household state, audit, coordinators and native logs", async () => {
     const capturedLogs: string[] = [];
+    const sentinel = `private-transcript-${crypto.randomUUID()}`;
     await restartRuntime(capturedLogs);
     try {
       const existingHouseholdIds = new Set(
@@ -7885,7 +7907,6 @@ describe("canonical private interview output boundary", () => {
           )
         ).toBe(true)
       );
-      const sentinel = `private-transcript-${crypto.randomUUID()}`;
       const submitted = await privateChatRequest(
         setup.memberCookie,
         connection,
@@ -8003,13 +8024,10 @@ describe("canonical private interview output boundary", () => {
       );
       connection.socket.close();
       directory.socket.close();
-      await delay(20);
-      expect(capturedLogs.some((entry) => entry.includes(sentinel))).toBe(
-        false
-      );
     } finally {
       await restartRuntime();
     }
+    expect(capturedLogs.some((entry) => entry.includes(sentinel))).toBe(false);
   });
 
   it("stops passive and in-flight output before real Better Auth sign-out commits", async () => {
@@ -8018,6 +8036,7 @@ describe("canonical private interview output boundary", () => {
     const directory = await openPrivateDirectory(setup.memberCookie);
     const session = await getSession(setup.memberCookie);
     await emitPrivateOutput(connection, "synthetic-before-sign-out");
+    await connection.messages.waitForCount(1);
     const producer = Promise.withResolvers<null>();
     const delayed = producer.promise.then(() =>
       emitPrivateOutput(connection, "synthetic-inflight-after-sign-out")
@@ -8034,10 +8053,11 @@ describe("canonical private interview output boundary", () => {
         .where(eq(authSchema.session.id, session.session.id))
     ).toEqual([]);
     producer.resolve(null);
-    await delayed;
-    await emitPrivateOutput(connection, "synthetic-passive-after-sign-out");
+    await expect(delayed).resolves.toBe(0);
+    await expect(
+      emitPrivateOutput(connection, "synthetic-passive-after-sign-out")
+    ).resolves.toBe(0);
     await expectDirectoryRevoked(directory, setup.memberCookie);
-    await delay(10);
     expect(connection.messages).toEqual(["synthetic-before-sign-out"]);
     await expectPrivateStatus(
       privateConnect(setup.memberCookie, connection.sessionReference),
@@ -8157,9 +8177,10 @@ describe("canonical private interview output boundary", () => {
       action: "mutation-read",
     });
     expect(await retained.json()).toEqual({ result: { phase: "dispatched" } });
-    await emitPrivateOutput(connection, "synthetic-after-distinct-revocation");
+    await expect(
+      emitPrivateOutput(connection, "synthetic-after-distinct-revocation")
+    ).resolves.toBe(0);
     await expectDirectoryRevoked(directory, setup.memberCookie);
-    await delay(10);
     expect(connection.messages).toEqual([]);
   });
 
@@ -8180,22 +8201,13 @@ describe("canonical private interview output boundary", () => {
         "x-test-private-output-authority-barrier": barrier,
       });
       try {
-        let reached = false;
-        for (let attempt = 0; attempt < 100; attempt += 1) {
-          if (
-            // eslint-disable-next-line no-await-in-loop -- Poll a durable barrier before releasing the deliberately stalled request.
+        await vi.waitUntil(
+          async () =>
             (await observations.get(
               `private-output-read:${barrier}`,
               "text"
             )) === "ready"
-          ) {
-            reached = true;
-            break;
-          }
-          // eslint-disable-next-line no-await-in-loop -- The barrier must be observed between polling intervals.
-          await delay(20);
-        }
-        expect(reached).toBe(true);
+        );
         const revoked = await authRequest(
           "/revoke-sessions",
           {},
@@ -8255,7 +8267,7 @@ describe("canonical private interview output boundary", () => {
         fresh,
         "synthetic-after-canonical-reauthentication"
       );
-      await delay(10);
+      await fresh.messages.waitForCount(1);
       expect(fresh.messages).toEqual([
         "synthetic-after-canonical-reauthentication",
       ]);
@@ -8277,7 +8289,6 @@ describe("canonical private interview output boundary", () => {
       "synthetic-after-active-organization-change"
     );
     await expectDirectoryRevoked(directory, setup.memberCookie);
-    await delay(10);
     expect(connection.messages).toEqual([]);
     await expectPrivateStatus(
       privateConnect(setup.memberCookie, connection.sessionReference),
@@ -8325,9 +8336,10 @@ describe("canonical private interview output boundary", () => {
         .from(authSchema.member)
         .where(eq(authSchema.member.id, setup.memberId))
     ).toEqual([{ id: setup.memberId }]);
-    await emitPrivateOutput(connection, "synthetic-after-household-departure");
+    await expect(
+      emitPrivateOutput(connection, "synthetic-after-household-departure")
+    ).resolves.toBe(0);
     await expectDirectoryRevoked(directory, setup.memberCookie);
-    await delay(10);
     expect(connection.messages).toEqual([]);
     await expectPrivateStatus(
       privateConnect(setup.memberCookie, connection.sessionReference),
@@ -8433,8 +8445,9 @@ describe("canonical private interview output boundary", () => {
       }
     );
     expect(repaired.status, await repaired.clone().text()).toBe(200);
-    await emitPrivateOutput(connection, "synthetic-after-link-repair");
-    await delay(10);
+    await expect(
+      emitPrivateOutput(connection, "synthetic-after-link-repair")
+    ).resolves.toBe(0);
     expect(connection.messages).toEqual([]);
     await expectPrivateStatus(
       privateConnect(setup.memberCookie, connection.sessionReference),
@@ -8469,7 +8482,7 @@ describe("canonical private interview output boundary", () => {
     });
     const fresh = await openPrivateConnection(setup.memberCookie);
     await emitPrivateOutput(fresh, "synthetic-new-explicit-session");
-    await delay(10);
+    await fresh.messages.waitForCount(1);
     expect(fresh.messages).toEqual(["synthetic-new-explicit-session"]);
     fresh.socket.close();
   });
@@ -10383,7 +10396,9 @@ describe("canonical private profile cards", () => {
     expect(signedOut.status).toBe(200);
     await release();
     await pending;
-    await delay(20);
+    await expect(
+      emitPrivateOutput(connection, "synthetic-revoked-generation-probe")
+    ).resolves.toBe(0);
     expect(
       connection.frames.some((frame) => frame.type === "ConfirmationSettled")
     ).toBe(false);

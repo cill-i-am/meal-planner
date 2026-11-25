@@ -40,11 +40,17 @@ const unexpectedBindingMethod = (): never => {
 
 /** Test-only acknowledgment faults and a synchronous clock around the production session. */
 export class PrivateInterviewSession extends ProductionSession {
+  #fixtureTime: number | undefined;
+  protected override outputTime() {
+    return this.#fixtureTime ?? super.outputTime();
+  }
+
   #fixtureDatabase = drizzle(this.ctx.storage);
   #fixtureSocket = new PrivateOutputSocket(
     this.ctx,
     this.#fixtureDatabase,
-    this.env
+    this.env,
+    () => this.outputTime()
   );
 
   constructor(
@@ -95,7 +101,7 @@ export class PrivateInterviewSession extends ProductionSession {
     readonly generation: string;
     readonly payload: string;
   }) {
-    this.#fixtureSocket.send(
+    return this.#fixtureSocket.send(
       input.generation,
       JSON.stringify({
         text: input.payload,
@@ -108,12 +114,12 @@ export class PrivateInterviewSession extends ProductionSession {
     input: Parameters<PrivateInterviewSession["enqueueOutput"]>[0],
     now: number
   ) {
-    const nativeNow = Date.now;
-    Date.now = () => now;
+    const previous = this.#fixtureTime;
+    this.#fixtureTime = now;
     try {
       this.enqueueOutput(input);
     } finally {
-      Date.now = nativeNow;
+      this.#fixtureTime = previous;
     }
   }
 
@@ -124,8 +130,8 @@ export class PrivateInterviewSession extends ProductionSession {
     },
     now: number
   ) {
-    const nativeNow = Date.now;
-    Date.now = () => now;
+    const previous = this.#fixtureTime;
+    this.#fixtureTime = now;
     try {
       const socket = this.ctx.getWebSockets().find(
         (candidate) =>
@@ -139,7 +145,7 @@ export class PrivateInterviewSession extends ProductionSession {
         super.webSocketMessage(socket, input.payload);
       }
     } finally {
-      Date.now = nativeNow;
+      this.#fixtureTime = previous;
     }
   }
   async loseNextInvalidationAcknowledgement() {
@@ -194,6 +200,11 @@ type SessionPort = {
   };
 };
 export class PrivateInterviewDirectory extends ProductionDirectory {
+  #fixtureTime: number | undefined;
+  protected override outputTime() {
+    return this.#fixtureTime ?? super.outputTime();
+  }
+
   readSocketCount() {
     return this.ctx.getWebSockets().length;
   }
@@ -204,8 +215,8 @@ export class PrivateInterviewDirectory extends ProductionDirectory {
     },
     now: number
   ) {
-    const nativeNow = Date.now;
-    Date.now = () => now;
+    const previous = this.#fixtureTime;
+    this.#fixtureTime = now;
     try {
       const socket = this.ctx.getWebSockets().find(
         (candidate) =>
@@ -219,7 +230,7 @@ export class PrivateInterviewDirectory extends ProductionDirectory {
         super.webSocketMessage(socket, input.payload);
       }
     } finally {
-      Date.now = nativeNow;
+      this.#fixtureTime = previous;
     }
   }
   async loseNextInvalidationAcknowledgement() {

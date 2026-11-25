@@ -129,7 +129,7 @@ export const adaptAcquisitionBucket = (
               Effect.andThen(
                 Effect.promise(async () => {
                   abort.abort();
-                  await body.cancel().catch(() => {});
+                  await body.cancel().catch(() => null);
                   await producer;
                 })
               )

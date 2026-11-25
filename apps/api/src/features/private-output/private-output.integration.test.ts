@@ -1,6 +1,5 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 import type {
@@ -207,8 +206,10 @@ const open = async (
   if (socket === null) {
     throw new Error("Expected the child's physical WebSocket");
   }
+  const closed = Promise.withResolvers<undefined>();
+  socket.addEventListener("close", () => closed.resolve(undefined));
   const frames = new EventLog<SessionFrame>();
-  const probes: string[] = [];
+  const probes = new EventLog<string>();
   const Probe = Schema.Struct({
     text: Schema.String,
     type: Schema.Literal("PrivateTransportProbe"),
@@ -227,6 +228,7 @@ const open = async (
     .toBe(true);
   return {
     binding: input,
+    closed: closed.promise,
     frames,
     generation,
     get messages() {
@@ -305,7 +307,7 @@ const emit = (
   generation: string,
   payload: string
 ) =>
-  successful({
+  successful<number>({
     action: "emit",
     generation,
     payload,
@@ -338,7 +340,7 @@ describe("private output on physical native WebSockets", () => {
     const session = await binding();
     const connection = await open(session);
     await emit(session, connection.generation, "synthetic-private-before");
-    await delay(10);
+    await connection.messages.waitForCount(1);
     expect(connection.messages).toEqual(["synthetic-private-before"]);
     const stalledProducer = Promise.withResolvers<null>();
     const delayedOutput = stalledProducer.promise.then(() =>
@@ -359,15 +361,16 @@ describe("private output on physical native WebSockets", () => {
     );
     expect(canonicalCommitted).toBe(true);
     stalledProducer.resolve(null);
-    await delayedOutput;
-    await emit(session, connection.generation, "synthetic-passive-after");
-    await delay(10);
+    await expect(delayedOutput).resolves.toBe(0);
+    await expect(
+      emit(session, connection.generation, "synthetic-passive-after")
+    ).resolves.toBe(0);
     expect(connection.messages).toEqual(["synthetic-private-before"]);
     const fresh = await open(session);
     expect(fresh.generation).not.toBe(connection.generation);
     await emit(session, connection.generation, "synthetic-old-generation");
     await emit(session, fresh.generation, "synthetic-fresh-authorized");
-    await delay(10);
+    await fresh.messages.waitForCount(1);
     expect(fresh.messages).toEqual(["synthetic-fresh-authorized"]);
     fresh.socket.close();
   });
@@ -417,7 +420,7 @@ describe("private output on physical native WebSockets", () => {
     await enqueueAt(expiresAt - 1, "synthetic-before-expiry");
     await enqueueAt(expiresAt, "synthetic-at-expiry");
     await enqueueAt(expiresAt + 1, "synthetic-after-expiry");
-    await delay(10);
+    await connection.messages.waitForCount(1);
     expect(connection.messages).toEqual(["synthetic-before-expiry"]);
     connection.socket.close();
   });
@@ -441,7 +444,7 @@ describe("private output on physical native WebSockets", () => {
       const session = await binding();
       const connection = await open(session);
       connection.socket.send(JSON.stringify(message));
-      await delay(20);
+      await connection.closed;
       expect(connection.messages).toEqual([]);
       connection.socket.close();
       await expectStatus(
@@ -557,8 +560,9 @@ describe("private output on physical native WebSockets", () => {
     expect(
       await port.readMutation({ ...input, operationId: retained.operationId })
     ).toEqual({ phase: "settled" });
-    await emit(session, connection.generation, "synthetic-after-lost-ack");
-    await delay(10);
+    await expect(
+      emit(session, connection.generation, "synthetic-after-lost-ack")
+    ).resolves.toBe(0);
     expect(connection.messages).toEqual([]);
   });
 
@@ -579,10 +583,10 @@ describe("private output on physical native WebSockets", () => {
       await release.promise;
     };
     const first = runOutputFencedMutation(port, input, canonical);
+    await claimed.promise;
     const second = runOutputFencedMutation(port, input, canonical);
     const outcomes = Promise.allSettled([first, second]);
-    await claimed.promise;
-    await delay(20);
+    await expect(second).rejects.toBeDefined();
     expect(writes).toBe(1);
     await successful({
       action: "initialize",
@@ -1776,7 +1780,7 @@ it("reconstructs every long multibyte and escaped native message with stable ide
   });
   expect(modelCalls).toHaveLength(0);
   resumed.socket.close();
-}, 15_000);
+});
 
 it("keeps fixture producers and directory HTTP, SDK, and storage capabilities absent from the production bundle", async () => {
   const productionManifest = await bundleWorkerFixture(
@@ -1884,4 +1888,4 @@ it("keeps fixture producers and directory HTTP, SDK, and storage capabilities ab
     await runtime.dispose();
     runtime = fixtureRuntime;
   }
-}, 30_000);
+});

@@ -118,7 +118,15 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
   #database = instrumentDrizzle(drizzle(this.ctx.storage), {
     attributes: { "db.namespace": "private-output" },
   });
-  #socket = new PrivateOutputSocket(this.ctx, this.#database, this.env);
+  #socket = new PrivateOutputSocket(this.ctx, this.#database, this.env, () =>
+    this.outputTime()
+  );
+
+  readonly #clock = Date;
+
+  protected outputTime() {
+    return this.#clock.now();
+  }
   #turns = new PrivateAssistantTurns(this.#database, this.#socket);
   #chat = new PrivateChatPersistence(this.#database);
   #deliveries = new Map<string, Map<AbortController, string | null>>();
@@ -385,7 +393,9 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       const drain = async () => {
         try {
           await body.pipeTo(new WritableStream());
-        } catch {}
+        } catch {
+          // WARNING: A discarded stream may already be canceled by the caller.
+        }
       };
       this.ctx.waitUntil(drain());
     }
@@ -875,7 +885,7 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       }
       const turn = this.#database.transaction(() => {
         const participant = this.#chat.appendParticipant({
-          createdAt: Date.now(),
+          createdAt: this.outputTime(),
           id: crypto.randomUUID(),
           text,
         });

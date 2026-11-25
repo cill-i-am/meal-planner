@@ -600,26 +600,23 @@ export class PrivateChatPersistence<TRunResult = unknown> {
   }
 
   #wait(runId: string, signal?: AbortSignal) {
-    // eslint-disable-next-line promise/avoid-new -- The SQLite tail wakes on the owner's append/close events or the caller's abort signal.
-
-    const checkedResult = new Promise<void>((resolve) => {
-      const waiters = this.#waiters.get(runId) ?? new Set<() => void>();
-      const wake = () => {
-        waiters.delete(wake);
-        if (waiters.size === 0) {
-          this.#waiters.delete(runId);
-        }
-        signal?.removeEventListener("abort", wake);
-        resolve();
-      };
-      waiters.add(wake);
-      this.#waiters.set(runId, waiters);
-      signal?.addEventListener("abort", wake, { once: true });
-      if (signal?.aborted) {
-        wake();
+    const completion = Promise.withResolvers<undefined>();
+    const waiters = this.#waiters.get(runId) ?? new Set<() => void>();
+    const wake = () => {
+      waiters.delete(wake);
+      if (waiters.size === 0) {
+        this.#waiters.delete(runId);
       }
-    });
-    return checkedResult;
+      signal?.removeEventListener("abort", wake);
+      completion.resolve(undefined);
+    };
+    waiters.add(wake);
+    this.#waiters.set(runId, waiters);
+    signal?.addEventListener("abort", wake, { once: true });
+    if (signal?.aborted) {
+      wake();
+    }
+    return completion.promise;
   }
 
   stream(input: {

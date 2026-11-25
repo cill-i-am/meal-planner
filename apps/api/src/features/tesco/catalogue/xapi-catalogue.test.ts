@@ -70,17 +70,13 @@ const close = async (server: Server) => {
   await once(server, "close");
 };
 
-const readRequestBody = (request: IncomingMessage) =>
-  // eslint-disable-next-line promise/avoid-new -- Node request streams expose callback-only completion events.
-  {
-    const checkedResult = new Promise<string>((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      request.on("data", (chunk: Buffer) => chunks.push(chunk));
-      request.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
-      request.on("error", reject);
-    });
-    return checkedResult;
-  };
+const readRequestBody = async (request: IncomingMessage) => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return Buffer.concat(chunks).toString("utf-8");
+};
 
 const makeConfig = (mangoUrl: URL) => {
   const checkedResult: TescoCatalogueConfig = {

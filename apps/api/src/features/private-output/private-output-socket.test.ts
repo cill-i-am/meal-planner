@@ -23,14 +23,14 @@ afterEach(() => {
 
 const socket = (generation: string | null, readyState = 1) => {
   const connection = {
-    close: vi.fn(),
+    close() {
+      this.readyState = 2;
+    },
     deserializeAttachment: () => ({ generation }),
     readyState,
     send: vi.fn(),
   };
-  connection.close.mockImplementation(() => {
-    connection.readyState = 2;
-  });
+  vi.spyOn(connection, "close");
   return connection;
 };
 const renewal = () => {

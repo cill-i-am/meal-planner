@@ -25,7 +25,9 @@ export const fencePrivateChatResponse = (
   const cancelReader = async () => {
     try {
       await reader.cancel();
-    } catch {}
+    } catch {
+      // WARNING: A failed cancellation must not interrupt transport cleanup.
+    }
   };
   const abort = () => {
     void cancelReader();

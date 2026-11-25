@@ -2,8 +2,8 @@ import * as Cloudflare from "@alchemy.run/cloudflare";
 import {
   WorkflowEvent,
   makeWorkflowBridge,
-  sleep,
   task,
+  waitForEvent,
 } from "@alchemy.run/cloudflare/Workflows";
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
 import { WorkflowEntrypoint } from "cloudflare:workers";
@@ -29,6 +29,10 @@ interface TestKvNamespace {
 }
 
 interface NativeWorkflowInstance {
+  readonly sendEvent: (event: {
+    readonly type: string;
+    readonly payload: Schema.Json;
+  }) => Promise<void>;
   readonly restart: () => Promise<void>;
   readonly status: () => Promise<{
     readonly status: string;
@@ -152,7 +156,9 @@ const workflowExport = {
           message.organizationId ===
           "organization-batch-queue-send-ambiguous-proof"
         ) {
-          yield* sleep("hold-household-batch-claim", "16 seconds");
+          yield* waitForEvent<Schema.Json>("hold-household-batch-claim", {
+            type: "release-batch-claim",
+          });
         }
         const claim = yield* task(
           "claim-household-batch-item",
@@ -271,6 +277,17 @@ export default {
         )
       );
     }
+    if (
+      requestUrl.pathname === "/release-workflow" &&
+      request.method === "POST"
+    ) {
+      const workflowId = Schema.decodeUnknownSync(Schema.String)(
+        requestUrl.searchParams.get("workflowId")
+      );
+      const instance = await environment.BATCH_WORKFLOW.get(workflowId);
+      await instance.sendEvent({ type: "release-batch-claim", payload: null });
+      return new Response(null, { status: 204 });
+    }
     if (requestUrl.pathname === "/workflow") {
       const workflowId = Schema.decodeUnknownSync(Schema.String)(
         requestUrl.searchParams.get("workflowId")
@@ -345,6 +362,10 @@ export default {
           )
         );
         await environment.RESULTS.put("last", JSON.stringify(receipt));
+        await environment.RESULTS.put(
+          "completed-deliveries",
+          String(attempts + 1)
+        );
       })
     );
   },

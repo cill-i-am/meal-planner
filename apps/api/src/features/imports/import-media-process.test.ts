@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { Cause, Effect, Exit, Fiber, Option } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   makeMediaProcessRunner,
@@ -18,6 +18,8 @@ import {
   MaximumTemporaryFileBytes,
   MaximumTemporaryFiles,
 } from "./import-media.model.js";
+
+afterEach(() => vi.useRealTimers());
 
 const expectSafeFailure = async (effect: Effect.Effect<unknown, unknown>) => {
   const exit = await Effect.runPromiseExit(effect);
@@ -176,20 +178,21 @@ describe("bounded media process execution", () => {
   it.each(["resolves", "rejects"] as const)(
     "joins an active periodic workspace scan before the final check and settlement when the executor %s",
     async (executorSettlement) => {
+      vi.useFakeTimers({
+        toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+      });
       let executions = 0;
       let finalizers = 0;
       let finalizersWhenFinalScan: number | undefined;
       let rawScanSettled = false;
       let scans = 0;
       const periodicScanStarted = Promise.withResolvers<null>();
+      const releaseExecutor = Promise.withResolvers<undefined>();
       const runner = makeMediaProcessRunner(
         async () => {
           executions += 1;
           await periodicScanStarted.promise;
-          // eslint-disable-next-line promise/avoid-new -- Real time lets multiple poll ticks challenge the single-flight owner.
-          await new Promise<void>((resolve) => {
-            setTimeout(resolve, 60);
-          });
+          await releaseExecutor.promise;
           if (executorSettlement === "rejects") {
             throw new Error("provider-secret-fragment");
           }
@@ -237,6 +240,9 @@ describe("bounded media process execution", () => {
           rawScanSettledAtSettlement: rawScanSettled,
           scansAtSettlement: scans,
         }));
+        await vi.advanceTimersByTimeAsync(100);
+        releaseExecutor.resolve(undefined);
+        await vi.advanceTimersByTimeAsync(25);
         const result = await Promise.race([
           completion,
           hardBoundMissed.promise,
@@ -264,10 +270,7 @@ describe("bounded media process execution", () => {
         expect(executions).toBe(1);
 
         const settledScanCount = scans;
-        // eslint-disable-next-line promise/avoid-new -- The observation window proves no poll survives settlement.
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, 50);
-        });
+        await vi.advanceTimersByTimeAsync(50);
         expect(scans).toBe(settledScanCount);
         expect(finalizers).toBe(1);
       } finally {
@@ -277,6 +280,9 @@ describe("bounded media process execution", () => {
   );
 
   it("joins the active workspace scan before upstream interruption settles", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+    });
     let finalizers = 0;
     let finalizersWhenFinalScan: number | undefined;
     let rawScanSettled = false;
@@ -332,6 +338,7 @@ describe("bounded media process execution", () => {
     );
 
     try {
+      await vi.advanceTimersByTimeAsync(25);
       await executorSettled.promise;
       upstream.abort();
       const result = await Promise.race([completion, hardBoundMissed.promise]);
@@ -347,10 +354,7 @@ describe("bounded media process execution", () => {
       expect(result.scansAtSettlement).toBe(3);
 
       const settledScanCount = scans;
-      // eslint-disable-next-line promise/avoid-new -- The observation window proves no poll survives interruption.
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 50);
-      });
+      await vi.advanceTimersByTimeAsync(50);
       expect(scans).toBe(settledScanCount);
       expect(finalizers).toBe(1);
     } finally {

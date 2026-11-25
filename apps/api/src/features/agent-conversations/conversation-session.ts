@@ -599,7 +599,9 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
     const settled = (async () => {
       try {
         await outcome.promise;
-      } catch {}
+      } catch {
+        // WARNING: The owning request reports failure; this background observer only waits for settlement.
+      }
     })();
     this.#running.set(request.turnId, outcome.promise);
     const controller = new AbortController();
@@ -769,6 +771,7 @@ export class AgentConversation extends Agent<ConversationEnvironment> {
       const producer = (async () => {
         try {
           for await (const _chunk of stream) {
+            // WARNING: Output is persisted through callbacks; the producer still has to drive the stream.
           }
         } catch (error) {
           onFailure(

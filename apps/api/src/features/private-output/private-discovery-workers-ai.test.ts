@@ -1,7 +1,17 @@
 import type { ChatMiddleware, ModelMessage, StreamChunk } from "@tanstack/ai";
 import type { CloudflareBindingConfig } from "@tanstack/ai-cloudflare";
 import { Cause, Effect, Exit, Option, Schema } from "effect";
-import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { http } from "msw";
+import { setupServer } from "msw/node";
+import {
+  beforeAll,
+  afterAll,
+  afterEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import { responsesToolSse } from "../../test/cloudflare-responses.fixture.js";
 import { PrivateChatReply } from "./private-chat-reply.js";
@@ -160,13 +170,14 @@ const fixture = (
     Promise.resolve(response()),
   configuration: PrivateDiscoveryConfiguration = config
 ) => {
-  const run = vi.fn(
-    (
+  const binding = {
+    run: (
       _model: string,
       _body: Record<string, unknown>,
       options: CapturedOptions
-    ) => respond(options)
-  );
+    ) => respond(options),
+  };
+  const run = vi.spyOn(binding, "run");
   const model = makePrivateDiscoveryModel({
     PRIVATE_DISCOVERY_CONFIG: JSON.stringify(configuration),
     PrivateDiscoveryAI: {
@@ -182,9 +193,18 @@ const fixture = (
     },
   });
   const beforeDispatch = vi.fn();
-  const accept = vi.fn((_result: PrivateDiscoveryResult) => reply);
-  const fail = vi.fn((_failure: PrivateDiscoveryFailure) => {});
-  const dispose = vi.fn();
+  const disposed = Promise.withResolvers<undefined>();
+  const failures: PrivateDiscoveryFailure[] = [];
+  const callbacks = {
+    accept: (_result: PrivateDiscoveryResult) => reply,
+    dispose: () => disposed.resolve(undefined),
+    fail: (failure: PrivateDiscoveryFailure) => {
+      failures.push(failure);
+    },
+  };
+  const accept = vi.spyOn(callbacks, "accept");
+  const dispose = vi.spyOn(callbacks, "dispose");
+  const fail = vi.spyOn(callbacks, "fail");
   const onFinish = vi.fn<NonNullable<ChatMiddleware["onFinish"]>>();
   const startedMessages: (readonly ModelMessage[])[] = [];
   const middleware: ChatMiddleware = {
@@ -212,6 +232,7 @@ const fixture = (
     accept,
     beforeDispatch,
     dispose,
+    disposed: disposed.promise,
     fail,
     generateInput: {
       beforeDispatch,
@@ -256,28 +277,39 @@ afterEach(() => {
 });
 afterAll(() => providerLogs.mockRestore());
 
+const providerServer = setupServer();
+beforeAll(() => {
+  providerServer.listen({ onUnhandledRequest: "error" });
+});
+afterEach(() => providerServer.resetHandlers());
+afterAll(() => providerServer.close());
+
 describe("private discovery native TanStack provider", () => {
   it("uses Luna Responses for private discovery with no provider retention", async () => {
     const accountId = "a".repeat(32);
     const requestBodies: unknown[] = [];
-    const fakeFetch: typeof fetch = async (input, init) => {
-      const request = new Request(input, init);
-      expect(request.url).toBe(
-        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/responses`
-      );
-      expect(request.headers.get("cf-aig-gateway-id")).toBe("private-test");
-      expect(request.headers.get("cf-aig-collect-log")).toBe("false");
-      expect(request.headers.get("cf-aig-skip-cache")).toBe("true");
-      requestBodies.push(JSON.parse(await request.text()));
-      return new Response(
-        responsesToolSse(JSON.stringify(output), "submitDiscoveryTurn", {
-          input_tokens: 100,
-          output_tokens: 50,
-          total_tokens: 150,
-        }),
-        { headers: { "content-type": "text/event-stream" } }
-      );
-    };
+    providerServer.use(
+      http.post(
+        `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/responses`,
+        async ({ request }) => {
+          expect(request.url).toBe(
+            `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1/responses`
+          );
+          expect(request.headers.get("cf-aig-gateway-id")).toBe("private-test");
+          expect(request.headers.get("cf-aig-collect-log")).toBe("false");
+          expect(request.headers.get("cf-aig-skip-cache")).toBe("true");
+          requestBodies.push(JSON.parse(await request.text()));
+          return new Response(
+            responsesToolSse(JSON.stringify(output), "submitDiscoveryTurn", {
+              input_tokens: 100,
+              output_tokens: 50,
+              total_tokens: 150,
+            }),
+            { headers: { "content-type": "text/event-stream" } }
+          );
+        }
+      )
+    );
     const model = makePrivateDiscoveryModel({
       CLOUDFLARE_ACCOUNT_ID: accountId,
       CLOUDFLARE_API_TOKEN: "test-ai-token",
@@ -290,7 +322,6 @@ describe("private discovery native TanStack provider", () => {
         provider: "cloudflare-responses",
         timeoutMs: 120_000,
       }),
-      responsesFetch: fakeFetch,
     });
     const beforeDispatch = vi.fn();
     const result = await Effect.runPromise(
@@ -788,7 +819,8 @@ describe("private discovery native TanStack provider", () => {
         test.input.abortController.abort();
       }
       expect(test.input.abortController.signal.aborted).toBe(true);
-      await expect.poll(() => test.dispose.mock.calls.length).toBe(1);
+      await test.disposed;
+      expect(test.dispose).toHaveBeenCalledOnce();
       expectRejected(test, "outcome_unknown");
       expect(test.fail).toHaveBeenCalledOnce();
       pending.resolve(response());
@@ -803,11 +835,13 @@ describe("private discovery native TanStack provider", () => {
   it("rejects a tool stream completed after participant cancellation", async () => {
     const reading =
       Promise.withResolvers<ReadableStreamDefaultController<Uint8Array>>();
+    const cancelled = Promise.withResolvers<undefined>();
     let sentPrefix = false;
     const test = fixture(() =>
       Promise.resolve(
         new Response(
           new ReadableStream<Uint8Array>({
+            cancel: () => cancelled.resolve(undefined),
             pull(controller) {
               if (sentPrefix) {
                 reading.resolve(controller);
@@ -824,9 +858,11 @@ describe("private discovery native TanStack provider", () => {
     const running = observe(test.model.stream(test.input));
     const controller = await reading.promise;
     test.input.abortController.abort();
-    await expect.poll(() => test.dispose.mock.calls.length).toBe(1);
+    await test.disposed;
+    expect(test.dispose).toHaveBeenCalledOnce();
     expectRejected(test, "outcome_unknown");
     expect(test.fail).toHaveBeenCalledOnce();
+    await cancelled.promise;
     expect(() =>
       controller.enqueue(
         new TextEncoder().encode(

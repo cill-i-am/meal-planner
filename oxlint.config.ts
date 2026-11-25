@@ -91,6 +91,16 @@ export default defineConfig({
     "anti-slop/no-conditional-empty-object-spread": "error",
     "anti-slop/no-runtime-typeof": "error",
     "anti-slop/no-unknown-parameters": "error",
+    // WARNING: These opt-in real-runtime suites exercise Docker provisioning, native expiry, and a measured provider budget window.
+    "landmines-testing/no-flake-masking": [
+      "error",
+      {
+        allow: {
+          "apps/api/vitest.container.config.ts": 2,
+          "scripts/sigen-worker-runtime.test.ts": 1,
+        },
+      },
+    ],
     complexity: ["error", { max: 20 }],
   },
 });

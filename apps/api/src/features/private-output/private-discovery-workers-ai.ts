@@ -220,7 +220,9 @@ class PrivateDiscoveryTextAdapter extends CloudflareTextAdapter<
   }
 
   // oxlint-disable-next-line class-methods-use-this -- The provider hook deliberately suppresses reasoning before SDK history accumulation.
-  protected override extractReasoning = () => undefined;
+  protected override extractReasoning: () => undefined = () => {
+    // WARNING: Provider reasoning must not enter the persisted conversation.
+  };
 }
 
 class PrivateDiscoveryResponsesAdapter extends OpenAIBaseResponsesTextAdapter<"openai/gpt-6-luna"> {
@@ -682,6 +684,7 @@ export const makePrivateDiscoveryModel = (
             });
 
             for await (const _chunk of stream) {
+              // WARNING: Driving the stream is required for the persistence callbacks.
             }
             if (problem) {
               throw problem;

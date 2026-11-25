@@ -93,13 +93,17 @@ const isCanonicalPostUrl = (url: URL) =>
 const ignoreCancellation = async (cancellation: Promise<unknown>) => {
   try {
     await cancellation;
-  } catch {}
+  } catch {
+    // WARNING: Cancellation can race with the stream closing; preserve the original failure.
+  }
 };
 
 const cancelBestEffort = (cancel: () => Promise<unknown>) => {
   try {
     void ignoreCancellation(cancel());
-  } catch {}
+  } catch {
+    // WARNING: The stream can be released before cancellation starts.
+  }
 };
 
 const cancelResponseBody = (response: Response) =>

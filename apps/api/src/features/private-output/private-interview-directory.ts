@@ -51,7 +51,15 @@ export class PrivateInterviewDirectory extends DurableObject<PrivateInterviewEnv
   #database = instrumentDrizzle(drizzle(this.ctx.storage), {
     attributes: { "db.namespace": "private-output" },
   });
-  #socket = new PrivateOutputSocket(this.ctx, this.#database, this.env);
+  #socket = new PrivateOutputSocket(this.ctx, this.#database, this.env, () =>
+    this.outputTime()
+  );
+
+  readonly #clock = Date;
+
+  protected outputTime() {
+    return this.#clock.now();
+  }
   constructor(
     context: NativeCloudflare.DurableObjectState,
     environment: PrivateInterviewEnvironment
@@ -269,7 +277,7 @@ export class PrivateInterviewDirectory extends DurableObject<PrivateInterviewEnv
         const reservation = transaction
           .insert(privateReservations)
           .values({
-            createdAt: Date.now(),
+            createdAt: this.outputTime(),
             sessionReference: crypto.randomUUID(),
           })
           .returning()

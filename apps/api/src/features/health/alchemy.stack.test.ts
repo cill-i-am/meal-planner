@@ -70,9 +70,7 @@ test(
     const page = yield* Test.getWhenReady(`${output.gatewayUrl}/signup`);
     expect(page.status).toBe(200);
     expect(yield* page.text).toContain("<!DOCTYPE html>");
-  }),
-
-  { timeout: 600_000 }
+  })
 );
 
 test(

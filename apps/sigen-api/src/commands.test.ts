@@ -56,12 +56,20 @@ const fixture = async (enabled = true) => {
           : Effect.fail(failure("PermissionDenied"))
       ),
   };
-  const dispatch = vi.fn(() => {
-    const checkedResult: Effect.Effect<void, SigenFailure> = Effect.sync(() => {
-      snapshot = solar(2000);
-    });
-    return checkedResult;
-  });
+  let dispatchOutcome: "accepted" | "ambiguous" | "interrupt" = "accepted";
+  const dispatchControl = () => {
+    const outcomes: Record<
+      typeof dispatchOutcome,
+      Effect.Effect<void, SigenFailure>
+    > = {
+      accepted: Effect.sync(() => {
+        snapshot = solar(2000);
+      }),
+      ambiguous: Effect.fail(failure("UpstreamUnavailable")),
+      interrupt: Effect.interrupt,
+    };
+    return outcomes[dispatchOutcome];
+  };
   const storage = {
     read: Effect.sync(() => book),
     write: (value: CommandBook) =>
@@ -70,10 +78,11 @@ const fixture = async (enabled = true) => {
       }),
   };
   const client = {
-    dispatchControl: dispatch,
+    dispatchControl,
     inspectControl: () => Effect.sync(() => snapshot),
     validateControl: () => Effect.void,
   };
+  const dispatch = vi.spyOn(client, "dispatchControl");
   const make = (
     operations: readonly ControlOperation[] = enabled
       ? ControlOperation.literals
@@ -97,6 +106,9 @@ const fixture = async (enabled = true) => {
       currentConnection = "second-enrollment";
     },
     service,
+    setDispatchOutcome: (outcome: typeof dispatchOutcome) => {
+      dispatchOutcome = outcome;
+    },
     setBook: (value: CommandBook) => {
       book = value;
     },
@@ -295,9 +307,7 @@ describe("durable physical commands", () => {
     const f = await fixture();
     const prepared = await f.prepare();
     await run(f.service.approveCommand(approvedInput(prepared)));
-    f.dispatch.mockImplementation(() =>
-      Effect.fail(failure("UpstreamUnavailable"))
-    );
+    f.setDispatchOutcome("ambiguous");
     expect(
       await run(f.service.executeCommand(identity(prepared)))
     ).toMatchObject({ phase: { status: "outcome_unknown" } });
@@ -314,9 +324,7 @@ describe("durable physical commands", () => {
     const f = await fixture();
     const prepared = await f.prepare();
     await run(f.service.approveCommand(approvedInput(prepared, "always")));
-    f.dispatch.mockImplementation(() =>
-      Effect.fail(failure("UpstreamUnavailable"))
-    );
+    f.setDispatchOutcome("ambiguous");
     await run(f.service.executeCommand(identity(prepared)));
     f.reconnect();
     expect(await run(f.service.approvalGrants(stationId))).toEqual({
@@ -340,7 +348,7 @@ describe("durable physical commands", () => {
     const f = await fixture();
     const prepared = await f.prepare();
     await run(f.service.approveCommand(approvedInput(prepared)));
-    f.dispatch.mockImplementation(() => Effect.interrupt);
+    f.setDispatchOutcome("interrupt");
     await expect(
       run(f.service.executeCommand(identity(prepared)))
     ).rejects.toBeDefined();

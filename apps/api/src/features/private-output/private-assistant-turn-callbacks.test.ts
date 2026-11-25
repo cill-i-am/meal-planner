@@ -114,9 +114,7 @@ const setup = () => {
       singleton: 1,
       status: "connected",
     }),
-    send: (_generation, frame) => {
-      frames.push(frame);
-    },
+    send: (_generation, frame) => frames.push(frame),
   });
   const turnId = "run-fixture-callback";
   turns.queue({

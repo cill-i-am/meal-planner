@@ -46,21 +46,24 @@ export class PrivateOutputSocket<TRunResult = unknown> {
   #context: OutputSocketContext;
   #database: SQLiteAsyncDatabase<"sync", TRunResult>;
   #environment: OutputSocketEnvironment;
+  readonly #now: () => number;
   constructor(
     context: OutputSocketContext,
     database: SQLiteAsyncDatabase<"sync", TRunResult>,
-    environment: OutputSocketEnvironment
+    environment: OutputSocketEnvironment,
+    now = () => Date.now()
   ) {
     this.#context = context;
     this.#database = database;
     this.#environment = environment;
+    this.#now = now;
   }
   restart() {
     const current = this.read();
     const sockets = this.#context.getWebSockets();
     const resumed = new Set<OutputSocket>();
 
-    if (current?.status === "connected" && Date.now() < current.expiresAt) {
+    if (current?.status === "connected" && this.#now() < current.expiresAt) {
       for (const socket of sockets) {
         const attachment: unknown = socket.deserializeAttachment();
         if (
@@ -107,7 +110,7 @@ export class PrivateOutputSocket<TRunResult = unknown> {
     target: Omit<OutputRegistration, "generation">
   ) {
     const current = this.readRequest();
-    if (current?.status === "request" && Date.now() < current.expiresAt) {
+    if (current?.status === "request" && this.#now() < current.expiresAt) {
       const checkedResult: Promise<string> = Promise.resolve(
         current.generation
       );
@@ -166,7 +169,7 @@ export class PrivateOutputSocket<TRunResult = unknown> {
     }
   }
   authorize(generation: string, expiresAt: number) {
-    if (expiresAt <= Date.now()) {
+    if (expiresAt <= this.#now()) {
       throw new PrivateOutputUnavailable({ reason: "authority_unavailable" });
     }
     const updated = this.#database
@@ -186,7 +189,7 @@ export class PrivateOutputSocket<TRunResult = unknown> {
   }
   /** Fresh authority may renew a live request lease, but cannot revive a stale grant. */
   authorizeRequest(generation: string, expiresAt: number) {
-    const now = Date.now();
+    const now = this.#now();
     if (expiresAt <= now) {
       throw new PrivateOutputUnavailable({ reason: "authority_unavailable" });
     }
@@ -226,7 +229,7 @@ export class PrivateOutputSocket<TRunResult = unknown> {
     if (
       current?.status !== "authorized" ||
       current.generation !== generation ||
-      Date.now() >= current.expiresAt
+      this.#now() >= current.expiresAt
     ) {
       const checkedResult: NativeCloudflare.Response = new Response(null, {
         status: 403,
@@ -267,7 +270,7 @@ export class PrivateOutputSocket<TRunResult = unknown> {
       const checkedResult: boolean =
         (current?.status === "connected" || current?.status === "request") &&
         current.generation === generation &&
-        Date.now() < current.expiresAt;
+        this.#now() < current.expiresAt;
       return checkedResult;
     }
   }
@@ -277,7 +280,7 @@ export class PrivateOutputSocket<TRunResult = unknown> {
       const checkedResult: boolean =
         current?.status === "request" &&
         current.generation === generation &&
-        Date.now() < current.expiresAt;
+        this.#now() < current.expiresAt;
       return checkedResult;
     }
   }
@@ -287,11 +290,12 @@ export class PrivateOutputSocket<TRunResult = unknown> {
       const checkedResult: boolean =
         current?.status === "connected" &&
         current.generation === generation &&
-        Date.now() < current.expiresAt;
+        this.#now() < current.expiresAt;
       return checkedResult;
     }
   }
   send(generation: string, payload: string) {
+    let deliveries = 0;
     for (const socket of this.#context.getWebSockets()) {
       if (socket.readyState !== WebSocket.OPEN) {
         continue;
@@ -302,8 +306,10 @@ export class PrivateOutputSocket<TRunResult = unknown> {
 
       if (attached.generation === generation && this.#isConnected(generation)) {
         socket.send(payload);
+        deliveries += 1;
       }
     }
+    return deliveries;
   }
   invalidate(untrusted: typeof Generation.Type) {
     const { generation } = Schema.decodeUnknownSync(Generation, {

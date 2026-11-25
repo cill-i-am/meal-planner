@@ -3,13 +3,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 
 import * as Bundle from "alchemy/Bundle";
 import { Effect } from "effect";
 import { Miniflare } from "miniflare";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { workerObservability } from "../../infrastructure/worker-observability.js";
 import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
@@ -128,9 +127,10 @@ describe.skipIf(!enabled)("native generation container lifetime", () => {
       const [abandonedId] = await processes();
       expect(abandonedId).toBeDefined();
       const acquisition = call("/acquire");
-      await delay(3000);
-      expect(await call("/inspect")).toMatchObject({ running: true });
-      expect(await processes()).toHaveLength(2);
+      await vi.waitFor(async () => {
+        expect(await call("/inspect")).toMatchObject({ running: true });
+        expect(await processes()).toHaveLength(2);
+      });
       const result = await acquisition;
       expect(result.result._tag).toBe("VerifiedAcquisition");
       expect(result.beforeRelease.running).toBe(true);

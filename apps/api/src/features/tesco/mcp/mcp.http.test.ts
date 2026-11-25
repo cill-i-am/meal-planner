@@ -38,18 +38,24 @@ const setup = (
   overrides: Partial<TescoMcpCapabilities> = {},
   admitted = true
 ) => {
-  const search = vi.fn(() => Effect.succeed(products));
-  const enroll = vi.fn(() => Effect.succeed(health));
-  const disconnect = vi.fn(() => Effect.void);
-  const sessionReport = vi.fn(() =>
-    Effect.succeed({
-      alarmAt: null,
-      hasEncryptedSession: false,
-      health,
-      renewals: [],
-    })
-  );
-  const rateLimit = vi.fn(() => Effect.succeed(admitted));
+  const capabilities = {
+    disconnect: () => Effect.void,
+    enroll: () => Effect.succeed(health),
+    rateLimit: () => Effect.succeed(admitted),
+    search: () => Effect.succeed(products),
+    sessionReport: () =>
+      Effect.succeed({
+        alarmAt: null,
+        hasEncryptedSession: false,
+        health,
+        renewals: [],
+      }),
+  };
+  const search = vi.spyOn(capabilities, "search");
+  const enroll = vi.spyOn(capabilities, "enroll");
+  const disconnect = vi.spyOn(capabilities, "disconnect");
+  const sessionReport = vi.spyOn(capabilities, "sessionReport");
+  const rateLimit = vi.spyOn(capabilities, "rateLimit");
   const handler = makeTescoMcpHttpHandler({
     capabilities: {
       basket: Effect.fail(new TescoSessionFailure({ reason: "upstream" })),

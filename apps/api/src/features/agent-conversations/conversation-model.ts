@@ -203,7 +203,9 @@ class ConversationTextAdapter extends CloudflareTextAdapter<
   }
 
   // oxlint-disable-next-line class-methods-use-this -- Reasoning must not enter shared or private message history.
-  protected override extractReasoning = () => undefined;
+  protected override extractReasoning: () => undefined = () => {
+    // WARNING: Provider reasoning must not enter the persisted conversation.
+  };
 }
 
 class ConversationResponsesAdapter extends OpenAIBaseResponsesTextAdapter<"openai/gpt-6-luna"> {

@@ -18,9 +18,9 @@ export class EventLog<A> extends Array<A> {
     if (this.length >= minimum) {
       return Promise.resolve();
     }
-    const completion = Promise.withResolvers<void>();
+    const completion = Promise.withResolvers<undefined>();
     const listeners = this.#waiters.get(minimum) ?? new Set();
-    listeners.add(completion.resolve);
+    listeners.add(() => completion.resolve(undefined));
     this.#waiters.set(minimum, listeners);
     return completion.promise;
   }

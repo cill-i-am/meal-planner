@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { setTimeout } from "node:timers/promises";
 
 import { WorkerBundle } from "@alchemy.run/cloudflare/Workers/Sources/Rolldown";
 import { NodeServices } from "@effect/platform-node";
@@ -10,7 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Context, Effect, Schema } from "effect";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { Command } from "../packages/sigen/src/controls.js";
 
@@ -51,6 +50,14 @@ it(
     );
     const persistence = await mkdtemp(path.join(tmpdir(), "sigen-runtime-"));
     let renewals = 0;
+    let lastProviderTrafficAt = 0;
+    const observedRenewals = Promise.withResolvers<undefined>();
+    const recordRenewal = () => {
+      renewals += 1;
+      if (renewals === 3) {
+        observedRenewals.resolve(undefined);
+      }
+    };
     let solarPowerLimit = "4294967.295";
     let physicalWrites = 0;
     const makeRuntime = (controlsEnabled = false) =>
@@ -86,6 +93,7 @@ it(
             })),
           modulesRoot: path.dirname(bundle.files[0].path),
           outboundService: async (request) => {
+            lastProviderTrafficAt = Date.now();
             const url = new URL(request.url);
             expect(url.origin).toBe("https://api-eu.sigencloud.com");
             if (url.pathname === "/auth/oauth/token") {
@@ -97,7 +105,7 @@ it(
               }
               if (form.get("grant_type") === "refresh_token") {
                 expect(form.get("refresh_token")).toBe(`refresh-${renewals}`);
-                renewals += 1;
+                recordRenewal();
               } else {
                 expect(form.get("grant_type")).toBe("password");
                 expect(form.get("password")).not.toBe("fixture-password");
@@ -373,14 +381,7 @@ it(
         method: "POST",
       });
       expect(enrolled.status).toBe(200);
-      const deadline = Date.now() + 20_000;
-      while (Date.now() < deadline) {
-        if (renewals >= 3) {
-          break;
-        }
-        // eslint-disable-next-line no-await-in-loop -- Wait for real workerd alarms rather than manually forcing expiry.
-        await setTimeout(250);
-      }
+      await observedRenewals.promise;
       expect(renewals).toBe(3);
       const station = await client.callTool({
         arguments: { stationId: "12345" },
@@ -586,7 +587,16 @@ it(
         return { body: await response.json(), status: response.status };
       };
 
-      await setTimeout(60_000);
+      const budgetWindowClosesAt = lastProviderTrafficAt + 60_000;
+      expect(lastProviderTrafficAt).toBeGreaterThan(0);
+      await vi.waitUntil(() => Date.now() > budgetWindowClosesAt, {
+        interval: 250,
+        timeout: 65_000,
+      });
+      const readiness = await postCommand("get_station", {
+        stationId: "12345",
+      });
+      expect(readiness.status).toBe(200);
       const commandIdentity = { commandId, stationId: "12345" };
       const executed = await postCommand("execute_command", commandIdentity);
       expect(executed.body).toMatchObject({ phase: { status: "verified" } });
