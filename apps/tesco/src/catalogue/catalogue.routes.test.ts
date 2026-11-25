@@ -2,8 +2,8 @@ import { Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { AppRoutes } from "../../../app/routes.js";
-import { JsonHttpPlatformServices } from "../../../infrastructure/json-http-platform.js";
+import { JsonHttpPlatformServices } from "../json-http-platform.js";
+import { AppRoutes } from "../server/routes.js";
 import {
   TescoCatalogueAuthenticationUnavailable,
   TescoCatalogueRequestRejected,

@@ -4,7 +4,7 @@ import { NodeHttpClient, NodeHttpServer } from "@effect/platform-node";
 import { Layer } from "effect";
 import { HttpRouter } from "effect/http";
 
-import { TescoLive } from "../features/tesco/tesco.layer.js";
+import { TescoLive } from "../tesco.layer.js";
 import { AppConfig, AppConfigLive } from "./config.js";
 import { AppRoutes } from "./routes.js";
 

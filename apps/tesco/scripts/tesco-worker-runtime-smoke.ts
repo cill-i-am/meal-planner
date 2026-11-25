@@ -1,23 +1,43 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 
+import { WorkerBundle } from "@alchemy.run/cloudflare/Workers/Sources/Rolldown";
+import { NodeServices } from "@effect/platform-node";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { Schema } from "effect";
+import { Context, Effect, Schema } from "effect";
 import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 
 import {
   TescoConnectionHealth,
   TescoSessionReport,
-} from "../apps/api/src/features/tesco/mcp/session.model.js";
+} from "../src/mcp/session.model.js";
 
-const directory = path.resolve(".alchemy/bundles/TescoMcp-prod-TescoMcp");
-const files = await readdir(directory);
-const chunks = files.filter(
-  (file) => file.endsWith(".js") && file !== "worker.js"
+const bundler = await Effect.runPromise(
+  WorkerBundle.pipe(Effect.provide(NodeServices.layer))
+);
+const bundle = await Effect.runPromise(
+  bundler
+    .build({
+      compatibility: { date: "2026-10-18", flags: ["nodejs_compat"] },
+      entry: {
+        exports: {
+          TescoSessionObject: {
+            constructor: Effect.succeed(Effect.succeed({})),
+            kind: "durableObject",
+            services: Context.empty(),
+          },
+        },
+        kind: "effect",
+      },
+      extraOptions: {},
+      id: "TescoRuntimeCheck",
+      main: new URL("../src/mcp/worker.ts", import.meta.url).href,
+      stack: { name: "TescoMcp", stage: "prod" },
+    })
+    .pipe(Effect.provide(NodeServices.layer))
 );
 const executorToken = "e".repeat(64);
 const operatorToken = "f".repeat(64);
@@ -59,11 +79,14 @@ const runtime = new Miniflare(
       TescoSessionObject: { className: "TescoSessionObject", useSQLite: true },
     },
     host: "127.0.0.1",
-    modules: ["worker.js", ...chunks].map((file) => ({
-      path: path.join(directory, file),
-      type: "ESModule",
-    })),
-    modulesRoot: directory,
+    modules: bundle.files
+      .filter((file) => file.path.endsWith(".js"))
+      .map((file) => ({
+        contents: file.content,
+        path: file.path,
+        type: "ESModule" as const,
+      })),
+    modulesRoot: path.dirname(bundle.files[0].path),
     outboundService: (request) => {
       const url = new URL(request.url);
       if (url.origin === "https://xapi.tesco.com") {

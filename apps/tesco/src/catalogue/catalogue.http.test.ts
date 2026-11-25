@@ -8,7 +8,7 @@ import {
 import { HttpApiClient } from "effect/http-api";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { JsonHttpPlatformServices } from "../../../infrastructure/json-http-platform.js";
+import { JsonHttpPlatformServices } from "../json-http-platform.js";
 import { TescoCatalogueApi } from "./catalogue.http.js";
 import {
   CatalogueProductResults,

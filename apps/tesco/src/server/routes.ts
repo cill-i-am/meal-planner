@@ -1,8 +1,8 @@
 import { Effect, Layer } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/http";
 
-import { HealthRoutes } from "../features/health/health.routes.js";
-import { TescoCatalogueRoutes } from "../features/tesco/catalogue/catalogue.routes.js";
+import { TescoCatalogueRoutes } from "../catalogue/catalogue.routes.js";
+import { HealthRoutes } from "./health.routes.js";
 
 export const AppRoutes = Layer.merge(
   TescoCatalogueRoutes,

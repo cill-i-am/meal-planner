@@ -115,6 +115,8 @@ jobs:
             command: pnpm --recursive --filter './packages/**' test
           - name: sigen-api
             command: pnpm --filter @meal-planner/sigen-api test
+          - name: tesco
+            command: pnpm --filter @meal-planner/tesco test && pnpm --filter @meal-planner/tesco test:runtime
           - name: recipe-extraction
             command: pnpm evals:recipe:test
           - name: api-1-of-7

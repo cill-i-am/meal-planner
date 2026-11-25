@@ -12,7 +12,7 @@
     "check": "pnpm evals:check && tsc -p tsconfig.alchemy.json --noEmit && pnpm --recursive check",
     "db:generate": "pnpm --filter @meal-planner/api db:generate",
     "dev": "alchemy dev --env-file .dev.vars",
-    "dev:tesco": "pnpm --filter @meal-planner/api dev",
+    "dev:tesco": "pnpm --filter @meal-planner/tesco dev",
     "docs:check": "python3 scripts/check-docs.py",
     "docs:test": "python3 -m unittest discover -s scripts/tests -p 'test_docs_check.py'",
     "evals:check": "node --import tsx evals/private-discovery/validate.ts && pnpm evals:recipe:check",
