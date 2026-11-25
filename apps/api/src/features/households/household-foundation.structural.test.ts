@@ -16,7 +16,7 @@ const readProductionHouseholdSources = async () => {
         (relativePath) =>
           relativePath.endsWith(".ts") &&
           !relativePath.endsWith(".test.ts") &&
-          !relativePath.endsWith(".test-fixture.ts") &&
+          !relativePath.endsWith(".fixture.ts") &&
           relativePath !== "shared-kernel/authority-services.live.ts"
       )
       .map(async (relativePath) => ({
@@ -34,7 +34,7 @@ const readProductionFeatureSources = async () => {
         (relativePath) =>
           relativePath.endsWith(".ts") &&
           !relativePath.endsWith(".test.ts") &&
-          !relativePath.endsWith(".test-fixture.ts")
+          !relativePath.endsWith(".fixture.ts")
       )
       .map(async (relativePath) => ({
         path: relativePath,

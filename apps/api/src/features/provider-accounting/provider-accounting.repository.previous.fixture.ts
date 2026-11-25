@@ -159,7 +159,9 @@ const isValidConservativeSettlement = (
   Sha256Pattern.test(input.replay.valueSha256) &&
   isRecipeReplayDispatchId(input.dispatchId, input.replay);
 
-const replayFromRow = (row: DispatchRow) => {
+const replayFromRow = (
+  row: DispatchRow
+): ProviderAccountingDispatch["conservativeReplay"] | undefined => {
   const replay = Option.getOrUndefined(decodeReplayRow(row));
   if (
     replay === undefined ||
@@ -169,23 +171,15 @@ const replayFromRow = (row: DispatchRow) => {
       importId: replay.replay_import_id,
     })
   ) {
-    const checkedResult:
-      | ProviderAccountingDispatch["conservativeReplay"]
-      | undefined = undefined;
-    return checkedResult;
+    return undefined;
   }
-  {
-    const checkedResult:
-      | ProviderAccountingDispatch["conservativeReplay"]
-      | undefined = {
-      evidenceFingerprint: replay.replay_evidence_fingerprint,
-      generation: replay.replay_generation,
-      importId: replay.replay_import_id,
-      valueJson: replay.replay_value_json,
-      valueSha256: replay.replay_value_sha256,
-    };
-    return checkedResult;
-  }
+  return {
+    evidenceFingerprint: replay.replay_evidence_fingerprint,
+    generation: replay.replay_generation,
+    importId: replay.replay_import_id,
+    valueJson: replay.replay_value_json,
+    valueSha256: replay.replay_value_sha256,
+  };
 };
 
 const hasValidInvocationFence = (row: DispatchRow) =>
@@ -245,14 +239,12 @@ const isValidDispatchRow = (row: DispatchRow) => {
     : row.actual_cost_micro_usd === null;
 };
 
-const dispatchFromRow = (row: DispatchRow) => {
+const dispatchFromRow = (
+  row: DispatchRow
+): Effect.Effect<ProviderAccountingDispatch, ProviderAccountingError> => {
   const replay = replayFromRow(row);
   if (!isValidDispatchRow(row)) {
-    const checkedResult: Effect.Effect<
-      ProviderAccountingDispatch,
-      ProviderAccountingError
-    > = Effect.fail(providerAccountingError("persistence_corrupt"));
-    return checkedResult;
+    return Effect.fail(providerAccountingError("persistence_corrupt"));
   }
   let dispatch: ProviderAccountingDispatch = {
     actualCostMicroUsd: row.actual_cost_micro_usd,
@@ -286,16 +278,12 @@ const dispatchFromRow = (row: DispatchRow) => {
   if (replay !== undefined) {
     dispatch = { ...dispatch, conservativeReplay: replay };
   }
-  {
-    const checkedResult: Effect.Effect<
-      ProviderAccountingDispatch,
-      ProviderAccountingError
-    > = Effect.succeed(dispatch);
-    return checkedResult;
-  }
+  return Effect.succeed(dispatch);
 };
 
-const stageFromRow = (row: StageRow) => {
+const stageFromRow = (
+  row: StageRow
+): Effect.Effect<ProviderAccountingBudget, ProviderAccountingError> => {
   const hasValidStageState =
     (row.state === "open" &&
       row.invoking_dispatch_id === null &&
@@ -314,11 +302,7 @@ const stageFromRow = (row: StageRow) => {
       ProviderAccountingCapMicroUsd ||
     !hasValidStageState
   ) {
-    const checkedResult: Effect.Effect<
-      ProviderAccountingBudget,
-      ProviderAccountingError
-    > = Effect.fail(providerAccountingError("persistence_corrupt"));
-    return checkedResult;
+    return Effect.fail(providerAccountingError("persistence_corrupt"));
   }
   let stage: ProviderAccountingBudget = {
     budgetCapMicroUsd: row.budget_cap_micro_usd,
@@ -332,13 +316,7 @@ const stageFromRow = (row: StageRow) => {
   if (row.poison_dispatch_id !== null) {
     stage = { ...stage, poisonDispatchId: row.poison_dispatch_id };
   }
-  {
-    const checkedResult: Effect.Effect<
-      ProviderAccountingBudget,
-      ProviderAccountingError
-    > = Effect.succeed(stage);
-    return checkedResult;
-  }
+  return Effect.succeed(stage);
 };
 
 const readDispatch = (
@@ -412,29 +390,21 @@ const replayMatches = (
 const requireIdentity = (
   dispatch: ProviderAccountingDispatch,
   input: ProviderAccountingReservation
-) => {
-  const checkedResult: Effect.Effect<
-    ProviderAccountingDispatch,
-    ProviderAccountingError
-  > = identityMatches(dispatch, input)
+): Effect.Effect<ProviderAccountingDispatch, ProviderAccountingError> =>
+  identityMatches(dispatch, input)
     ? Effect.succeed(dispatch)
     : Effect.fail(providerAccountingError("dispatch_conflict"));
-  return checkedResult;
-};
 
-const rejectedReservationCode = (stage: ProviderAccountingBudget) => {
+const rejectedReservationCode = (
+  stage: ProviderAccountingBudget
+): ProviderAccountingError["code"] => {
   if (stage.state === "poisoned") {
-    const checkedResult: ProviderAccountingError["code"] = "stage_poisoned";
-    return checkedResult;
+    return "stage_poisoned";
   }
   if (stage.state === "invoking") {
-    const checkedResult: ProviderAccountingError["code"] = "stage_busy";
-    return checkedResult;
+    return "stage_busy";
   }
-  {
-    const checkedResult: ProviderAccountingError["code"] = "budget_exceeded";
-    return checkedResult;
-  }
+  return "budget_exceeded";
 };
 
 const readStageRow = (binding: AnyD1Database) =>
@@ -511,62 +481,63 @@ const transition = (
   });
 
 /** Build the global D1 provider accounting authority around the existing database. */
-export const makeD1ProviderAccountingRepository = (binding: AnyD1Database) => {
-  const checkedResult: ProviderAccountingRepository = {
-    beginInvocation: (input) =>
-      Effect.gen(function* beginInvocation() {
-        const current = yield* readDispatch(binding, input).pipe(
-          Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
-        );
-        const timestamp = DateTime.formatIso(input.timestamp);
-        if (current.state === "invoking") {
-          if (current.invocationExpiresAt === undefined) {
-            return yield* Effect.fail(
-              providerAccountingError("persistence_corrupt")
-            );
-          }
-          if (
-            DateTime.toEpochMillis(current.invocationExpiresAt) >
-            DateTime.toEpochMillis(input.timestamp)
-          ) {
-            return { _tag: "NotClaimed", dispatch: current };
-          }
-          yield* persistenceEffect(() =>
-            binding
-              .prepare(
-                `UPDATE provider_accounting_dispatches
+export const makeD1ProviderAccountingRepository = (
+  binding: AnyD1Database
+): ProviderAccountingRepository => ({
+  beginInvocation: (input) =>
+    Effect.gen(function* beginInvocation() {
+      const current = yield* readDispatch(binding, input).pipe(
+        Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
+      );
+      const timestamp = DateTime.formatIso(input.timestamp);
+      if (current.state === "invoking") {
+        if (current.invocationExpiresAt === undefined) {
+          return yield* Effect.fail(
+            providerAccountingError("persistence_corrupt")
+          );
+        }
+        if (
+          DateTime.toEpochMillis(current.invocationExpiresAt) >
+          DateTime.toEpochMillis(input.timestamp)
+        ) {
+          return { _tag: "NotClaimed", dispatch: current };
+        }
+        yield* persistenceEffect(() =>
+          binding
+            .prepare(
+              `UPDATE provider_accounting_dispatches
                   SET state = 'settled_unknown', completed_at = ?,
                       invocation_expires_at = NULL, updated_at = ?
                 WHERE accounting_scope = ? AND dispatch_id = ?
                   AND state = 'invoking'
                   AND invocation_generation = ?
                   AND invocation_expires_at <= ?`
-              )
-              .bind(
-                timestamp,
-                timestamp,
-                ProviderAccountingScope,
-                input.dispatchId,
-                current.invocationGeneration,
-                timestamp
-              )
-              .run()
-          );
-          const dispatch = yield* readDispatch(binding, input).pipe(
-            Effect.flatMap((row) => requireIdentity(row, input))
-          );
-          return { _tag: "NotClaimed", dispatch };
-        }
-        if (current.state !== "reserved") {
-          return { _tag: "NotClaimed", dispatch: current };
-        }
-        const invocationExpiresAt = new Date(
-          DateTime.toEpochMillis(input.timestamp) + 5 * 60 * 1000
-        ).toISOString();
-        const rawClaim = yield* persistenceEffect(() =>
-          binding
-            .prepare(
-              `UPDATE provider_accounting_dispatches
+            )
+            .bind(
+              timestamp,
+              timestamp,
+              ProviderAccountingScope,
+              input.dispatchId,
+              current.invocationGeneration,
+              timestamp
+            )
+            .run()
+        );
+        const dispatch = yield* readDispatch(binding, input).pipe(
+          Effect.flatMap((row) => requireIdentity(row, input))
+        );
+        return { _tag: "NotClaimed", dispatch };
+      }
+      if (current.state !== "reserved") {
+        return { _tag: "NotClaimed", dispatch: current };
+      }
+      const invocationExpiresAt = new Date(
+        DateTime.toEpochMillis(input.timestamp) + 5 * 60 * 1000
+      ).toISOString();
+      const rawClaim = yield* persistenceEffect(() =>
+        binding
+          .prepare(
+            `UPDATE provider_accounting_dispatches
                 SET state = 'invoking', invocation_started_at = ?,
                     invocation_expires_at = ?,
                     invocation_generation = invocation_generation + 1,
@@ -575,79 +546,79 @@ export const makeD1ProviderAccountingRepository = (binding: AnyD1Database) => {
               RETURNING actual_cost_micro_usd, dispatch_id,
                         invocation_expires_at, invocation_generation,
                         maximum_cost_micro_usd, provider_stage_id, run_id, state`
-            )
-            .bind(
-              timestamp,
-              invocationExpiresAt,
-              timestamp,
-              ProviderAccountingScope,
-              input.dispatchId
-            )
-            .all()
+          )
+          .bind(
+            timestamp,
+            invocationExpiresAt,
+            timestamp,
+            ProviderAccountingScope,
+            input.dispatchId
+          )
+          .all()
+      );
+      const claimRows = yield* Schema.decodeUnknownEffect(DispatchQueryRows, {
+        onExcessProperty: "ignore",
+      })(rawClaim).pipe(
+        Effect.mapError(() => providerAccountingError("persistence_corrupt"))
+      );
+      if (claimRows.results.length > 1) {
+        return yield* Effect.fail(
+          providerAccountingError("persistence_corrupt")
         );
-        const claimRows = yield* Schema.decodeUnknownEffect(DispatchQueryRows, {
-          onExcessProperty: "ignore",
-        })(rawClaim).pipe(
-          Effect.mapError(() => providerAccountingError("persistence_corrupt"))
-        );
-        if (claimRows.results.length > 1) {
-          return yield* Effect.fail(
-            providerAccountingError("persistence_corrupt")
-          );
-        }
-        const [claimedRow] = claimRows.results;
-        if (claimedRow !== undefined) {
-          const dispatch = yield* dispatchFromRow(claimedRow).pipe(
-            Effect.flatMap((row) => requireIdentity(row, input))
-          );
-          return { _tag: "Claimed", dispatch };
-        }
-        const dispatch = yield* readDispatch(binding, input).pipe(
+      }
+      const [claimedRow] = claimRows.results;
+      if (claimedRow !== undefined) {
+        const dispatch = yield* dispatchFromRow(claimedRow).pipe(
           Effect.flatMap((row) => requireIdentity(row, input))
         );
-        return { _tag: "NotClaimed", dispatch };
-      }),
-    readDispatch: (input) =>
-      readDispatch(binding, input).pipe(
+        return { _tag: "Claimed", dispatch };
+      }
+      const dispatch = yield* readDispatch(binding, input).pipe(
+        Effect.flatMap((row) => requireIdentity(row, input))
+      );
+      return { _tag: "NotClaimed", dispatch };
+    }),
+  readDispatch: (input) =>
+    readDispatch(binding, input).pipe(
+      Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
+    ),
+  readStage: () => readStageRow(binding),
+  releaseBeforeInvocation: (input) =>
+    Effect.gen(function* releaseBeforeInvocation() {
+      const current = yield* readDispatch(binding, input).pipe(
         Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
-      ),
-    readStage: () => readStageRow(binding),
-    releaseBeforeInvocation: (input) =>
-      Effect.gen(function* releaseBeforeInvocation() {
-        const current = yield* readDispatch(binding, input).pipe(
-          Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
-        );
-        if (current.state !== "reserved") {
-          return current;
-        }
-        const timestamp = DateTime.formatIso(input.timestamp);
-        const released = yield* transition(
-          binding,
-          input,
-          `UPDATE provider_accounting_dispatches
+      );
+      if (current.state !== "reserved") {
+        return current;
+      }
+      const timestamp = DateTime.formatIso(input.timestamp);
+      const released = yield* transition(
+        binding,
+        input,
+        `UPDATE provider_accounting_dispatches
             SET state = 'released', completed_at = ?, updated_at = ?
           WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'reserved'`,
-          [timestamp, timestamp, ProviderAccountingScope, input.dispatchId]
-        );
-        return released.state === "released"
-          ? released
-          : yield* Effect.fail(providerAccountingError("transition_rejected"));
-      }),
-    reserve: (input) =>
-      Effect.gen(function* reserveDispatch() {
-        if (
-          !Number.isSafeInteger(input.maximumCostMicroUsd) ||
-          input.maximumCostMicroUsd <= 0 ||
-          input.maximumCostMicroUsd > ProviderAccountingCapMicroUsd
-        ) {
-          return yield* Effect.fail(providerAccountingError("budget_exceeded"));
-        }
-        const timestamp = DateTime.formatIso(input.timestamp);
-        const stageBefore = yield* persistenceEffect(() =>
-          binding.batch([
-            binding
-              .prepare(
-                `INSERT INTO provider_accounting_dispatches (
+        [timestamp, timestamp, ProviderAccountingScope, input.dispatchId]
+      );
+      return released.state === "released"
+        ? released
+        : yield* Effect.fail(providerAccountingError("transition_rejected"));
+    }),
+  reserve: (input) =>
+    Effect.gen(function* reserveDispatch() {
+      if (
+        !Number.isSafeInteger(input.maximumCostMicroUsd) ||
+        input.maximumCostMicroUsd <= 0 ||
+        input.maximumCostMicroUsd > ProviderAccountingCapMicroUsd
+      ) {
+        return yield* Effect.fail(providerAccountingError("budget_exceeded"));
+      }
+      const timestamp = DateTime.formatIso(input.timestamp);
+      const stageBefore = yield* persistenceEffect(() =>
+        binding.batch([
+          binding
+            .prepare(
+              `INSERT INTO provider_accounting_dispatches (
                  accounting_scope, dispatch_id, run_id, provider_stage_id,
                  maximum_cost_micro_usd, state, created_at, updated_at
                )
@@ -658,94 +629,92 @@ export const makeD1ProviderAccountingRepository = (binding: AnyD1Database) => {
                   AND settled_micro_usd + reserved_micro_usd + ?
                     <= budget_cap_micro_usd
                ON CONFLICT(accounting_scope, dispatch_id) DO NOTHING`
-              )
-              .bind(
-                input.dispatchId,
-                input.runId,
-                input.providerStageId,
-                input.maximumCostMicroUsd,
-                timestamp,
-                timestamp,
-                ProviderAccountingScope,
-                input.maximumCostMicroUsd
-              ),
-            binding
-              .prepare(
-                `SELECT budget_cap_micro_usd, invoking_dispatch_id,
+            )
+            .bind(
+              input.dispatchId,
+              input.runId,
+              input.providerStageId,
+              input.maximumCostMicroUsd,
+              timestamp,
+              timestamp,
+              ProviderAccountingScope,
+              input.maximumCostMicroUsd
+            ),
+          binding
+            .prepare(
+              `SELECT budget_cap_micro_usd, invoking_dispatch_id,
                       poison_dispatch_id, reserved_micro_usd,
                       settled_micro_usd, state
                  FROM provider_accounting_budgets
                 WHERE accounting_scope = ?`
+            )
+            .bind(ProviderAccountingScope),
+        ])
+      );
+      const [, stageResult] = yield* Schema.decodeUnknownEffect(
+        ReservationBatchRows,
+        { onExcessProperty: "ignore" }
+      )(stageBefore).pipe(
+        Effect.mapError(() => providerAccountingError("persistence_corrupt"))
+      );
+      const [stageRow] = stageResult.results;
+      if (stageRow === undefined) {
+        return yield* Effect.fail(
+          providerAccountingError("persistence_corrupt")
+        );
+      }
+      const stage = yield* stageFromRow(stageRow);
+      const dispatch = yield* readDispatch(binding, input).pipe(
+        Effect.catchTag("ProviderAccountingError", (error) =>
+          error.code === "transition_rejected"
+            ? Effect.fail(
+                providerAccountingError(rejectedReservationCode(stage))
               )
-              .bind(ProviderAccountingScope),
-          ])
+            : Effect.fail(error)
+        ),
+        Effect.flatMap((row) => requireIdentity(row, input))
+      );
+      return dispatch;
+    }),
+  settleConservative: (input: ProviderAccountingConservativeSettlement) =>
+    Effect.gen(function* settleConservative() {
+      if (!isValidConservativeSettlement(input)) {
+        return yield* Effect.fail(
+          providerAccountingError("cost_exceeds_reservation")
         );
-        const [, stageResult] = yield* Schema.decodeUnknownEffect(
-          ReservationBatchRows,
-          { onExcessProperty: "ignore" }
-        )(stageBefore).pipe(
-          Effect.mapError(() => providerAccountingError("persistence_corrupt"))
-        );
-        const [stageRow] = stageResult.results;
-        if (stageRow === undefined) {
-          return yield* Effect.fail(
-            providerAccountingError("persistence_corrupt")
-          );
-        }
-        const stage = yield* stageFromRow(stageRow);
-        const dispatch = yield* readDispatch(binding, input).pipe(
-          Effect.catchTag("ProviderAccountingError", (error) =>
-            error.code === "transition_rejected"
-              ? Effect.fail(
-                  providerAccountingError(rejectedReservationCode(stage))
-                )
-              : Effect.fail(error)
-          ),
-          Effect.flatMap((row) => requireIdentity(row, input))
-        );
-        return dispatch;
-      }),
-    settleConservative: (input: ProviderAccountingConservativeSettlement) =>
-      Effect.gen(function* settleConservative() {
-        if (!isValidConservativeSettlement(input)) {
-          return yield* Effect.fail(
-            providerAccountingError("cost_exceeds_reservation")
-          );
-        }
-        const current = yield* readDispatch(binding, input).pipe(
-          Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
-        );
-        if (current.state === "settled_conservative") {
-          if (current.invocationGeneration !== input.invocationGeneration) {
-            return yield* Effect.fail(
-              providerAccountingError("dispatch_conflict")
-            );
-          }
-          yield* readConservativeSettlement(binding, input);
-          const stage = yield* readStageRow(binding);
-          return stage.state === "open" &&
-            stage.invokingDispatchId === undefined &&
-            stage.poisonDispatchId === undefined &&
-            replayMatches(current, input)
-            ? current
-            : yield* Effect.fail(providerAccountingError("dispatch_conflict"));
-        }
-        if (current.state !== "invoking") {
-          return yield* Effect.fail(
-            providerAccountingError("transition_rejected")
-          );
-        }
+      }
+      const current = yield* readDispatch(binding, input).pipe(
+        Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
+      );
+      if (current.state === "settled_conservative") {
         if (current.invocationGeneration !== input.invocationGeneration) {
           return yield* Effect.fail(
             providerAccountingError("dispatch_conflict")
           );
         }
-        const timestamp = DateTime.formatIso(input.timestamp);
-        yield* persistenceEffect(() =>
-          binding.batch([
-            binding
-              .prepare(
-                `UPDATE provider_accounting_dispatches
+        yield* readConservativeSettlement(binding, input);
+        const stage = yield* readStageRow(binding);
+        return stage.state === "open" &&
+          stage.invokingDispatchId === undefined &&
+          stage.poisonDispatchId === undefined &&
+          replayMatches(current, input)
+          ? current
+          : yield* Effect.fail(providerAccountingError("dispatch_conflict"));
+      }
+      if (current.state !== "invoking") {
+        return yield* Effect.fail(
+          providerAccountingError("transition_rejected")
+        );
+      }
+      if (current.invocationGeneration !== input.invocationGeneration) {
+        return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
+      }
+      const timestamp = DateTime.formatIso(input.timestamp);
+      yield* persistenceEffect(() =>
+        binding.batch([
+          binding
+            .prepare(
+              `UPDATE provider_accounting_dispatches
                   SET state = 'settled_unknown', completed_at = ?,
                       invocation_expires_at = NULL, updated_at = ?
                 WHERE accounting_scope = ?
@@ -756,18 +725,18 @@ export const makeD1ProviderAccountingRepository = (binding: AnyD1Database) => {
                   AND actual_cost_micro_usd IS NULL
                   AND state = 'invoking'
                   AND invocation_generation = ?`
-              )
-              .bind(
-                timestamp,
-                timestamp,
-                ProviderAccountingScope,
-                input.dispatchId,
-                input.runId,
-                input.invocationGeneration
-              ),
-            binding
-              .prepare(
-                `INSERT INTO provider_accounting_conservative_settlements (
+            )
+            .bind(
+              timestamp,
+              timestamp,
+              ProviderAccountingScope,
+              input.dispatchId,
+              input.runId,
+              input.invocationGeneration
+            ),
+          binding
+            .prepare(
+              `INSERT INTO provider_accounting_conservative_settlements (
                  actual_cost_was_unknown, authority,
                  conservative_charge_micro_usd, created_at,
                  dispatch_id, accounting_scope
@@ -794,18 +763,18 @@ export const makeD1ProviderAccountingRepository = (binding: AnyD1Database) => {
                       + stage.reserved_micro_usd
                       <= stage.budget_cap_micro_usd
                ON CONFLICT(accounting_scope, dispatch_id) DO NOTHING`
-              )
-              .bind(
-                timestamp,
-                ProviderAccountingScope,
-                input.dispatchId,
-                input.runId,
-                input.invocationGeneration,
-                timestamp
-              ),
-            binding
-              .prepare(
-                `INSERT INTO provider_accounting_recipe_replay_values (
+            )
+            .bind(
+              timestamp,
+              ProviderAccountingScope,
+              input.dispatchId,
+              input.runId,
+              input.invocationGeneration,
+              timestamp
+            ),
+          binding
+            .prepare(
+              `INSERT INTO provider_accounting_recipe_replay_values (
                  created_at, dispatch_id, evidence_fingerprint, expires_at,
                  generation, import_id, accounting_scope, value_json,
                  value_sha256
@@ -833,25 +802,25 @@ export const makeD1ProviderAccountingRepository = (binding: AnyD1Database) => {
                       'schema_valid_provider_response'
                   AND audit.conservative_charge_micro_usd = 100000
                ON CONFLICT(accounting_scope, dispatch_id) DO NOTHING`
-              )
-              .bind(
-                timestamp,
-                input.replay.evidenceFingerprint,
-                timestamp,
-                input.replay.generation,
-                input.replay.importId,
-                input.replay.valueJson,
-                input.replay.valueSha256,
-                ProviderAccountingScope,
-                input.dispatchId,
-                input.runId,
-                input.invocationGeneration,
-                timestamp,
-                ...recipeReplayDispatchIds(input.replay)
-              ),
-            binding
-              .prepare(
-                `UPDATE provider_accounting_budgets
+            )
+            .bind(
+              timestamp,
+              input.replay.evidenceFingerprint,
+              timestamp,
+              input.replay.generation,
+              input.replay.importId,
+              input.replay.valueJson,
+              input.replay.valueSha256,
+              ProviderAccountingScope,
+              input.dispatchId,
+              input.runId,
+              input.invocationGeneration,
+              timestamp,
+              ...recipeReplayDispatchIds(input.replay)
+            ),
+          binding
+            .prepare(
+              `UPDATE provider_accounting_budgets
                   SET settled_micro_usd = settled_micro_usd + 100000,
                       reserved_micro_usd = reserved_micro_usd - 100000,
                       state = 'open',
@@ -899,133 +868,127 @@ export const makeD1ProviderAccountingRepository = (binding: AnyD1Database) => {
                             AND replay.value_sha256 = ?
                        )
                   )`
-              )
-              .bind(
-                timestamp,
-                ProviderAccountingScope,
-                input.dispatchId,
-                input.dispatchId,
-                input.runId,
-                input.invocationGeneration,
-                timestamp,
-                input.replay.importId,
-                input.replay.generation,
-                input.replay.evidenceFingerprint,
-                input.replay.valueJson,
-                input.replay.valueSha256
-              ),
-          ])
+            )
+            .bind(
+              timestamp,
+              ProviderAccountingScope,
+              input.dispatchId,
+              input.dispatchId,
+              input.runId,
+              input.invocationGeneration,
+              timestamp,
+              input.replay.importId,
+              input.replay.generation,
+              input.replay.evidenceFingerprint,
+              input.replay.valueJson,
+              input.replay.valueSha256
+            ),
+        ])
+      );
+      const settled = yield* readDispatch(binding, input).pipe(
+        Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
+      );
+      yield* readConservativeSettlement(binding, input);
+      const stage = yield* readStageRow(binding);
+      return settled.state === "settled_conservative" &&
+        settled.actualCostMicroUsd === null &&
+        replayMatches(settled, input) &&
+        stage.state === "open" &&
+        stage.invokingDispatchId === undefined &&
+        stage.poisonDispatchId === undefined
+        ? settled
+        : yield* Effect.fail(providerAccountingError("transition_rejected"));
+    }),
+  settleKnown: (input: ProviderAccountingKnownSettlement) =>
+    Effect.gen(function* settleKnown() {
+      if (
+        !validMoney(input.actualCostMicroUsd) ||
+        input.actualCostMicroUsd > input.maximumCostMicroUsd
+      ) {
+        return yield* Effect.fail(
+          providerAccountingError("cost_exceeds_reservation")
         );
-        const settled = yield* readDispatch(binding, input).pipe(
-          Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
+      }
+      const current = yield* readDispatch(binding, input).pipe(
+        Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
+      );
+      if (current.state === "settled_known") {
+        return current.invocationGeneration === input.invocationGeneration &&
+          current.actualCostMicroUsd === input.actualCostMicroUsd
+          ? current
+          : yield* Effect.fail(providerAccountingError("dispatch_conflict"));
+      }
+      if (current.state !== "invoking") {
+        return yield* Effect.fail(
+          providerAccountingError("transition_rejected")
         );
-        yield* readConservativeSettlement(binding, input);
-        const stage = yield* readStageRow(binding);
-        return settled.state === "settled_conservative" &&
-          settled.actualCostMicroUsd === null &&
-          replayMatches(settled, input) &&
-          stage.state === "open" &&
-          stage.invokingDispatchId === undefined &&
-          stage.poisonDispatchId === undefined
-          ? settled
-          : yield* Effect.fail(providerAccountingError("transition_rejected"));
-      }),
-    settleKnown: (input: ProviderAccountingKnownSettlement) =>
-      Effect.gen(function* settleKnown() {
-        if (
-          !validMoney(input.actualCostMicroUsd) ||
-          input.actualCostMicroUsd > input.maximumCostMicroUsd
-        ) {
-          return yield* Effect.fail(
-            providerAccountingError("cost_exceeds_reservation")
-          );
-        }
-        const current = yield* readDispatch(binding, input).pipe(
-          Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
-        );
-        if (current.state === "settled_known") {
-          return current.invocationGeneration === input.invocationGeneration &&
-            current.actualCostMicroUsd === input.actualCostMicroUsd
-            ? current
-            : yield* Effect.fail(providerAccountingError("dispatch_conflict"));
-        }
-        if (current.state !== "invoking") {
-          return yield* Effect.fail(
-            providerAccountingError("transition_rejected")
-          );
-        }
-        if (current.invocationGeneration !== input.invocationGeneration) {
-          return yield* Effect.fail(
-            providerAccountingError("dispatch_conflict")
-          );
-        }
-        const timestamp = DateTime.formatIso(input.timestamp);
-        const settled = yield* transition(
-          binding,
-          input,
-          `UPDATE provider_accounting_dispatches
+      }
+      if (current.invocationGeneration !== input.invocationGeneration) {
+        return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
+      }
+      const timestamp = DateTime.formatIso(input.timestamp);
+      const settled = yield* transition(
+        binding,
+        input,
+        `UPDATE provider_accounting_dispatches
             SET state = 'settled_known', actual_cost_micro_usd = ?,
                 completed_at = ?, invocation_expires_at = NULL, updated_at = ?
           WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'invoking'
             AND invocation_generation = ?`,
-          [
-            input.actualCostMicroUsd,
-            timestamp,
-            timestamp,
-            ProviderAccountingScope,
-            input.dispatchId,
-            input.invocationGeneration,
-          ]
-        );
-        if (settled.state === "settled_unknown") {
-          return yield* Effect.fail(providerAccountingError("outcome_unknown"));
-        }
-        return settled.state === "settled_known" &&
-          settled.actualCostMicroUsd === input.actualCostMicroUsd
-          ? settled
+        [
+          input.actualCostMicroUsd,
+          timestamp,
+          timestamp,
+          ProviderAccountingScope,
+          input.dispatchId,
+          input.invocationGeneration,
+        ]
+      );
+      if (settled.state === "settled_unknown") {
+        return yield* Effect.fail(providerAccountingError("outcome_unknown"));
+      }
+      return settled.state === "settled_known" &&
+        settled.actualCostMicroUsd === input.actualCostMicroUsd
+        ? settled
+        : yield* Effect.fail(providerAccountingError("dispatch_conflict"));
+    }),
+  settleUnknown: (input) =>
+    Effect.gen(function* settleUnknown() {
+      const current = yield* readDispatch(binding, input).pipe(
+        Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
+      );
+      if (current.state === "settled_unknown") {
+        return current.invocationGeneration === input.invocationGeneration
+          ? current
           : yield* Effect.fail(providerAccountingError("dispatch_conflict"));
-      }),
-    settleUnknown: (input) =>
-      Effect.gen(function* settleUnknown() {
-        const current = yield* readDispatch(binding, input).pipe(
-          Effect.flatMap((dispatch) => requireIdentity(dispatch, input))
+      }
+      if (current.state !== "invoking") {
+        return yield* Effect.fail(
+          providerAccountingError("transition_rejected")
         );
-        if (current.state === "settled_unknown") {
-          return current.invocationGeneration === input.invocationGeneration
-            ? current
-            : yield* Effect.fail(providerAccountingError("dispatch_conflict"));
-        }
-        if (current.state !== "invoking") {
-          return yield* Effect.fail(
-            providerAccountingError("transition_rejected")
-          );
-        }
-        if (current.invocationGeneration !== input.invocationGeneration) {
-          return yield* Effect.fail(
-            providerAccountingError("dispatch_conflict")
-          );
-        }
-        const timestamp = DateTime.formatIso(input.timestamp);
-        const settled = yield* transition(
-          binding,
-          input,
-          `UPDATE provider_accounting_dispatches
+      }
+      if (current.invocationGeneration !== input.invocationGeneration) {
+        return yield* Effect.fail(providerAccountingError("dispatch_conflict"));
+      }
+      const timestamp = DateTime.formatIso(input.timestamp);
+      const settled = yield* transition(
+        binding,
+        input,
+        `UPDATE provider_accounting_dispatches
             SET state = 'settled_unknown', completed_at = ?,
                 invocation_expires_at = NULL, updated_at = ?
           WHERE accounting_scope = ? AND dispatch_id = ? AND state = 'invoking'
             AND invocation_generation = ?`,
-          [
-            timestamp,
-            timestamp,
-            ProviderAccountingScope,
-            input.dispatchId,
-            input.invocationGeneration,
-          ]
-        );
-        return settled.state === "settled_unknown"
-          ? settled
-          : yield* Effect.fail(providerAccountingError("transition_rejected"));
-      }),
-  };
-  return checkedResult;
-};
+        [
+          timestamp,
+          timestamp,
+          ProviderAccountingScope,
+          input.dispatchId,
+          input.invocationGeneration,
+        ]
+      );
+      return settled.state === "settled_unknown"
+        ? settled
+        : yield* Effect.fail(providerAccountingError("transition_rejected"));
+    }),
+});

@@ -13,6 +13,8 @@ export default defineConfig({
     "apps/api/src/features/auth/auth.database-schema.ts",
 
     "apps/api/household-migrations/migrations.d.ts",
+    // WARNING: Migration regression tests require this historical repository snapshot byte for byte.
+    "apps/api/src/features/provider-accounting/provider-accounting.repository.previous.fixture.ts",
 
     "tools/oxlint/anti-slop/no-conditional-empty-object-spread.ts",
     "tools/oxlint/anti-slop/no-runtime-typeof.ts",
