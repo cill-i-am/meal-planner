@@ -15,6 +15,7 @@ import { bundleWorkerFixture } from "../../test/native-worker.fixture.js";
 
 const run = promisify(execFile);
 const enabled = process.env["MEAL_PLANNER_RUN_CONTAINER_TESTS"] === "1";
+const nativeContainerStartupBudgetMs = 3000;
 
 const containerEgressInterceptorImage =
   "cloudflare/proxy-everything:3cb1195@sha256:0ef6716c52430096900b150d84a3302057d6cd2319dae7987128c85d0733e3c8";
@@ -127,10 +128,13 @@ describe.skipIf(!enabled)("native generation container lifetime", () => {
       const [abandonedId] = await processes();
       expect(abandonedId).toBeDefined();
       const acquisition = call("/acquire");
-      await vi.waitFor(async () => {
-        expect(await call("/inspect")).toMatchObject({ running: true });
-        expect(await processes()).toHaveLength(2);
-      });
+      await vi.waitFor(
+        async () => {
+          expect(await call("/inspect")).toMatchObject({ running: true });
+          expect(await processes()).toHaveLength(2);
+        },
+        { timeout: nativeContainerStartupBudgetMs }
+      );
       const result = await acquisition;
       expect(result.result._tag).toBe("VerifiedAcquisition");
       expect(result.beforeRelease.running).toBe(true);
