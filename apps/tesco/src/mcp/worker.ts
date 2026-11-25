@@ -3,7 +3,7 @@ import { RuntimeContext } from "alchemy";
 import { Config, Effect } from "effect";
 import { HttpServerRequest } from "effect/http";
 
-import { fromNativeWebResponse } from "../../../infrastructure/native-http-response.js";
+import { fromNativeWebResponse } from "../native-http-response.js";
 import { makeTescoMcpHttpHandler } from "./mcp.http.js";
 import TescoSessionObjectLive, {
   TescoSessionObject,

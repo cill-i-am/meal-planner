@@ -141,7 +141,7 @@ Private interview transcripts remain private to their participant. Accepting a p
 
 The native account HTTP API remains under `/api/auth/`, including email signup/signin, session, signout and password recovery. MCP connection establishment uses those browser flows. The `account_read` tool returns only ID, name, email and email verification status.
 
-Tesco retains its separate private credential and owner session. Its existing operations are available through both MCP and HTTP, using the same typed operation registry and mutation receipts. The private service exposes `GET /openapi.json` and `POST /v1/<tool-name>`; see [the Tesco interface](../apps/api/src/features/tesco/mcp/README.md) for authentication, retry and checkout review requirements. Connecting the general Meal Planner MCP does not grant access to that retailer session. Customer retailer enrollment and tenancy remain separate launch work.
+Tesco retains its separate private credential and owner session. Its existing operations are available through both MCP and HTTP, using the same typed operation registry and mutation receipts. The private service exposes `GET /openapi.json` and `POST /v1/<tool-name>`; see [the Tesco interface](../apps/tesco/README.md) for authentication, retry and checkout review requirements. Connecting the general Meal Planner MCP does not grant access to that retailer session. Customer retailer enrollment and tenancy remain separate launch work.
 
 ## Deployment and acceptance
 

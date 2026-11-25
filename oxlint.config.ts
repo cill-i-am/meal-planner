@@ -47,14 +47,14 @@ export default defineConfig({
     },
     {
       files: [
-        "apps/api/src/features/tesco/auth/auth-cookies.ts",
-        "apps/api/src/features/tesco/auth/auth-session.test.ts",
-        "apps/api/src/features/tesco/auth/auth-session.ts",
-        "apps/api/src/features/tesco/auth/soft-login-auth-refresh.test.ts",
-        "apps/api/src/features/tesco/auth/soft-login-auth-refresh.ts",
-        "apps/api/src/features/tesco/auth/soft-login-discover.ts",
-        "apps/api/src/features/tesco/catalogue/catalogue.routes.ts",
-        "apps/api/src/features/tesco/catalogue/xapi-catalogue.ts",
+        "apps/tesco/src/auth/auth-cookies.ts",
+        "apps/tesco/src/auth/auth-session.test.ts",
+        "apps/tesco/src/auth/auth-session.ts",
+        "apps/tesco/src/auth/soft-login-auth-refresh.test.ts",
+        "apps/tesco/src/auth/soft-login-auth-refresh.ts",
+        "apps/tesco/src/auth/soft-login-discover.ts",
+        "apps/tesco/src/catalogue/catalogue.routes.ts",
+        "apps/tesco/src/catalogue/xapi-catalogue.ts",
       ],
       rules: {
         "func-names": "off",
@@ -80,9 +80,7 @@ export default defineConfig({
       },
     },
     {
-      files: [
-        "apps/api/src/features/tesco/auth/soft-login-auth-refresh.test.ts",
-      ],
+      files: ["apps/tesco/src/auth/soft-login-auth-refresh.test.ts"],
       rules: {
         "promise/avoid-new": "off",
         "promise/prefer-await-to-callbacks": "off",

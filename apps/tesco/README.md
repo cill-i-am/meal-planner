@@ -47,7 +47,7 @@ Executor currently uses MCP SDK 1.32.1 and protocol 2025-11-25. Effect 4.0.5's r
 
 ## Deployment and enrollment
 
-The independent `tesco.alchemy.ts` stack owns this Worker and its bindings. It does not deploy Meal Planner's application, databases or user authentication. It requires `--stage prod` and uses `tesco-mcp`, refusing other stages before resource creation. Stage-dependent deployment checks belong in the stack; the Worker's properties also run at the edge, where Alchemy's planning-only Stage service is unavailable.
+The independent `apps/tesco/tesco.alchemy.ts` stack owns this Worker and its bindings. It does not deploy Meal Planner's application, databases or user authentication. It requires `--stage prod` and uses `tesco-mcp`, refusing other stages before resource creation. Stage-dependent deployment checks belong in the stack; the Worker's properties also run at the edge, where Alchemy's planning-only Stage service is unavailable.
 
 Supply these through a protected, gitignored `.dev.vars.tesco` file:
 
@@ -58,14 +58,14 @@ Supply these through a protected, gitignored `.dev.vars.tesco` file:
 Keep the encryption key stable across deployments; changing it without replacing the enrolled session makes the stored ciphertext unreadable. Protect a recovery copy of the deployment secrets. Never commit them. Keep plaintext credential files mode 0600.
 
 ```sh
-pnpm exec alchemy plan tesco.alchemy.ts --stage prod --profile <profile> --env-file .dev.vars.tesco
-pnpm exec alchemy deploy tesco.alchemy.ts --stage prod --profile <profile> --env-file .dev.vars.tesco
+pnpm exec alchemy plan apps/tesco/tesco.alchemy.ts --stage prod --profile <profile> --env-file .dev.vars.tesco
+pnpm exec alchemy deploy apps/tesco/tesco.alchemy.ts --stage prod --profile <profile> --env-file .dev.vars.tesco
 ```
 
 After a fresh Tesco browser sign-in, create a protected enrollment JSON file with `operatorToken` and `session: { authorization, cookies, mangoApiKey, mangoUrl, userAgent }`. Cookies must include the groceries and `/account` paths. Capture the actual User-Agent from that browser's Tesco request. Existing sessions enrolled without the profile require fresh enrollment; do not substitute a guessed identity. Run:
 
 ```sh
-node --import tsx scripts/tesco-session.ts /absolute/path/to/protected-enrollment.json
+node --import tsx apps/tesco/scripts/tesco-session.ts /absolute/path/to/protected-enrollment.json
 ```
 
 The command prints only connection health and removes the Tesco session from the local file after the upload attempt. Keep passwords out of the file. Delete temporary enrollment files after connecting. To revoke Executor, replace its verifier with a newly generated credential's hash and reconnect the owner's Executor account. To revoke operator access, rotate its verifier independently.
@@ -73,12 +73,12 @@ The command prints only connection health and removes the Tesco session from the
 While verifying renewals, retain only the mode-0600 operator file and read the sanitized report without triggering refresh:
 
 ```sh
-node --import tsx scripts/tesco-session.ts /absolute/path/to/protected-enrollment.json report
+node --import tsx apps/tesco/scripts/tesco-session.ts /absolute/path/to/protected-enrollment.json report
 ```
 
 Record enrollment health, then let the production alarms run at the real access-token expiry minus two minutes. Require three successful attempts whose previous expiry matches the preceding rotation, whose access and refresh cookies both changed, and whose new expiry increased. Verify the persisted next alarm and an authenticated catalogue call through Executor after each cycle. Do not manually refresh, re-enroll, reuse the browser's rotating session or change the encryption key during the test. Delete the temporary operator file afterward; leave the production session and alarms running.
 
-Executor source is maintained in `integrations/executor/tesco`. Its account health check initializes and lists MCP tools with the supplied credential, then verifies the same operations are refused without credentials. The provider and user-scoped account remain stable across deployments. Named basket/slot preparation tools can run within the owner's shopping request. `approve_checkout_handoff` always requires Executor's native human approval, independently of remote MCP annotations. Every unknown future tool also requires approval, even if it advertises a read-only hint.
+Executor source is maintained in `apps/tesco/executor`. Its account health check initializes and lists MCP tools with the supplied credential, then verifies the same operations are refused without credentials. The provider and user-scoped account remain stable across deployments. Named basket/slot preparation tools can run within the owner's shopping request. `approve_checkout_handoff` always requires Executor's native human approval, independently of remote MCP annotations. Every unknown future tool also requires approval, even if it advertises a read-only hint.
 
 ## Commands and checkout
 
@@ -97,14 +97,19 @@ The result is a fixed HTTPS Tesco checkout link with `orderPlaced: false`. The h
 ## Verification
 
 ```sh
-node node_modules/typescript/bin/tsc -p tsconfig.tesco.json
-node --import tsx scripts/tesco-worker-runtime-smoke.ts
-cd apps/api
-node node_modules/vitest/vitest.mjs run src/features/tesco
+pnpm --filter @meal-planner/tesco check
+pnpm --filter @meal-planner/tesco test:runtime
+pnpm --filter @meal-planner/tesco test
 ```
 
-Run the runtime smoke check after Alchemy has built the production bundle (a plan is sufficient). It runs that actual bundle in workerd with synthetic credentials, covering initialization, role separation, discovery, Durable Object health, missing-session errors and three actual scheduled alarm rotations. Its intercepted Tesco redirects require both same-name cookies at different paths. It catches cookie loss in the native HTTP boundary that adapter tests cannot.
+The runtime smoke check builds the current checkout with Alchemy’s Worker bundler, without contacting Cloudflare or reusing a previously deployed bundle. It runs the resulting bundle in workerd with synthetic credentials, covering initialization, role separation, discovery, Durable Object health, missing-session errors and three actual scheduled alarm rotations. Its intercepted Tesco redirects require both same-name cookies at different paths. It catches cookie loss in the native HTTP boundary that adapter tests cannot.
 
 The HTTP/MCP parity tests exercise all 15 operations, private discovery, operator credential separation, bounded input, shared retry receipts across reconstructed services, uncertain outcomes and checkout review tampering/one-use across transports. They use the real shopping policy with substituted Tesco network and storage boundaries. The shopping and Executor tests cover absolute quantities, removal, durable retry identity, interruption, inner 401 responses, partial results, placed-order protection, verified delivery windows, wrong-slot release, review expiry/tampering/changes, one-use handoff and mandatory approval even when metadata falsely claims read-only. Live acceptance covers prices, product details, favourites, real past orders and a receipt, a quantity-preserving basket command/replay, slot reservation/release/replay and review preparation. No test purchases an order.
 
 The session tests exercise three rotations across reconstructed services, retained account-path cookies, early alarms, rejected renewal, interruption, an external redirect and tampered ciphertext. Live acceptance also requires a real catalogue call through the deployed private Executor app. The earlier three-cycle feasibility probe establishes renewal behavior for that captured session, not indefinite renewal or recovery after Tesco revokes a session.
+
+The root `tesco.alchemy.ts` path remains a compatibility alias for existing operator commands.
+
+## Local catalogue
+
+Copy the example values from `apps/tesco/.env.example` into your local environment and run `pnpm dev:tesco` from the repo root. The legacy `pnpm --filter @meal-planner/api dev` command remains an alias. This loopback catalogue server is not the deployed private Worker.

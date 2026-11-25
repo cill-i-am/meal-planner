@@ -344,9 +344,6 @@ importers:
       effect:
         specifier: 4.1.4
         version: 4.1.4
-      graphql:
-        specifier: 17.1.0
-        version: 17.1.0
       openai:
         specifier: 7.58.0
         version: 7.58.0(undici@8.12.4)(ws@8.23.0)(zod@4.6.7)
@@ -362,9 +359,6 @@ importers:
       react-email:
         specifier: 6.11.16
         version: 6.11.16(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(supports-color@10.2.2)
-      set-cookie-parser:
-        specifier: 3.2.3
-        version: 3.2.3
     devDependencies:
       '@alchemy.run/sql':
         specifier: 2.0.0-beta.87
@@ -430,6 +424,52 @@ importers:
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.0)(@vitest/ui@5.1.0)(msw@2.15.0(@types/node@26.6.6)(typescript@7.0.2))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  apps/tesco:
+    dependencies:
+      '@alchemy.run/cloudflare':
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(patch_hash=a683b6394c31ebeac34687982f28865bd65b0254b149d877ccca89049822c1f5)(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0)))(@types/node@26.6.6)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0)))(@types/react@19.3.0)(effect@4.1.4)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)(mysql2@3.24.6(@types/node@26.6.6))(typescript@7.0.2)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      '@effect/platform-node':
+        specifier: 4.1.4
+        version: 4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0))
+      '@modelcontextprotocol/sdk':
+        specifier: 1.32.2
+        version: 1.32.2(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7)
+      alchemy:
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0)))(@types/react@19.3.0)(effect@4.1.4)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(ws@8.23.0)
+      effect:
+        specifier: 4.1.4
+        version: 4.1.4
+      graphql:
+        specifier: 17.1.0
+        version: 17.1.0
+      set-cookie-parser:
+        specifier: 3.2.3
+        version: 3.2.3
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 5.20261117.1
+        version: 5.20261117.1
+      '@effect/vitest':
+        specifier: 4.1.4
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0)
+      '@types/node':
+        specifier: 26.6.6
+        version: 26.6.6
+      miniflare:
+        specifier: 5.20261117.0-beta
+        version: 5.20261117.0-beta(@types/node@26.6.6)
+      tsx:
+        specifier: 4.23.15
+        version: 4.23.15
       typescript:
         specifier: 7.0.2
         version: 7.0.2
