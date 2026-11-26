@@ -569,5 +569,7 @@ it.each(["node", "pnpm-tsx", "parent-killed"] as const)(
       await closed;
       await rm(rootDirectory, { force: true, recursive: true });
     }
-  }
+  },
+  // The harness spans child startup, settlement and lock release. Polls keep their own deadlines.
+  30_000
 );
