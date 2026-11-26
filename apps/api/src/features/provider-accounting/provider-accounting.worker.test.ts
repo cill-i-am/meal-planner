@@ -1,10 +1,10 @@
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
 import { applyD1Migrations, env } from "cloudflare:test";
 import { eq } from "drizzle-orm";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Cause, Deferred, Effect, Exit, Fiber, Schema } from "effect";
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { ImportId } from "../imports/import.contracts.js";
 import {
   providerAccountingBudgets,
   providerAccountingConservativeSettlements,

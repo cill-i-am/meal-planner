@@ -30,9 +30,7 @@ const catalogueConfig: TescoCatalogueConfig = {
   ),
   mangoUrl: new URL("https://xapi.tesco.com/"),
   region: Schema.decodeUnknownSync(TescoRegion)("IE"),
-  releaseBranch: null,
   suggestionUrl: new URL("https://search.api.tesco.com/search/suggestion/"),
-  transactionPurpose: null,
 };
 
 interface StubResponse {

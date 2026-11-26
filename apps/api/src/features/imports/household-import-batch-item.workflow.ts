@@ -1,5 +1,6 @@
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import type { RecipeImportBatch } from "@meal-planner/recipe-import-api";
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
 import type { RuntimeContext } from "alchemy";
 import { Cause, Effect, Option, Schema } from "effect";
 
@@ -27,7 +28,6 @@ import {
   ImportIntentExecutionGeneration,
 } from "../households/shared-kernel/workflow-identity.js";
 import { ImportTraceContext } from "./import-observability.js";
-import { ImportId } from "./import.contracts.js";
 import type { ImportWorkflowReconciler } from "./import.workflow.js";
 import ImportAcquisitionWorkflow, {
   makeImportWorkflowStarter,

@@ -1,5 +1,25 @@
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import {
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "@meal-planner/recipe-imports/contracts";
+import { workflowStartUnavailable } from "@meal-planner/recipe-imports/contracts/errors";
+import type {
+  AcquisitionBucketLike,
+  AcquisitionMediaSource,
+  PreparedMediaArtifact,
+  R2ObjectBodyLike,
+  R2ObjectLike,
+} from "@meal-planner/recipe-imports/media/acquirer";
+import { acquireStoreVerify } from "@meal-planner/recipe-imports/media/acquirer";
+import { RetryableAcquisitionError } from "@meal-planner/recipe-imports/media/errors";
+import {
+  AcquisitionGeneration,
+  Sha256Hex,
+} from "@meal-planner/recipe-imports/media/model";
+import { makeTikTokCanonicalSourceIdentityResolver } from "@meal-planner/recipe-imports/sources/source-identity.tiktok";
 import { RuntimeContext } from "alchemy";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Option, Schema, Stream } from "effect";
@@ -8,19 +28,6 @@ import {
   makeHouseholdSpeechTranscriptionRepository,
   makeHouseholdVisualEvidenceRepository,
 } from "../imports/import-evidence.repository.household.js";
-import type {
-  AcquisitionBucketLike,
-  AcquisitionMediaSource,
-  PreparedMediaArtifact,
-  R2ObjectBodyLike,
-  R2ObjectLike,
-} from "../imports/import-media-acquirer.js";
-import { acquireStoreVerify } from "../imports/import-media-acquirer.js";
-import { RetryableAcquisitionError } from "../imports/import-media.errors.js";
-import {
-  AcquisitionGeneration,
-  Sha256Hex,
-} from "../imports/import-media.model.js";
 import {
   ImportCorrelationId,
   ImportTraceContext,
@@ -46,13 +53,6 @@ import type {
   WorkerTestR2Object,
   WorkerTestR2ObjectBody,
 } from "../imports/import-worker-test-environment.js";
-import {
-  ImportId,
-  ImportTimestamp,
-  SourceCanonicalId,
-} from "../imports/import.contracts.js";
-import { workflowStartUnavailable } from "../imports/import.errors.js";
-import { makeTikTokCanonicalSourceIdentityResolver } from "../imports/source-identity.tiktok.js";
 import {
   TranscriptEvidenceStore,
   TranscriptEvidenceStoreLive,

@@ -3,7 +3,10 @@ import { Clock, Effect, Exit, Redacted, Schema } from "effect";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { TestClock } from "effect/testing";
 
-import { cookieHeaderFor, TescoSessionCredentials } from "./session.model.js";
+import {
+  cookieHeaderFor,
+  TescoSessionCredentials,
+} from "../session/session.model.js";
 import {
   makeSessionEncryption,
   makeTescoSessionService,

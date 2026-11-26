@@ -1,10 +1,10 @@
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
 import { Data, Effect, Schema } from "effect";
 import { flow } from "effect/Function";
 
 import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
 import { ImportTraceContext } from "./import-observability.js";
-import { ImportId } from "./import.contracts.js";
 
 export const ImportWorkflowInput = Schema.Struct({
   executionGeneration: ImportIntentExecutionGeneration.pipe(

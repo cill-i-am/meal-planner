@@ -1,3 +1,13 @@
+import {
+  ImportId,
+  SourceCanonicalId,
+} from "@meal-planner/recipe-imports/contracts";
+import {
+  AcquisitionTaskOutcome,
+  AcquisitionGeneration,
+  manifestObjectKey,
+  mediaObjectKey,
+} from "@meal-planner/recipe-imports/media/model";
 import { Effect, Option, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -7,13 +17,6 @@ import {
   recoverHouseholdVerifiedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
 import type { HouseholdImportEvidenceCurrent } from "./import-evidence.repository.household.js";
-import {
-  AcquisitionTaskOutcome,
-  AcquisitionGeneration,
-  manifestObjectKey,
-  mediaObjectKey,
-} from "./import-media.model.js";
-import { ImportId, SourceCanonicalId } from "./import.contracts.js";
 
 const importId = Schema.decodeUnknownSync(ImportId)(
   "00000000-0000-4000-8000-000000000189"

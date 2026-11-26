@@ -4,8 +4,9 @@ import { Enrollment, failure } from "@meal-planner/sigen";
 import type { ConnectionStatus, SigenFailure } from "@meal-planner/sigen";
 import { Effect, Redacted, Schema, Stream } from "effect";
 
-import { SigenCapabilities, openApi, operations } from "./contracts.js";
+import { SigenCapabilities, findOperation } from "./contracts.js";
 import { handleMcp } from "./mcp.js";
+import { openApi } from "./openapi.js";
 import type { SessionReport } from "./session.js";
 
 export const authorized = (
@@ -184,7 +185,9 @@ export const makeHttpHandler = (options: HttpOptions) => (request: Request) =>
               Effect.provideService(SigenCapabilities, options.capabilities)
             );
           }
-          const operation = operations.find((op) => path === `/v1/${op.name}`);
+          const operation = path.startsWith("/v1/")
+            ? findOperation(path.slice("/v1/".length))
+            : undefined;
           if (operation === undefined) {
             return json({ error: "NotFound" }, 404);
           }

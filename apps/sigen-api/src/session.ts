@@ -12,22 +12,7 @@ import type {
   SigenFailure,
   TokenBundle,
 } from "@meal-planner/sigen";
-import type { AlarmInput } from "@meal-planner/sigen/alarms";
-import type {
-  BackupEventsInput,
-  BackupHistoryInput,
-} from "@meal-planner/sigen/backup";
-import type { ChargerInput } from "@meal-planner/sigen/charging";
 import type { SigenClient } from "@meal-planner/sigen/client";
-import type { DeviceInput } from "@meal-planner/sigen/equipment";
-import type {
-  HistoryInput,
-  ForecastInput,
-  IncomeInput,
-} from "@meal-planner/sigen/history";
-import type { SmartLoadHistoryInput } from "@meal-planner/sigen/load-settings";
-import type { SmartLoadInput } from "@meal-planner/sigen/loads";
-import type { EnergyProfileInput } from "@meal-planner/sigen/profile";
 import { Clock, Effect, Redacted, Schema, Semaphore } from "effect";
 
 import { EncryptedSecret, makeVault } from "./vault.js";
@@ -313,6 +298,26 @@ export const makeSession = <R>(
           );
         })
       );
+    const readStation =
+      <A>(
+        vendor: (
+          stationId: StationId,
+          token: Redacted.Redacted<string>
+        ) => Effect.Effect<A, SigenFailure>
+      ) =>
+      (stationId: StationId) =>
+        read(stationId, (token) => vendor(stationId, token));
+
+    const readStationInput =
+      <I extends { readonly stationId: StationId }, A>(
+        vendor: (
+          input: I,
+          token: Redacted.Redacted<string>
+        ) => Effect.Effect<A, SigenFailure>
+      ) =>
+      (input: I) =>
+        read(input.stationId, (token) => vendor(input, token));
+
     const health = storage.read.pipe(
       Effect.flatMap((record) => {
         const { session } = record;
@@ -336,53 +341,28 @@ export const makeSession = <R>(
       })
     );
     return {
-      acChargerCurrent: (input: typeof ChargerInput.Type) =>
-        read(input.stationId, (token) => client.acChargerCurrent(input, token)),
-      acChargerSettings: (input: typeof ChargerInput.Type) =>
-        read(input.stationId, (token) =>
-          client.acChargerSettings(input, token)
-        ),
-      aioDevices: (id: StationId) =>
-        read(id, (token) => client.aioDevices(id, token)),
-      aioPowerStatus: (input: DeviceInput) =>
-        read(input.stationId, (token) => client.aioPowerStatus(input, token)),
-      alarms: (input: AlarmInput) =>
-        read(input.stationId, (token) => client.alarms(input, token)),
-      automationSettings: (id: StationId) =>
-        read(id, (token) => client.automationSettings(id, token)),
-      backupEvents: (input: BackupEventsInput) =>
-        read(input.stationId, (token) => client.backupEvents(input, token)),
-      backupHistory: (input: BackupHistoryInput) =>
-        read(input.stationId, (token) => client.backupHistory(input, token)),
-      batteryDischargePriority: (id: StationId) =>
-        read(id, (token) => client.batteryDischargePriority(id, token)),
-      batterySettings: (id: StationId) =>
-        read(id, (token) => client.batterySettings(id, token)),
-      chargerSchedules: (input: typeof ChargerInput.Type) =>
-        read(input.stationId, (token) => client.chargerSchedules(input, token)),
-      chargerStatus: (input: typeof ChargerInput.Type) =>
-        read(input.stationId, (token) => client.chargerStatus(input, token)),
-      chargers: (input: StationId) =>
-        read(input, (token) => client.chargers(input, token)),
-      dcChargerSettings: (input: typeof ChargerInput.Type) =>
-        read(input.stationId, (token) =>
-          client.dcChargerSettings(input, token)
-        ),
-      deviceInfo: (input: DeviceInput) =>
-        read(input.stationId, (token) => client.deviceInfo(input, token)),
-      deviceValues: (input: DeviceInput) =>
-        read(input.stationId, (token) => client.deviceValues(input, token)),
+      acChargerCurrent: readStationInput(client.acChargerCurrent),
+      acChargerSettings: readStationInput(client.acChargerSettings),
+      aioDevices: readStation(client.aioDevices),
+      aioPowerStatus: readStationInput(client.aioPowerStatus),
+      alarms: readStationInput(client.alarms),
+      automationSettings: readStation(client.automationSettings),
+      backupEvents: readStationInput(client.backupEvents),
+      backupHistory: readStationInput(client.backupHistory),
+      batteryDischargePriority: readStation(client.batteryDischargePriority),
+      batterySettings: readStation(client.batterySettings),
+      chargerSchedules: readStationInput(client.chargerSchedules),
+      chargerStatus: readStationInput(client.chargerStatus),
+      chargers: readStation(client.chargers),
+      dcChargerSettings: readStationInput(client.dcChargerSettings),
+      deviceInfo: readStationInput(client.deviceInfo),
+      deviceValues: readStationInput(client.deviceValues),
       disconnect: lock.withPermits(1)(storage.write(emptySession, null)),
-      energyCapabilities: (id: StationId) =>
-        read(id, (token) => client.energyCapabilities(id, token)),
-      energyFlow: (id: StationId) =>
-        read(id, (token) => client.energyFlow(id, token)),
-      energyHistory: (input: HistoryInput) =>
-        read(input.stationId, (token) => client.energyHistory(input, token)),
-      energyProfile: (input: typeof EnergyProfileInput.Type) =>
-        read(input.stationId, (token) => client.energyProfile(input, token)),
-      energySavingSettings: (id: StationId) =>
-        read(id, (token) => client.energySavingSettings(id, token)),
+      energyCapabilities: readStation(client.energyCapabilities),
+      energyFlow: readStation(client.energyFlow),
+      energyHistory: readStationInput(client.energyHistory),
+      energyProfile: readStationInput(client.energyProfile),
+      energySavingSettings: readStation(client.energySavingSettings),
       enroll: (input: Redacted.Redacted<Enrollment>) =>
         lock.withPermits(1)(
           Effect.gen(function* enrollSession() {
@@ -403,19 +383,13 @@ export const makeSession = <R>(
             return yield* health;
           })
         ),
-      forecast: (input: ForecastInput) =>
-        read(input.stationId, (token) => client.forecast(input, token)),
-      gateway: (input: StationId) =>
-        read(input, (token) => client.gateway(input, token)),
-      gridDevices: (input: StationId) =>
-        read(input, (token) => client.gridDevices(input, token)),
-      gridSettings: (id: StationId) =>
-        read(id, (token) => client.gridSettings(id, token)),
+      forecast: readStationInput(client.forecast),
+      gateway: readStation(client.gateway),
+      gridDevices: readStation(client.gridDevices),
+      gridSettings: readStation(client.gridSettings),
       health: lock.withPermits(1)(health),
-      loadCapabilities: (id: StationId) =>
-        read(id, (token) => client.loadCapabilities(id, token)),
-      manualOverride: (id: StationId) =>
-        read(id, (token) => client.manualOverride(id, token)),
+      loadCapabilities: readStation(client.loadCapabilities),
+      manualOverride: readStation(client.manualOverride),
       onAlarm: lock.withPermits(1)(
         Effect.gen(function* handleRenewalAlarm() {
           const record = yield* storage.read;
@@ -455,18 +429,12 @@ export const makeSession = <R>(
           )
         )
       ),
-      operatingMode: (id: StationId) =>
-        read(id, (token) => client.operatingMode(id, token)),
-      operatingModes: (id: StationId) =>
-        read(id, (token) => client.operatingModes(id, token)),
-      peakShavingSchedule: (id: StationId) =>
-        read(id, (token) => client.peakShavingSchedule(id, token)),
-      predictionPlan: (id: StationId) =>
-        read(id, (token) => client.predictionPlan(id, token)),
-      preheatingSettings: (id: StationId) =>
-        read(id, (token) => client.preheatingSettings(id, token)),
-      profileTemplates: (id: StationId) =>
-        read(id, (token) => client.profileTemplates(id, token)),
+      operatingMode: readStation(client.operatingMode),
+      operatingModes: readStation(client.operatingModes),
+      peakShavingSchedule: readStation(client.peakShavingSchedule),
+      predictionPlan: readStation(client.predictionPlan),
+      preheatingSettings: readStation(client.preheatingSettings),
+      profileTemplates: readStation(client.profileTemplates),
       report: lock.withPermits(1)(
         Effect.gen(function* reportSession() {
           return {
@@ -475,46 +443,25 @@ export const makeSession = <R>(
           };
         })
       ),
-      smartLoad: (input: typeof SmartLoadInput.Type) =>
-        read(input.stationId, (token) => client.smartLoad(input, token)),
-      smartLoadConsumption: (input: typeof SmartLoadHistoryInput.Type) =>
-        read(input.stationId, (token) =>
-          client.smartLoadConsumption(input, token)
-        ),
-      smartLoadControlSettings: (input: typeof SmartLoadInput.Type) =>
-        read(input.stationId, (token) =>
-          client.smartLoadControlSettings(input, token)
-        ),
-      smartLoads: (id: StationId) =>
-        read(id, (token) => client.smartLoads(id, token)),
-      solarPriority: (id: StationId) =>
-        read(id, (token) => client.solarPriority(id, token)),
-      solarSettings: (id: StationId) =>
-        read(id, (token) => client.solarSettings(id, token)),
-      station: (id: StationId) =>
-        read(id, (token) => client.station(id, token)),
-      stationCapabilities: (id: StationId) =>
-        read(id, (token) => client.stationCapabilities(id, token)),
-      stationConsumption: (input: typeof HistoryInput.Type) =>
-        read(input.stationId, (token) =>
-          client.stationConsumption(input, token)
-        ),
-      stationIncome: (input: IncomeInput) =>
-        read(input.stationId, (token) => client.stationIncome(input, token)),
-      stationStatus: (input: StationId) =>
-        read(input, (token) => client.stationStatus(input, token)),
-      stations: (id: StationId) =>
-        read(id, (token) => client.stations(id, token)),
-      systemCards: (id: StationId) =>
-        read(id, (token) => client.systemCards(id, token)),
-      tariffs: (id: StationId) =>
-        read(id, (token) => client.tariffs(id, token)),
-      thirdPartyDevices: (id: StationId) =>
-        read(id, (token) => client.thirdPartyDevices(id, token)),
-      timeOfUseSettings: (id: StationId) =>
-        read(id, (token) => client.timeOfUseSettings(id, token)),
-      topology: (input: StationId) =>
-        read(input, (token) => client.topology(input, token)),
+      smartLoad: readStationInput(client.smartLoad),
+      smartLoadConsumption: readStationInput(client.smartLoadConsumption),
+      smartLoadControlSettings: readStationInput(
+        client.smartLoadControlSettings
+      ),
+      smartLoads: readStation(client.smartLoads),
+      solarPriority: readStation(client.solarPriority),
+      solarSettings: readStation(client.solarSettings),
+      station: readStation(client.station),
+      stationCapabilities: readStation(client.stationCapabilities),
+      stationConsumption: readStationInput(client.stationConsumption),
+      stationIncome: readStationInput(client.stationIncome),
+      stationStatus: readStation(client.stationStatus),
+      stations: readStation(client.stations),
+      systemCards: readStation(client.systemCards),
+      tariffs: readStation(client.tariffs),
+      thirdPartyDevices: readStation(client.thirdPartyDevices),
+      timeOfUseSettings: readStation(client.timeOfUseSettings),
+      topology: readStation(client.topology),
 
       withConnection: <A, E, R2>(
         stationId: StationId,

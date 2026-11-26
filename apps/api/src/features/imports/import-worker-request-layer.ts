@@ -1,4 +1,8 @@
 import * as Cloudflare from "@alchemy.run/cloudflare";
+import {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
 import { RuntimeContext } from "alchemy";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Layer, Schema } from "effect";
@@ -33,7 +37,6 @@ import {
   makeImportSystemAuthorizer,
 } from "./import-system.auth.js";
 import { RecipeImportWorkflowDispatcher } from "./import-workflow-dispatcher.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportWorkflowReconciler } from "./import.workflow.js";
 
 /** Inputs required to construct the import HTTP route services once. */

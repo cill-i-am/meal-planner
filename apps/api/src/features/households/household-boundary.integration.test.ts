@@ -5061,30 +5061,48 @@ describe("household public API to private Durable Object boundary", () => {
       HouseholdMealPlanResponse
     )(await changeResponse.json());
     expect(changed).toMatchObject({ _tag: "Draft", revision: 1 });
-    const approveResponse = await getRuntime().dispatchFetch(
-      `https://meal-planner.test/v1/meal-plans/${mealPlan.planId}/approve`,
-      {
-        body: JSON.stringify(
-          Schema.encodeSync(DecideMealPlanPayload)(
-            Schema.decodeUnknownSync(DecideMealPlanPayload)({
-              expectedRevision: 1,
-              mutationId: "boundary-plan-approve",
-              reason: "Adult reviewed the complete plan.",
-            })
-          )
-        ),
-        headers: { "content-type": "application/json", cookie },
-        method: "POST",
-      }
+    const approvePlan = (reason: string) =>
+      getRuntime().dispatchFetch(
+        `https://meal-planner.test/v1/meal-plans/${mealPlan.planId}/approve`,
+        {
+          body: JSON.stringify(
+            Schema.encodeSync(DecideMealPlanPayload)(
+              Schema.decodeUnknownSync(DecideMealPlanPayload)({
+                expectedRevision: 1,
+                mutationId: "boundary-plan-approve",
+                reason,
+              })
+            )
+          ),
+          headers: { "content-type": "application/json", cookie },
+          method: "POST",
+        }
+      );
+    const approveResponse = await approvePlan(
+      "Adult reviewed the complete plan."
     );
     expect(approveResponse.status, await approveResponse.clone().text()).toBe(
       200
     );
-    expect(
-      await Schema.decodeUnknownPromise(HouseholdMealPlanResponse)(
-        await approveResponse.json()
-      )
-    ).toMatchObject({ _tag: "Approved", revision: 2 });
+    const approved = await Schema.decodeUnknownPromise(
+      HouseholdMealPlanResponse
+    )(await approveResponse.json());
+    expect(approved).toMatchObject({ _tag: "Approved", revision: 2 });
+
+    const conflict = await approvePlan(
+      "Changed the decision under the same mutation ID."
+    );
+    expect(conflict.status).toBe(409);
+    expect(await conflict.json()).toMatchObject({
+      reason: "mutation_conflict",
+    });
+
+    const missing = await getRuntime().dispatchFetch(
+      "https://meal-planner.test/v1/meal-plans/absent-plan",
+      { headers: { cookie } }
+    );
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toMatchObject({ code: "meal_plan_not_found" });
   });
 
   it("commits verified R2 acquisition evidence through the private household authority", async () => {

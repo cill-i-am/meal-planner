@@ -5,13 +5,13 @@ import path from "node:path";
 
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import { NodeHttpServer, NodeRuntime } from "@effect/platform-node";
+import { makeTikTokMediaContainerRuntime } from "@meal-planner/recipe-imports/media/container.runtime";
+import { makeTemporaryArtifactStore } from "@meal-planner/recipe-imports/media/process";
+import { decodeTikTokMediaSession } from "@meal-planner/recipe-imports/sources/source-session";
 import { Effect, Layer, Stream } from "effect";
 import * as HttpServer from "effect/http/HttpServer";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
-import { makeTikTokMediaContainerRuntime } from "../../features/imports/import-media-container.runtime.js";
-import { makeTemporaryArtifactStore } from "../../features/imports/import-media-process.js";
-import { decodeTikTokMediaSession } from "../../features/imports/import-source-session.js";
 import {
   LifecycleFixtureByteCount,
   LifecycleFixtureDurationSeconds,

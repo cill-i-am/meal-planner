@@ -4,11 +4,11 @@ import {
   RecipeImportIntent,
   RecipeImportTimelineEvent,
 } from "@meal-planner/recipe-import-api";
+import { EvidenceRetentionSeconds } from "@meal-planner/recipe-imports/media/model";
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, DateTime, Effect, Match, Option, Schema } from "effect";
 
-import { EvidenceRetentionSeconds } from "../../imports/import-media.model.js";
 import { ensureHouseholdProvenance } from "../foundation/household-provenance.js";
 import {
   householdEvidenceMutationReceipts,

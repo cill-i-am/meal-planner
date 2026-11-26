@@ -128,13 +128,13 @@ export const makeCommands = <R>(
             approvalScope(command.review.stationId, command.review.change)
           )
     );
-  const reconcile = (
+  const verifyByReadback = (
     book: CommandBook,
     command: Command,
     attemptedAt: number,
     token: Redacted.Redacted<string>
   ) =>
-    Effect.gen(function* reconcileCommand() {
+    Effect.gen(function* verifyCommandReadback() {
       const result = yield* client
         .inspectControl(command.review.stationId, command.review.change, token)
         .pipe(Effect.result);
@@ -240,7 +240,7 @@ export const makeCommands = <R>(
             case "dispatching":
             case "accepted":
             case "outcome_unknown": {
-              return yield* reconcile(
+              return yield* verifyByReadback(
                 book,
                 command,
                 command.phase.attemptedAt,
@@ -328,7 +328,7 @@ export const makeCommands = <R>(
             ...command,
             phase: { attemptedAt, status: "accepted" },
           });
-          return yield* reconcile(book, command, attemptedAt, token);
+          return yield* verifyByReadback(book, command, attemptedAt, token);
         })
       ),
     getCommand: (input: typeof CommandInput.Type) =>

@@ -1,11 +1,10 @@
-import { Schema } from "effect";
-import { describe, expect, it } from "vitest";
-
 import {
   IdempotencyKey,
   SourceDescriptor,
   SourceUrl,
-} from "./import.contracts.js";
+} from "@meal-planner/recipe-imports/contracts";
+import { Schema } from "effect";
+import { describe, expect, it } from "vitest";
 
 const decodeSource = Schema.decodeUnknownSync(SourceDescriptor);
 

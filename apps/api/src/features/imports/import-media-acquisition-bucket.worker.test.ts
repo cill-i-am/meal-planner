@@ -1,10 +1,9 @@
 import type * as Cloudflare from "@alchemy.run/cloudflare";
+import type { AcquisitionPutOptions } from "@meal-planner/recipe-imports/media/acquirer";
+import { adaptAcquisitionBucket } from "@meal-planner/recipe-imports/media/acquisition-bucket.alchemy";
 import type { BaseRuntimeContext } from "alchemy/RuntimeContext";
 import { Effect, Exit, Fiber, Stream } from "effect";
 import { describe, expect, it } from "vitest";
-
-import type { AcquisitionPutOptions } from "./import-media-acquirer.js";
-import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
 
 const runtimeContext: BaseRuntimeContext = {
   Type: "native-r2-adapter-test",

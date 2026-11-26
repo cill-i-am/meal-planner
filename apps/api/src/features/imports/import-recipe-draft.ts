@@ -1,17 +1,21 @@
 import { RecipeImportActionId } from "@meal-planner/recipe-import-api";
-import { Effect, Option, Schema } from "effect";
-
-import type { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
-import { sha256Bytes } from "./import-digest.js";
-import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
-import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
-import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
+import type {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
+import { sha256Bytes } from "@meal-planner/recipe-imports/evidence/digest";
+import { readVerifiedAcquisitionEvidence } from "@meal-planner/recipe-imports/media/acquirer";
+import type { AcquisitionBucketLike } from "@meal-planner/recipe-imports/media/acquirer";
 import type {
   AcquisitionGeneration,
   VerifiedAcquisitionEvidence,
   VerifiedSourceMetadata,
-} from "./import-media.model.js";
-import { Sha256Hex } from "./import-media.model.js";
+} from "@meal-planner/recipe-imports/media/model";
+import { Sha256Hex } from "@meal-planner/recipe-imports/media/model";
+import { Effect, Option, Schema } from "effect";
+
+import type { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
+import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
 import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type {
   RecipeDraft,
@@ -32,7 +36,6 @@ import {
   RecipeExtractorDescriptor,
 } from "./import-recipe-extractor.js";
 import { groundRecipeCandidate } from "./import-recipe-grounding.js";
-import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportTransitionError } from "./import.repository.js";
 import {
   TranscriptEvidenceStore,

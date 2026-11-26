@@ -212,6 +212,9 @@ importers:
       '@interfere/landmines':
         specifier: 0.1.1
         version: 0.1.1(oxlint@1.94.0)
+      '@meal-planner/recipe-imports':
+        specifier: workspace:*
+        version: link:apps/recipe-imports
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7)
@@ -302,6 +305,9 @@ importers:
       '@meal-planner/recipe-import-api':
         specifier: workspace:*
         version: link:../../packages/recipe-import-api
+      '@meal-planner/recipe-imports':
+        specifier: workspace:*
+        version: link:../recipe-imports
       '@modelcontextprotocol/ext-tasks':
         specifier: 0.2.3
         version: 0.2.3(@modelcontextprotocol/client@2.4.0)
@@ -326,6 +332,9 @@ importers:
       agents:
         specifier: 0.33.0
         version: 0.33.0(@babel/core@8.0.7)(@babel/runtime@7.29.10)(@modelcontextprotocol/client@2.4.0)(@modelcontextprotocol/sdk@1.32.2(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7))(@modelcontextprotocol/server@2.4.0)(@tanstack/ai@1.5.0(@opentelemetry/api@1.10.0)(zod@4.6.7))(react@19.3.1)(rolldown@1.2.19)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(zod@4.6.7)
+      '@meal-planner/transcription':
+        specifier: workspace:*
+        version: link:../../packages/transcription
       alchemy:
         specifier: 2.0.0-beta.87
         version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0)))(@types/react@19.3.0)(effect@4.1.4)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(ws@8.23.0)
@@ -347,9 +356,6 @@ importers:
       openai:
         specifier: 7.58.0
         version: 7.58.0(undici@8.12.4)(ws@8.23.0)(zod@4.6.7)
-      parse5:
-        specifier: 8.1.1
-        version: 8.1.1
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -403,6 +409,37 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.0)(@vitest/ui@5.1.0)(msw@2.15.0(@types/node@26.6.6)(typescript@7.0.2))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
 
+  apps/recipe-imports:
+    dependencies:
+      '@alchemy.run/cloudflare':
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(patch_hash=a683b6394c31ebeac34687982f28865bd65b0254b149d877ccca89049822c1f5)(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0)))(@types/node@26.6.6)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0)))(@types/react@19.3.0)(effect@4.1.4)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)(mysql2@3.24.6(@types/node@26.6.6))(typescript@7.0.2)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      '@meal-planner/transcription':
+        specifier: workspace:*
+        version: link:../../packages/transcription
+      alchemy:
+        specifier: 2.0.0-beta.87
+        version: 2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0)))(@types/react@19.3.0)(effect@4.1.4)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(ws@8.23.0)
+      effect:
+        specifier: 4.1.4
+        version: 4.1.4
+      parse5:
+        specifier: 8.1.1
+        version: 8.1.1
+    devDependencies:
+      '@effect/vitest':
+        specifier: 4.1.4
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0)
+      '@types/node':
+        specifier: 26.6.6
+        version: 26.6.6
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.0)(@vitest/ui@5.1.0)(msw@2.15.0(@types/node@26.6.6)(typescript@7.0.2))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
   apps/sigen-api:
     dependencies:
       '@alchemy.run/cloudflare':
@@ -436,9 +473,6 @@ importers:
       '@alchemy.run/cloudflare':
         specifier: 2.0.0-beta.87
         version: 2.0.0-beta.87(patch_hash=a683b6394c31ebeac34687982f28865bd65b0254b149d877ccca89049822c1f5)(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0)))(@types/node@26.6.6)(alchemy@2.0.0-beta.87(@effect/platform-bun@4.1.4(effect@4.1.4))(@effect/platform-node@4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0)))(@types/react@19.3.0)(effect@4.1.4)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))(ws@8.23.0))(effect@4.1.4)(mysql2@3.24.6(@types/node@26.6.6))(typescript@7.0.2)(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
-      '@effect/platform-node':
-        specifier: 4.1.4
-        version: 4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0))
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(@cfworker/json-schema@4.1.1)(supports-color@10.2.2)(zod@4.6.7)
@@ -458,6 +492,9 @@ importers:
       '@cloudflare/workers-types':
         specifier: 5.20261117.1
         version: 5.20261117.1
+      '@effect/platform-node':
+        specifier: 4.1.4
+        version: 4.1.4(effect@4.1.4)(redis@6.3.0(@opentelemetry/api@1.10.0))
       '@effect/vitest':
         specifier: 4.1.4
         version: 4.1.4(effect@4.1.4)(vitest@5.1.0)
@@ -610,6 +647,19 @@ importers:
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.1.0
+        version: 5.1.0(@opentelemetry/api@1.10.0)(@types/node@26.6.6)(@vitest/browser-playwright@5.1.0)(@vitest/ui@5.1.0)(msw@2.15.0(@types/node@26.6.6)(typescript@7.0.2))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+
+  packages/transcription:
+    dependencies:
+      effect:
+        specifier: 4.1.4
+        version: 4.1.4
+    devDependencies:
       typescript:
         specifier: 7.0.2
         version: 7.0.2

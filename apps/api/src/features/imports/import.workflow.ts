@@ -1,5 +1,43 @@
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import type {
+  SourceCanonicalId,
+  ImportId,
+} from "@meal-planner/recipe-imports/contracts";
+import { ImportTimestamp } from "@meal-planner/recipe-imports/contracts";
+import {
+  workflowStartRefused,
+  workflowStartUnavailable,
+} from "@meal-planner/recipe-imports/contracts/errors";
+import type {
+  WorkflowStartRefused,
+  WorkflowStartUnavailable,
+} from "@meal-planner/recipe-imports/contracts/errors";
+import {
+  acquireStoreVerify,
+  readVerifiedAcquisitionEvidence,
+} from "@meal-planner/recipe-imports/media/acquirer";
+import { adaptAcquisitionBucket } from "@meal-planner/recipe-imports/media/acquisition-bucket.alchemy";
+import { ImportMediaAcquisitionObject } from "@meal-planner/recipe-imports/media/acquisition-object";
+import { makeAcquisitionMediaObject } from "@meal-planner/recipe-imports/media/acquisition-object.client";
+import {
+  makeR2SpeechAudioExtractor,
+  makeR2VisualFrameSampler,
+  persistDerivedProviderEvidence,
+} from "@meal-planner/recipe-imports/media/derived-media";
+import {
+  AcquisitionGeneration,
+  AcquisitionTaskOutcome,
+  MaximumAcquisitionAttemptSeconds,
+  MaximumLocalCleanupMilliseconds,
+  acquisitionCoordinatorId,
+} from "@meal-planner/recipe-imports/media/model";
+import type {
+  AcquisitionFailureReason,
+  AcquisitionStage,
+  RetryableAcquisitionFailure,
+} from "@meal-planner/recipe-imports/media/model";
+import { makeTikTokCanonicalSourceIdentityResolver } from "@meal-planner/recipe-imports/sources/source-identity.tiktok";
 import { RuntimeContext } from "alchemy";
 import {
   Cause,
@@ -45,11 +83,6 @@ import {
   decodeAcquisitionCheckpoint,
   recoverHouseholdVerifiedAcquisitionCheckpoint,
 } from "./import-acquisition-checkpoint.js";
-import {
-  makeR2SpeechAudioExtractor,
-  makeR2VisualFrameSampler,
-  persistDerivedProviderEvidence,
-} from "./import-derived-media.js";
 import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
 import {
   makeHouseholdImportEvidenceCurrentRepository,
@@ -57,25 +90,6 @@ import {
   makeHouseholdSpeechTranscriptionRepository,
   makeHouseholdVisualEvidenceRepository,
 } from "./import-evidence.repository.household.js";
-import {
-  acquireStoreVerify,
-  readVerifiedAcquisitionEvidence,
-} from "./import-media-acquirer.js";
-import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
-import { makeAcquisitionMediaObject } from "./import-media-acquisition-object.client.js";
-import { ImportMediaAcquisitionObject } from "./import-media-acquisition-object.js";
-import {
-  AcquisitionGeneration,
-  AcquisitionTaskOutcome,
-  MaximumAcquisitionAttemptSeconds,
-  MaximumLocalCleanupMilliseconds,
-  acquisitionCoordinatorId,
-} from "./import-media.model.js";
-import type {
-  AcquisitionFailureReason,
-  AcquisitionStage,
-  RetryableAcquisitionFailure,
-} from "./import-media.model.js";
 import type {
   AcquisitionDiagnosticReasonCode,
   ImportCorrelationId,
@@ -126,19 +140,8 @@ import {
   postAcquisitionRestartOptions,
 } from "./import-workflow-journal.js";
 import { workflowMutationId } from "./import-workflow-mutation.js";
-import type { SourceCanonicalId, ImportId } from "./import.contracts.js";
-import { ImportTimestamp } from "./import.contracts.js";
-import {
-  workflowStartRefused,
-  workflowStartUnavailable,
-} from "./import.errors.js";
-import type {
-  WorkflowStartRefused,
-  WorkflowStartUnavailable,
-} from "./import.errors.js";
 import type { AcquisitionFinalizationResult as AcquisitionFinalizationResultType } from "./import.repository.js";
 import { AcquisitionFinalizationResult } from "./import.repository.js";
-import { makeTikTokCanonicalSourceIdentityResolver } from "./source-identity.tiktok.js";
 
 export const AcquisitionTaskStepConfig = {
   retries: { limit: 3, delay: "2 seconds", backoff: "exponential" },

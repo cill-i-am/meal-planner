@@ -1,26 +1,28 @@
-import { Effect, Option, Schema } from "effect";
-
-import { sha256Bytes } from "./import-digest.js";
-import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
-import { readVerifiedAcquisitionEvidence } from "./import-media-acquirer.js";
-import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
-import type { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type {
-  NoAudioSpeechEvidence,
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
+import { importTransitionRejected } from "@meal-planner/recipe-imports/contracts/errors";
+import { sha256Bytes } from "@meal-planner/recipe-imports/evidence/digest";
+import type {
   SpeechAudioExtractor,
-  SpeechTranscriber,
-} from "./import-speech-transcriber.js";
+  RecipeSpeechTranscriber,
+} from "@meal-planner/recipe-imports/evidence/speech-transcriber";
 import {
-  decodeSpeechTranscriptionResult,
   SpeechAudioAbsence,
   validateSpeechAudioArtifact,
-} from "./import-speech-transcriber.js";
+} from "@meal-planner/recipe-imports/evidence/speech-transcriber";
+import { readVerifiedAcquisitionEvidence } from "@meal-planner/recipe-imports/media/acquirer";
+import type { AcquisitionBucketLike } from "@meal-planner/recipe-imports/media/acquirer";
+import type { NoAudioSpeechEvidence } from "@meal-planner/transcription";
+import { Effect, Option, Schema } from "effect";
+
+import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
+import type { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
 import type {
   CompletedTranscriptEvidence,
   SpeechTranscriptionRepository,
 } from "./import-speech-transcription.repository.js";
-import type { ImportId, ImportTimestamp } from "./import.contracts.js";
-import { importTransitionRejected } from "./import.errors.js";
 import type { TranscriptEvidenceDocument } from "./transcript-evidence-store.js";
 import {
   TranscriptEvidenceStore,
@@ -91,7 +93,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
     readonly dispatchId?: string;
     readonly importId: ImportId;
     readonly now: () => ImportTimestamp;
-    readonly speechTranscriber: SpeechTranscriber;
+    readonly speechTranscriber: RecipeSpeechTranscriber;
     readonly transcriptionRepository: SpeechTranscriptionRepository;
   }) {
     const storedOption = yield* input.acquisitionRepository.readCurrent(
@@ -222,7 +224,7 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
         if (audioSha256 !== audio.sha256) {
           return yield* Effect.fail(pipelineFailure("audio_extraction_failed"));
         }
-        const rawTranscript = yield* input.speechTranscriber
+        const normalized = yield* input.speechTranscriber
           .transcribe({
             audio,
             dispatchId,
@@ -242,9 +244,6 @@ export const transcribeAcquiredImport = Effect.fn("Imports.transcribeAcquired")(
               )
             )
           );
-        const normalized = yield* decodeSpeechTranscriptionResult(
-          rawTranscript
-        ).pipe(Effect.mapError(() => pipelineFailure("transcription_failed")));
         const finalSegment = normalized.segments.at(-1);
         if (
           normalized.usage.audioDurationMilliseconds !==

@@ -1,3 +1,4 @@
+import { workflowStartUnavailable } from "@meal-planner/recipe-imports/contracts/errors";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -8,7 +9,6 @@ import {
 } from "../households/recipe-import/household-recipe-import.contract.js";
 import { HouseholdMemberAdmission } from "../households/rpc/command-envelope.js";
 import { makeRecipeImportWorkflowDispatcher } from "./import-worker-request-layer.js";
-import { workflowStartUnavailable } from "./import.errors.js";
 import { TestImportTrace } from "./import.fixture.js";
 
 const intentId = "018f47ad-91aa-7c35-b6fe-000000000001";

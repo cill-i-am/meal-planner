@@ -1,4 +1,10 @@
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import {
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "@meal-planner/recipe-imports/contracts";
+import { AcquisitionGeneration } from "@meal-planner/recipe-imports/media/model";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -10,13 +16,7 @@ import {
   makeHouseholdSpeechTranscriptionRepository,
   makeHouseholdVisualEvidenceRepository,
 } from "./import-evidence.repository.household.js";
-import { AcquisitionGeneration } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
-import {
-  ImportId,
-  ImportTimestamp,
-  SourceCanonicalId,
-} from "./import.contracts.js";
 
 describe("household evidence execution generation fencing", () => {
   it("keeps execution generation 1 when acquisition attempt 2 claims speech", async () => {

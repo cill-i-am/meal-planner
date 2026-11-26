@@ -1,4 +1,7 @@
 import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
+import type { ImportTimestamp } from "@meal-planner/recipe-imports/contracts";
+import type { AcquisitionGeneration } from "@meal-planner/recipe-imports/media/model";
 import { Effect, Schema } from "effect";
 
 import {
@@ -8,10 +11,7 @@ import {
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { HouseholdSystemAdmission } from "../households/rpc/command-envelope.js";
 import type { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
-import type { AcquisitionGeneration } from "./import-media.model.js";
 import type { ProviderTaskFailureCheckpoint } from "./import-provider-workflow-checkpoint.js";
-import { ImportId } from "./import.contracts.js";
-import type { ImportTimestamp } from "./import.contracts.js";
 
 export const isAmbiguousProviderTerminalFailure = (code: string) =>
   code === "outcome_unknown" ||

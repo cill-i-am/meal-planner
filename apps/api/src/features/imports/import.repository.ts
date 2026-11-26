@@ -1,11 +1,10 @@
-import { Schema } from "effect";
-
 import type {
   ImportNotFound,
   ImportPersistenceCorrupt,
   ImportPersistenceUnavailable,
   ImportTransitionRejected,
-} from "./import.errors.js";
+} from "@meal-planner/recipe-imports/contracts/errors";
+import { Schema } from "effect";
 
 export type ImportTransitionError =
   | ImportNotFound

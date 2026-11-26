@@ -1,6 +1,6 @@
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
 import { Schema } from "effect";
 
-import { ImportId } from "../../imports/import.contracts.js";
 import {
   ImportIntentExecutionGeneration,
   ImportWorkflowIdentity,

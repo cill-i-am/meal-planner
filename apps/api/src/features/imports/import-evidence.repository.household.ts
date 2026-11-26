@@ -1,4 +1,14 @@
 import type { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import type { SourceCanonicalId } from "@meal-planner/recipe-imports/contracts";
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
+import {
+  importPersistenceUnavailable,
+  importTransitionRejected,
+} from "@meal-planner/recipe-imports/contracts/errors";
+import {
+  AcquisitionGeneration,
+  Sha256Hex,
+} from "@meal-planner/recipe-imports/media/model";
 import { Effect, Option, Schema } from "effect";
 
 import {
@@ -12,7 +22,6 @@ import type { HouseholdOrganizationId } from "../households/household.contract.j
 import type { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import { HouseholdRecipeImportExecutionView } from "../households/recipe-import/household-recipe-import.contract.js";
 import type { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
-import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import type {
   RecipeDispatchClaim,
@@ -31,12 +40,6 @@ import type {
   VisualEvidenceRepository,
 } from "./import-visual-evidence.repository.js";
 import { VisualEvidenceFailureCode } from "./import-visual-evidence.repository.js";
-import type { SourceCanonicalId } from "./import.contracts.js";
-import { ImportId } from "./import.contracts.js";
-import {
-  importPersistenceUnavailable,
-  importTransitionRejected,
-} from "./import.errors.js";
 import type { ImportTransitionError } from "./import.repository.js";
 
 type MutationId = (seed: string) => Effect.Effect<HouseholdImportMutationId>;

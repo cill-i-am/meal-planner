@@ -1,7 +1,7 @@
 import type { Effect, Schema } from "effect";
 import { Context, Data } from "effect";
 
-import type { TescoAuthSessionError } from "../auth/auth.errors.js";
+import type { TescoCredentialsRejected } from "../auth/auth.errors.js";
 import type { ReadOnlyGraphQlOperation } from "./graphql-read-operation.js";
 
 /** GraphQL reads whose fixed documents make one post-refresh replay safe. */
@@ -49,7 +49,7 @@ export type TescoAuthenticatedResponseInvalid = InstanceType<
 
 /** Expected failures from the authenticated Tesco GraphQL transport. */
 export type TescoAuthenticatedGraphQlTransportError =
-  | TescoAuthSessionError
+  | TescoCredentialsRejected
   | TescoAuthenticatedRequestUnavailable
   | TescoAuthenticatedRequestRejected
   | TescoAuthenticatedResponseInvalid;

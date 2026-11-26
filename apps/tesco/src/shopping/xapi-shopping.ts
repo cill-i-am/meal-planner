@@ -4,7 +4,7 @@ import { HttpBody, HttpClient, HttpClientRequest } from "effect/http";
 import { TescoAuthSession } from "../auth/auth-session.port.js";
 import { TescoAuthenticatedGraphQlTransport } from "../catalogue/authenticated-graphql-transport.port.js";
 import { defineReadOnlyGraphQlOperation } from "../catalogue/graphql-read-operation.js";
-import { TescoSessionFailure } from "../mcp/session.model.js";
+import { TescoSessionFailure } from "../session/session.model.js";
 import type { TescoCatalogueConfig } from "../tesco.config.js";
 import * as Model from "./shopping.model.js";
 

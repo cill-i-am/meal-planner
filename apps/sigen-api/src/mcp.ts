@@ -8,7 +8,8 @@ import {
 import { Effect, FiberSet } from "effect";
 
 import type { SigenCapabilities } from "./contracts.js";
-import { jsonSchema, operations } from "./contracts.js";
+import { findOperation, operations } from "./contracts.js";
+import { jsonSchema } from "./wire-schema.js";
 
 /** Stateless SDK 1.32.1 boundary follows the existing Tesco transport; application work stays in Effect. */
 export const handleMcp = (request: Request) =>
@@ -44,9 +45,7 @@ export const handleMcp = (request: Request) =>
       })
     );
     server.setRequestHandler(CallToolRequestSchema, (message, extra) => {
-      const operation = operations.find(
-        (op) => op.name === message.params.name
-      );
+      const operation = findOperation(message.params.name);
       const result =
         operation === undefined
           ? Effect.fail(failure("InvalidInput"))

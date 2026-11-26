@@ -1,14 +1,20 @@
+import {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
+import {
+  AcquisitionGeneration,
+  Sha256Hex,
+} from "@meal-planner/recipe-imports/media/model";
+import { SpeechEvidenceStatus } from "@meal-planner/transcription";
 import { Schema } from "effect";
 import type { Effect } from "effect";
 
-import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import {
   RecipeExtraction,
   RecipeExtractorDescriptor,
 } from "./import-recipe-extractor.js";
 import type { DurableRecipeExtractionFailureCode } from "./import-recipe-extractor.js";
-import { SpeechEvidenceStatus } from "./import-speech-transcriber.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportTransitionError } from "./import.repository.js";
 
 export const RecipeDraft = Schema.Struct({

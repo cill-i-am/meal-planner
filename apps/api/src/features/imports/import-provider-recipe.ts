@@ -1,3 +1,4 @@
+import { bytesToHex } from "@meal-planner/recipe-imports/evidence/digest";
 import { Effect, Option, Schema } from "effect";
 
 import { toStrictJsonSchema } from "../../infrastructure/strict-json-schema.js";
@@ -5,7 +6,6 @@ import {
   isProviderKnownZeroCostFailure,
   providerKnownZeroCostFailure,
 } from "../provider-accounting/provider-accounting.js";
-import { bytesToHex } from "./import-digest.js";
 import { structurallyEqualJson } from "./import-forced-tool-response.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import {

@@ -11,6 +11,14 @@ import {
   RecipeImportActionId,
   RecipeImportIntentId,
 } from "@meal-planner/recipe-import-api";
+import {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
+import {
+  AcquisitionGeneration,
+  Sha256Hex,
+} from "@meal-planner/recipe-imports/media/model";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
@@ -19,7 +27,6 @@ import type { HouseholdDomainWorkerMethods } from "../households/household-domai
 import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
 import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
-import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { RecipeDraft } from "./import-recipe-draft.repository.js";
 import { groundRecipeCandidate } from "./import-recipe-grounding.js";
@@ -31,7 +38,6 @@ import type {
   RecipeRecoveryOrdinal,
 } from "./import-recipe-recovery.js";
 import { runRecipeRecoveryLoop } from "./import-runtime-composition.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
 const importId = Schema.decodeUnknownSync(ImportId)(
   "00000000-0000-4000-8000-000000000217"

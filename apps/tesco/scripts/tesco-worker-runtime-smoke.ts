@@ -13,7 +13,7 @@ import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import {
   TescoConnectionHealth,
   TescoSessionReport,
-} from "../src/mcp/session.model.js";
+} from "../src/session/session.model.js";
 
 const bundler = await Effect.runPromise(
   WorkerBundle.pipe(Effect.provide(NodeServices.layer))
@@ -188,6 +188,13 @@ try {
     method: "POST",
   });
   assert.equal(wrongPrincipal.status, 401);
+  const oldCatalogueUrl = new URL("/tesco/search?query=milk", url);
+  const anonymousOldCatalogue = await fetch(oldCatalogueUrl);
+  assert.equal(anonymousOldCatalogue.status, 401);
+  const authorizedOldCatalogue = await fetch(oldCatalogueUrl, {
+    headers: { authorization: `Bearer ${executorToken}` },
+  });
+  assert.equal(authorizedOldCatalogue.status, 404);
   const transport = new StreamableHTTPClientTransport(url, {
     requestInit: { headers: { authorization: `Bearer ${executorToken}` } },
   });

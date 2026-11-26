@@ -1,9 +1,12 @@
+import type {
+  ImportId,
+  SourceCanonicalId,
+} from "@meal-planner/recipe-imports/contracts";
+import { AcquisitionTaskOutcome } from "@meal-planner/recipe-imports/media/model";
+import type { VerifiedAcquisitionEvidence } from "@meal-planner/recipe-imports/media/model";
 import { Effect, Option, Schema } from "effect";
 
 import type { HouseholdImportEvidenceCurrent } from "./import-evidence.repository.household.js";
-import { AcquisitionTaskOutcome } from "./import-media.model.js";
-import type { VerifiedAcquisitionEvidence } from "./import-media.model.js";
-import type { ImportId, SourceCanonicalId } from "./import.contracts.js";
 
 export const AcquisitionCheckpointRejected = Schema.Struct({
   _tag: Schema.Literal("AcquisitionCheckpointRejected"),

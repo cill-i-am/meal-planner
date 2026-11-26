@@ -160,65 +160,65 @@ const runtime = Effect.gen(function* constructAccountObject() {
       enabledActiveProfileLimits
     );
     const vault = makeVault(encryptionKey);
-    const inputCall = <S extends Schema.Top, A>(
-      schema: S,
-      input: S["Type"],
-      call: (id: S["Type"]) => Effect.Effect<A, SigenFailure, RuntimeContext>
-    ) =>
-      Schema.decodeUnknownEffect(schema)(input).pipe(
-        Effect.mapError(() => failure("InvalidInput")),
-        Effect.flatMap(call),
-        Effect.scoped
-      );
+    const validatedRpc =
+      <S extends Schema.Top, A>(
+        schema: S,
+        call: (id: S["Type"]) => Effect.Effect<A, SigenFailure, RuntimeContext>
+      ) =>
+      (input: S["Type"]) =>
+        Schema.decodeUnknownEffect(schema)(input).pipe(
+          Effect.mapError(() => failure("InvalidInput")),
+          Effect.flatMap(call),
+          Effect.scoped
+        );
+    const controlRpc = {
+      prepareCommand: validatedRpc(
+        PrepareCommandInput,
+        commands.prepareCommand
+      ),
+      approveCommand: validatedRpc(
+        ApproveCommandInput,
+        commands.approveCommand
+      ),
+      executeCommand: validatedRpc(CommandInput, commands.executeCommand),
+      getCommand: validatedRpc(CommandInput, commands.getCommand),
+      approvalGrants: validatedRpc(StationId, commands.approvalGrants),
+      revokeApproval: validatedRpc(
+        RevokeApprovalInput,
+        commands.revokeApproval
+      ),
+    };
     return {
-      acChargerCurrent: (input: typeof ChargerInput.Type) =>
-        inputCall(ChargerInput, input, session.acChargerCurrent),
-      acChargerSettings: (input: typeof ChargerInput.Type) =>
-        inputCall(ChargerInput, input, session.acChargerSettings),
-      aioDevices: (id: StationId) =>
-        inputCall(StationId, id, session.aioDevices),
-      aioPowerStatus: (input: typeof DeviceInput.Type) =>
-        inputCall(DeviceInput, input, session.aioPowerStatus),
+      ...controlRpc,
+      acChargerCurrent: validatedRpc(ChargerInput, session.acChargerCurrent),
+      acChargerSettings: validatedRpc(ChargerInput, session.acChargerSettings),
+      aioDevices: validatedRpc(StationId, session.aioDevices),
+      aioPowerStatus: validatedRpc(DeviceInput, session.aioPowerStatus),
       alarm: () => session.onAlarm.pipe(Effect.scoped),
-      alarms: (input: typeof AlarmInput.Type) =>
-        inputCall(AlarmInput, input, session.alarms),
-      approvalGrants: (id: StationId) =>
-        inputCall(StationId, id, commands.approvalGrants),
-      approveCommand: (input: typeof ApproveCommandInput.Type) =>
-        inputCall(ApproveCommandInput, input, commands.approveCommand),
-      automationSettings: (id: StationId) =>
-        inputCall(StationId, id, session.automationSettings),
-      backupEvents: (input: typeof BackupEventsInput.Type) =>
-        inputCall(BackupEventsInput, input, session.backupEvents),
-      backupHistory: (input: typeof BackupHistoryInput.Type) =>
-        inputCall(BackupHistoryInput, input, session.backupHistory),
-      batteryDischargePriority: (id: StationId) =>
-        inputCall(StationId, id, session.batteryDischargePriority),
-      batterySettings: (id: StationId) =>
-        inputCall(StationId, id, session.batterySettings),
-      chargerSchedules: (input: typeof ChargerInput.Type) =>
-        inputCall(ChargerInput, input, session.chargerSchedules),
-      chargerStatus: (input: typeof ChargerInput.Type) =>
-        inputCall(ChargerInput, input, session.chargerStatus),
-      chargers: (input: StationId) =>
-        inputCall(StationId, input, session.chargers),
-      dcChargerSettings: (input: typeof ChargerInput.Type) =>
-        inputCall(ChargerInput, input, session.dcChargerSettings),
-      deviceInfo: (input: typeof DeviceInput.Type) =>
-        inputCall(DeviceInput, input, session.deviceInfo),
-      deviceValues: (input: typeof DeviceInput.Type) =>
-        inputCall(DeviceInput, input, session.deviceValues),
+      alarms: validatedRpc(AlarmInput, session.alarms),
+      automationSettings: validatedRpc(StationId, session.automationSettings),
+      backupEvents: validatedRpc(BackupEventsInput, session.backupEvents),
+      backupHistory: validatedRpc(BackupHistoryInput, session.backupHistory),
+      batteryDischargePriority: validatedRpc(
+        StationId,
+        session.batteryDischargePriority
+      ),
+      batterySettings: validatedRpc(StationId, session.batterySettings),
+      chargerSchedules: validatedRpc(ChargerInput, session.chargerSchedules),
+      chargerStatus: validatedRpc(ChargerInput, session.chargerStatus),
+      chargers: validatedRpc(StationId, session.chargers),
+      dcChargerSettings: validatedRpc(ChargerInput, session.dcChargerSettings),
+      deviceInfo: validatedRpc(DeviceInput, session.deviceInfo),
+      deviceValues: validatedRpc(DeviceInput, session.deviceValues),
       disconnect: () => session.disconnect,
-      energyCapabilities: (id: StationId) =>
-        inputCall(StationId, id, session.energyCapabilities),
-      energyFlow: (id: StationId) =>
-        inputCall(StationId, id, session.energyFlow),
-      energyHistory: (input: typeof HistoryInput.Type) =>
-        inputCall(HistoryInput, input, session.energyHistory),
-      energyProfile: (input: typeof EnergyProfileInput.Type) =>
-        inputCall(EnergyProfileInput, input, session.energyProfile),
-      energySavingSettings: (id: StationId) =>
-        inputCall(StationId, id, session.energySavingSettings),
+      energyCapabilities: validatedRpc(StationId, session.energyCapabilities),
+      energyFlow: validatedRpc(StationId, session.energyFlow),
+      energyHistory: validatedRpc(HistoryInput, session.energyHistory),
+      energyProfile: validatedRpc(EnergyProfileInput, session.energyProfile),
+      energySavingSettings: validatedRpc(
+        StationId,
+        session.energySavingSettings
+      ),
       enroll: (input: EncryptedSecret) =>
         Effect.gen(function* enrollAccount() {
           const secret = yield* vault.decrypt(input);
@@ -229,71 +229,46 @@ const runtime = Effect.gen(function* constructAccountObject() {
           }
           return yield* session.enroll(Redacted.make(value.value));
         }).pipe(Effect.scoped),
-      executeCommand: (input: typeof CommandInput.Type) =>
-        inputCall(CommandInput, input, commands.executeCommand),
-      forecast: (input: typeof ForecastInput.Type) =>
-        inputCall(ForecastInput, input, session.forecast),
-      gateway: (input: StationId) =>
-        inputCall(StationId, input, session.gateway),
-      getCommand: (input: typeof CommandInput.Type) =>
-        inputCall(CommandInput, input, commands.getCommand),
-      gridDevices: (input: StationId) =>
-        inputCall(StationId, input, session.gridDevices),
-      gridSettings: (id: StationId) =>
-        inputCall(StationId, id, session.gridSettings),
+      forecast: validatedRpc(ForecastInput, session.forecast),
+      gateway: validatedRpc(StationId, session.gateway),
+      gridDevices: validatedRpc(StationId, session.gridDevices),
+      gridSettings: validatedRpc(StationId, session.gridSettings),
       health: () => session.health,
-      loadCapabilities: (id: StationId) =>
-        inputCall(StationId, id, session.loadCapabilities),
-      manualOverride: (id: StationId) =>
-        inputCall(StationId, id, session.manualOverride),
-      operatingMode: (id: StationId) =>
-        inputCall(StationId, id, session.operatingMode),
-      operatingModes: (id: StationId) =>
-        inputCall(StationId, id, session.operatingModes),
-      peakShavingSchedule: (id: StationId) =>
-        inputCall(StationId, id, session.peakShavingSchedule),
-      predictionPlan: (id: StationId) =>
-        inputCall(StationId, id, session.predictionPlan),
-      preheatingSettings: (id: StationId) =>
-        inputCall(StationId, id, session.preheatingSettings),
-      prepareCommand: (input: typeof PrepareCommandInput.Type) =>
-        inputCall(PrepareCommandInput, input, commands.prepareCommand),
-      profileTemplates: (id: StationId) =>
-        inputCall(StationId, id, session.profileTemplates),
+      loadCapabilities: validatedRpc(StationId, session.loadCapabilities),
+      manualOverride: validatedRpc(StationId, session.manualOverride),
+      operatingMode: validatedRpc(StationId, session.operatingMode),
+      operatingModes: validatedRpc(StationId, session.operatingModes),
+      peakShavingSchedule: validatedRpc(StationId, session.peakShavingSchedule),
+      predictionPlan: validatedRpc(StationId, session.predictionPlan),
+      preheatingSettings: validatedRpc(StationId, session.preheatingSettings),
+      profileTemplates: validatedRpc(StationId, session.profileTemplates),
       report: () => session.report,
-      revokeApproval: (input: typeof RevokeApprovalInput.Type) =>
-        inputCall(RevokeApprovalInput, input, commands.revokeApproval),
-      smartLoad: (input: typeof SmartLoadInput.Type) =>
-        inputCall(SmartLoadInput, input, session.smartLoad),
-      smartLoadConsumption: (input: typeof SmartLoadHistoryInput.Type) =>
-        inputCall(SmartLoadHistoryInput, input, session.smartLoadConsumption),
-      smartLoadControlSettings: (input: typeof SmartLoadInput.Type) =>
-        inputCall(SmartLoadInput, input, session.smartLoadControlSettings),
-      smartLoads: (id: StationId) =>
-        inputCall(StationId, id, session.smartLoads),
-      solarPriority: (id: StationId) =>
-        inputCall(StationId, id, session.solarPriority),
-      solarSettings: (id: StationId) =>
-        inputCall(StationId, id, session.solarSettings),
-      station: (id: StationId) => inputCall(StationId, id, session.station),
-      stationCapabilities: (id: StationId) =>
-        inputCall(StationId, id, session.stationCapabilities),
-      stationConsumption: (input: typeof HistoryInput.Type) =>
-        inputCall(HistoryInput, input, session.stationConsumption),
-      stationIncome: (input: typeof IncomeInput.Type) =>
-        inputCall(IncomeInput, input, session.stationIncome),
-      stationStatus: (input: StationId) =>
-        inputCall(StationId, input, session.stationStatus),
-      stations: (id: StationId) => inputCall(StationId, id, session.stations),
-      systemCards: (id: StationId) =>
-        inputCall(StationId, id, session.systemCards),
-      tariffs: (id: StationId) => inputCall(StationId, id, session.tariffs),
-      thirdPartyDevices: (id: StationId) =>
-        inputCall(StationId, id, session.thirdPartyDevices),
-      timeOfUseSettings: (id: StationId) =>
-        inputCall(StationId, id, session.timeOfUseSettings),
-      topology: (input: StationId) =>
-        inputCall(StationId, input, session.topology),
+      smartLoad: validatedRpc(SmartLoadInput, session.smartLoad),
+      smartLoadConsumption: validatedRpc(
+        SmartLoadHistoryInput,
+        session.smartLoadConsumption
+      ),
+      smartLoadControlSettings: validatedRpc(
+        SmartLoadInput,
+        session.smartLoadControlSettings
+      ),
+      smartLoads: validatedRpc(StationId, session.smartLoads),
+      solarPriority: validatedRpc(StationId, session.solarPriority),
+      solarSettings: validatedRpc(StationId, session.solarSettings),
+      station: validatedRpc(StationId, session.station),
+      stationCapabilities: validatedRpc(StationId, session.stationCapabilities),
+      stationConsumption: validatedRpc(
+        HistoryInput,
+        session.stationConsumption
+      ),
+      stationIncome: validatedRpc(IncomeInput, session.stationIncome),
+      stationStatus: validatedRpc(StationId, session.stationStatus),
+      stations: validatedRpc(StationId, session.stations),
+      systemCards: validatedRpc(StationId, session.systemCards),
+      tariffs: validatedRpc(StationId, session.tariffs),
+      thirdPartyDevices: validatedRpc(StationId, session.thirdPartyDevices),
+      timeOfUseSettings: validatedRpc(StationId, session.timeOfUseSettings),
+      topology: validatedRpc(StationId, session.topology),
     };
   });
 }).pipe(

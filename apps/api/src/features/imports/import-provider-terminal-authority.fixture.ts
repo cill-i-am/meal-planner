@@ -1,12 +1,12 @@
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import { ImportTimestamp } from "@meal-planner/recipe-imports/contracts";
+import { AcquisitionGeneration } from "@meal-planner/recipe-imports/media/model";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import { Effect, Schema } from "effect";
 
 import { HouseholdSystemAdmission } from "../households/rpc/command-envelope.js";
 import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
-import { AcquisitionGeneration } from "./import-media.model.js";
 import { persistHouseholdProviderTerminalAuthority } from "./import-provider-terminal-authority.js";
-import { ImportTimestamp } from "./import.contracts.js";
 
 interface WorkflowInstance {
   readonly status: () => Promise<{

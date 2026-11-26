@@ -1,15 +1,21 @@
 import type * as Cloudflare from "@alchemy.run/cloudflare";
+import {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
+import { workflowStartUnavailable } from "@meal-planner/recipe-imports/contracts/errors";
+import type { WorkflowStartUnavailable } from "@meal-planner/recipe-imports/contracts/errors";
+import {
+  AcquisitionGeneration,
+  Sha256Hex,
+} from "@meal-planner/recipe-imports/media/model";
 import { Cause, Data, Effect, Schedule, Schema } from "effect";
 import { flow } from "effect/Function";
 
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
-import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import { ImportTraceContext } from "./import-observability.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
-import { workflowStartUnavailable } from "./import.errors.js";
-import type { WorkflowStartUnavailable } from "./import.errors.js";
 
 export const RecipeRecoveryOrdinal = Schema.Literals([1, 2, 3, 4, 5, 6, 7, 8]);
 export type RecipeRecoveryOrdinal = typeof RecipeRecoveryOrdinal.Type;

@@ -1,11 +1,10 @@
-import { Schema } from "effect";
-import { describe, expect, it } from "vitest";
-
 import {
   MaximumVisualObservations,
   projectVisualProviderSemanticsInput,
   visualEvidenceProviderSchemas,
-} from "./import-visual-evidence-extractor.js";
+} from "@meal-planner/recipe-imports/evidence/visual-evidence-extractor";
+import { Schema } from "effect";
+import { describe, expect, it } from "vitest";
 
 const observation = { confidence: 95, text: "2 onions" };
 

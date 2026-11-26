@@ -1,7 +1,7 @@
+import type { AcquisitionBucketLike } from "@meal-planner/recipe-imports/media/acquirer";
 import { Effect } from "effect";
 
 import type { HouseholdReadEvidenceReferencesResult } from "../households/evidence/household-evidence.contract.js";
-import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
 
 type EvidenceReference = NonNullable<
   typeof HouseholdReadEvidenceReferencesResult.Type

@@ -1,17 +1,27 @@
-import { Context, Effect, Layer, Option, Schema } from "effect";
-
-import { bytesToHex, checksumBytes, sha256Bytes } from "./import-digest.js";
-import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
-import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
-import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
-import type { ProviderTaskDiagnosticReasonCode as ProviderTaskDiagnosticReasonCodeType } from "./import-provider-workflow-checkpoint.js";
+import {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
+import {
+  bytesToHex,
+  checksumBytes,
+  sha256Bytes,
+} from "@meal-planner/recipe-imports/evidence/digest";
+import type { AcquisitionBucketLike } from "@meal-planner/recipe-imports/media/acquirer";
+import {
+  AcquisitionGeneration,
+  Sha256Hex,
+} from "@meal-planner/recipe-imports/media/model";
 import {
   AbsentSpeechEvidence,
   FailedSpeechEvidence,
   NoAudioSpeechEvidence,
   SpeechTranscript,
-} from "./import-speech-transcriber.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
+} from "@meal-planner/transcription";
+import { Context, Effect, Layer, Option, Schema } from "effect";
+
+import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
+import type { ProviderTaskDiagnosticReasonCode as ProviderTaskDiagnosticReasonCodeType } from "./import-provider-workflow-checkpoint.js";
 
 const AvailableTranscriptEvidenceDocument = Schema.Struct({
   acquisitionGeneration: AcquisitionGeneration,

@@ -227,13 +227,13 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "./apps/api/src/features/imports/import.workflow.ts"
     );
     const objectSource = readRepoFile(
-      "./apps/api/src/features/imports/import-media-acquisition-object.ts"
+      "./apps/recipe-imports/src/media/import-media-acquisition-object.ts"
     );
     const bucketSource = readRepoFile(
       "./apps/api/src/infrastructure/import-evidence-bucket.ts"
     );
     const mediaModelSource = readRepoFile(
-      "./apps/api/src/features/imports/import-media.model.ts"
+      "./apps/recipe-imports/src/media/import-media.model.ts"
     );
     const authorizationConfigSource = readRepoFile(
       "./apps/api/src/features/imports/import.auth.config.ts"
@@ -274,7 +274,7 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
       "import-media-acquisition-bucket.alchemy.ts",
     ]) {
       expect(
-        readRepoFile(`./apps/api/src/features/imports/${file}`)
+        readRepoFile(`./apps/recipe-imports/src/media/${file}`)
       ).not.toMatch(/\.delete\s*\(/u);
     }
   });
@@ -282,10 +282,10 @@ describe("Alchemy source structure (no provider lifecycle or runtime proof)", ()
   it("registers one pinned, bounded, non-root media container runtime", () => {
     const stackSource = readRepoFile("./alchemy.run.ts");
     const runtimeSource = readRepoFile(
-      "./apps/api/src/features/imports/import-media-container.runtime.ts"
+      "./apps/recipe-imports/src/media/import-media-container.runtime.ts"
     );
     const containerSource = readRepoFile(
-      "./apps/api/src/features/imports/import-media-container.ts"
+      "./apps/recipe-imports/src/media/import-media-container.ts"
     );
 
     expect(stackSource).toContain("TikTokMediaContainerLive");

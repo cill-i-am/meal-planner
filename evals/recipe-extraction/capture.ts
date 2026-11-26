@@ -3,10 +3,11 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
 
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
+import { AcquisitionGeneration } from "@meal-planner/recipe-imports/media/model";
 import { Schema } from "effect";
 
 import { assembleClairicEvidenceText } from "../../apps/api/src/features/imports/import-clairic-evidence.js";
-import { AcquisitionGeneration } from "../../apps/api/src/features/imports/import-media.model.js";
 import {
   decodeClairicRecipeResponse,
   ExperimentalClairicRecipeModel,
@@ -20,7 +21,6 @@ import {
   decodeInstalledRecipeResponse,
   makeInstalledRecipeRequest,
 } from "../../apps/api/src/features/imports/import-provider-recipe.js";
-import { ImportId } from "../../apps/api/src/features/imports/import.contracts.js";
 import {
   EvaluationBridgeResponse,
   EvaluationInvocation,

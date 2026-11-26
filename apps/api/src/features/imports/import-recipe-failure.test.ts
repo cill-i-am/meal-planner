@@ -1,10 +1,14 @@
-import { Effect, Schema } from "effect";
-import { describe, expect, it } from "vitest";
-
+import {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
 import {
   AcquisitionGeneration,
   VerifiedSourceMetadata,
-} from "./import-media.model.js";
+} from "@meal-planner/recipe-imports/media/model";
+import { Effect, Schema } from "effect";
+import { describe, expect, it } from "vitest";
+
 import {
   RecipeDraftPipelineFailure,
   produceRecipeDraftFromEvidence,
@@ -17,7 +21,6 @@ import type {
   RecipeExtractionFailureCode,
   RecipeExtractor,
 } from "./import-recipe-extractor.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
 const matrix = [
   [

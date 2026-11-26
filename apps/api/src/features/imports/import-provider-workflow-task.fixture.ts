@@ -11,6 +11,15 @@ import {
   recipeInstructionFromText,
 } from "@meal-planner/recipe-domain";
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
+import {
+  AcquisitionGeneration,
+  Sha256Hex,
+  VerifiedSourceMetadata,
+} from "@meal-planner/recipe-imports/media/model";
 import { RuntimeContext } from "alchemy";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import type { AnyD1Database } from "drizzle-orm/d1";
@@ -29,11 +38,6 @@ import {
   providerKnownZeroCostFailure,
 } from "../provider-accounting/provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
-import {
-  AcquisitionGeneration,
-  Sha256Hex,
-  VerifiedSourceMetadata,
-} from "./import-media.model.js";
 import { ImportCorrelationId } from "./import-observability.js";
 import { makeVisualTransport } from "./import-provider-adapters.fixture.js";
 import type { WorkersAiTransport } from "./import-provider-kernel.js";
@@ -64,7 +68,6 @@ import {
   makeRecipeRecoveryProviderRuntime,
   runRecipeRecoveryLoop,
 } from "./import-runtime-composition.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
 
 const ProviderWorkflowInput = Schema.Struct({
   failureCode: Schema.optionalKey(Schema.String),

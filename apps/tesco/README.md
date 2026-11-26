@@ -17,7 +17,7 @@ Product details include current prices, unit prices, promotional prices, ingredi
 
 On this separate Tesco Worker, `POST /v1/<tool_name>` accepts the exact JSON input from the tool table and returns its structured output directly. For example, `POST /v1/search_products` with `{"query":"milk"}` uses the same defaults, schema, handler and result as the `search_products` MCP tool. Even read operations use POST, so clients use one input format. Send `Content-Type: application/json`; inputs are limited to 65,536 bytes and reject unknown fields.
 
-`GET /openapi.json` returns the private OpenAPI contract for all 15 HTTP operations. Discovery requires the same dedicated owner credential as calls. The contract includes request and response schemas, defaults, error responses and bearer authentication; it excludes operator enrollment. `/mcp`, these HTTP aliases and discovery share the same authentication, browser-origin refusal and Worker rate limit. This is not part of Meal Planner's general customer API: Meal Planner OAuth tokens do not grant access to the owner's retailer account. The Node development server's catalogue-only routes remain separate.
+`GET /openapi.json` returns the private OpenAPI contract for all 15 HTTP operations. Discovery requires the same dedicated owner credential as calls. The contract includes request and response schemas, defaults, error responses and bearer authentication; it excludes operator enrollment. `/mcp`, these HTTP aliases and discovery share the same authentication, browser-origin refusal and Worker rate limit. This is not part of Meal Planner's general customer API: Meal Planner OAuth tokens do not grant access to the owner's retailer account.
 
 HTTP success responses contain the operation's JSON result. Invalid input, a conflicting retry ID or a rejected checkout review returns 400; missing or wrong credentials return 401; browser origins return 403; wrong methods return 405; missing JSON content type returns 415; admission limits return 429 with `Retry-After`; Tesco unavailability returns 503. Upstream authentication failure uses `{"error":"tesco_reauthentication_required"}`. Discovery, results and error bodies are uncached and never include credential or parser diagnostics.
 
@@ -94,7 +94,9 @@ Pass the complete selected slot from `list_delivery_slots` unchanged to `reserve
 
 The result is a fixed HTTPS Tesco checkout link with `orderPlaced: false`. The human completes payment and explicitly confirms the order on Tesco. This is the agreed checkout scope; agents cannot place an order through this MCP. A fresh review and approval are required after a basket change. Testing must restore any temporary reservation and original basket quantities.
 
-## Verification
+## Local development and verification
+
+Develop against the Worker rather than a second catalogue server. Run the runtime check below from the repository root to bundle the current source with Alchemy and exercise it locally in workerd. It needs neither a Cloudflare account nor a Tesco browser session.
 
 ```sh
 pnpm --filter @meal-planner/tesco check
@@ -109,7 +111,3 @@ The HTTP/MCP parity tests exercise all 15 operations, private discovery, operato
 The session tests exercise three rotations across reconstructed services, retained account-path cookies, early alarms, rejected renewal, interruption, an external redirect and tampered ciphertext. Live acceptance also requires a real catalogue call through the deployed private Executor app. The earlier three-cycle feasibility probe establishes renewal behavior for that captured session, not indefinite renewal or recovery after Tesco revokes a session.
 
 The root `tesco.alchemy.ts` path remains a compatibility alias for existing operator commands.
-
-## Local catalogue
-
-Copy the example values from `apps/tesco/.env.example` into your local environment and run `pnpm dev:tesco` from the repo root. The legacy `pnpm --filter @meal-planner/api dev` command remains an alias. This loopback catalogue server is not the deployed private Worker.

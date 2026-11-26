@@ -1,6 +1,3 @@
-import { Effect, Schema } from "effect";
-import { HttpServerResponse } from "effect/http";
-
 import type {
   IdempotencyConflict,
   InvalidCarouselBundle,
@@ -12,7 +9,9 @@ import type {
   SourceIdentityUnavailable,
   UnauthorizedImportCaller,
   CarouselProcessingUnavailable,
-} from "./import.errors.js";
+} from "@meal-planner/recipe-imports/contracts/errors";
+import { Effect, Schema } from "effect";
+import { HttpServerResponse } from "effect/http";
 
 type PublicImportError =
   | IdempotencyConflict

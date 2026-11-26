@@ -1,20 +1,26 @@
 import { it } from "@effect/vitest";
-import { Effect, Option, Schema } from "effect";
-import { expect } from "vitest";
-
-import { checksumBytes, sha256Bytes } from "./import-digest.js";
+import {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
+import {
+  checksumBytes,
+  sha256Bytes,
+} from "@meal-planner/recipe-imports/evidence/digest";
+import type { VisualFrameArtifact } from "@meal-planner/recipe-imports/evidence/visual-evidence-extractor";
 import type {
   AcquisitionBucketLike,
   AcquisitionPutOptions,
   R2ObjectBodyLike,
-} from "./import-media-acquirer.js";
+} from "@meal-planner/recipe-imports/media/acquirer";
 import {
   AcquisitionGeneration,
   EvidenceRetentionSeconds,
   Sha256Hex,
-} from "./import-media.model.js";
-import type { VisualFrameArtifact } from "./import-visual-evidence-extractor.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
+} from "@meal-planner/recipe-imports/media/model";
+import { Effect, Option, Schema } from "effect";
+import { expect } from "vitest";
+
 import {
   VisualEvidenceManifestDocument,
   VisualEvidenceStore,
