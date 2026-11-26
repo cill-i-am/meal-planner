@@ -1,0 +1,63 @@
+name: Deploy private Alchemy integration
+
+on:
+  workflow_call:
+    inputs:
+      integration:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Release ${{ inputs.integration }} production
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' && (inputs.integration == 'tesco' || inputs.integration == 'sigen')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.integration }}-production
+    concurrency:
+      group: private-alchemy-${{ inputs.integration }}-production
+      cancel-in-progress: false
+
+    steps:
+      - name: Check out the tested revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26.12.0
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Guard and release Tesco
+        if: inputs.integration == 'tesco'
+        env:
+          CI: "true"
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          INTEGRATION_DEPLOY_MODE: ${{ vars.INTEGRATION_DEPLOY_MODE }}
+          TESCO_EXECUTOR_TOKEN_SHA256: ${{ secrets.TESCO_EXECUTOR_TOKEN_SHA256 }}
+          TESCO_OPERATOR_TOKEN_SHA256: ${{ secrets.TESCO_OPERATOR_TOKEN_SHA256 }}
+          TESCO_SESSION_ENCRYPTION_KEY: ${{ secrets.TESCO_SESSION_ENCRYPTION_KEY }}
+        run: node --import tsx scripts/deploy-private-alchemy.ts tesco
+      - name: Guard and release Sigenergy
+        if: inputs.integration == 'sigen'
+        env:
+          CI: "true"
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          INTEGRATION_DEPLOY_MODE: ${{ vars.INTEGRATION_DEPLOY_MODE }}
+          SIGEN_OWNER_TOKEN_SHA256: ${{ secrets.SIGEN_OWNER_TOKEN_SHA256 }}
+          SIGEN_OPERATOR_TOKEN_SHA256: ${{ secrets.SIGEN_OPERATOR_TOKEN_SHA256 }}
+          SIGEN_SESSION_ENCRYPTION_KEY: ${{ secrets.SIGEN_SESSION_ENCRYPTION_KEY }}
+          SIGEN_DEPLOY_POLICY_JSON: ${{ secrets.SIGEN_DEPLOY_POLICY_JSON }}
+        run: node --import tsx scripts/deploy-private-alchemy.ts sigen
