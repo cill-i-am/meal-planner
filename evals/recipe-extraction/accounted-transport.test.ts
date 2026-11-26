@@ -5,7 +5,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { Effect, Schema } from "effect";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import {
   createAccountedEvaluationTransport,
@@ -28,12 +36,10 @@ const request = (dispatchId: string, maximumCostMicroUsd = 100_000) =>
 const PendingRequest = Schema.Struct({ requestSha256: Schema.String });
 const readPending = async (rootDirectory: string, dispatchId: string) => {
   const files = evaluationBridgePaths(rootDirectory, dispatchId);
-  await expect
-    .poll(() => readFile(files.request, "utf-8"), { timeout: 10_000 })
-    .toBeDefined();
-  return Schema.decodeUnknownSync(PendingRequest)(
-    JSON.parse(await readFile(files.request, "utf-8"))
-  );
+  const raw = await vi.waitFor(() => readFile(files.request, "utf-8"), {
+    timeout: 10_000,
+  });
+  return Schema.decodeUnknownSync(PendingRequest)(JSON.parse(raw));
 };
 const respond = async (
   rootDirectory: string,
