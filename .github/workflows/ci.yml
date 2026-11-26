@@ -26,10 +26,12 @@ jobs:
       pull-requests: read
     outputs:
       containers: ${{ github.event_name == 'workflow_dispatch' && 'true' || steps.filter.outputs.containers }}
+      tesco: ${{ steps.filter.outputs.tesco }}
+      sigen: ${{ steps.filter.outputs.sigen }}
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Identify changes requiring container and native stack checks
+      - name: Classify stack and native container inputs
         if: github.event_name != 'workflow_dispatch'
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -52,6 +54,36 @@ jobs:
               - '.npmrc'
               - 'tsconfig*.json'
               - 'vitest*.ts'
+            tesco:
+              - 'apps/tesco/src/**'
+              - 'apps/tesco/package.json'
+              - 'apps/tesco/tesco.alchemy.ts'
+              - 'tesco.alchemy.ts'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/private-alchemy-deploy.yml'
+              - 'scripts/deploy-private-alchemy.ts'
+              - 'scripts/private-release.ts'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.npmrc'
+              - 'patches/**'
+              - 'tsconfig.base.json'
+            sigen:
+              - 'apps/sigen-api/src/**'
+              - 'apps/sigen-api/package.json'
+              - 'packages/sigen/**'
+              - 'sigen.alchemy.ts'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/private-alchemy-deploy.yml'
+              - 'scripts/deploy-private-alchemy.ts'
+              - 'scripts/private-release.ts'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - '.npmrc'
+              - 'patches/**'
+              - 'tsconfig.base.json'
 
   quality:
     name: Quality
@@ -252,6 +284,24 @@ jobs:
           ALCHEMY_STAGE: pr-${{ github.event.pull_request.number }}
           PULL_REQUEST: ${{ github.event.pull_request.number }}
         run: pnpm exec alchemy deploy --stage "$ALCHEMY_STAGE" --profile ci --yes
+
+  deploy-tesco:
+    name: Deploy Tesco Alchemy
+    needs: [changes, required-checks]
+    if: >-
+      false && !cancelled() && needs.required-checks.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.tesco == 'true' && vars.TESCO_ALCHEMY_DEPLOYMENTS_ENABLED == 'true'
+    uses: ./.github/workflows/private-alchemy-deploy.yml
+    with:
+      integration: tesco
+
+  deploy-sigen:
+    name: Deploy Sigenergy Alchemy
+    needs: [changes, required-checks]
+    if: >-
+      false && !cancelled() && needs.required-checks.result == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.changes.outputs.sigen == 'true' && vars.SIGEN_ALCHEMY_DEPLOYMENTS_ENABLED == 'true'
+    uses: ./.github/workflows/private-alchemy-deploy.yml
+    with:
+      integration: sigen
 
   cleanup:
     name: Destroy PR preview
