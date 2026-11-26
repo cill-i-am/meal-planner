@@ -10,10 +10,14 @@ export const bytesToHex = (value: ArrayBuffer) => {
   return checkedResult;
 };
 
+/** Hash an owned byte snapshot and return its native digest. */
+export const digestSha256 = (bytes: Uint8Array) =>
+  crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer);
+
 /** Hash the supplied bytes, preserving their caller-owned encoding. */
 export const sha256Bytes = (bytes: Uint8Array) => {
   const checkedResult: Effect.Effect<Sha256Hex> = Effect.promise(() =>
-    crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer)
+    digestSha256(bytes)
   ).pipe(
     Effect.map((digest) =>
       Schema.decodeUnknownSync(Sha256Hex)(bytesToHex(digest))

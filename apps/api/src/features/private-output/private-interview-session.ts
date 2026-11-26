@@ -46,7 +46,10 @@ import {
 } from "./private-confirmation.contract.js";
 import { PrivateDiscoveryFailure } from "./private-discovery-model.js";
 import { makePrivateDiscoveryModel } from "./private-discovery-workers-ai.js";
-import { PrivateOutputSocket } from "./private-output-socket.js";
+import {
+  PrivateOutputSocket,
+  privateCommandDecoder,
+} from "./private-output-socket.js";
 import type { PrivateInterviewEnvironment } from "./private-output-socket.js";
 import {
   Generation,
@@ -113,6 +116,8 @@ const sameBinding = (
   left.linkageSubject === right.linkageSubject &&
   left.personId === right.personId &&
   left.sessionReference === right.sessionReference;
+const decodeSessionCommand = privateCommandDecoder(SessionCommand);
+
 /** Owns canonical private history, model turns and their socket or request output lease. */
 export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> {
   #database = instrumentDrizzle(drizzle(this.ctx.storage), {
@@ -1274,21 +1279,12 @@ export class PrivateInterviewSession extends Agent<PrivateInterviewEnvironment> 
       socket.close(1008, "Reauthentication required");
       return;
     }
-    let command: SessionCommand;
-    try {
-      const text = Schema.decodeUnknownSync(Schema.String)(message);
-      if (new TextEncoder().encode(text).byteLength > MAX_PRIVATE_FRAME_BYTES) {
-        socket.close(1009, "Invalid private command");
-        return;
-      }
-      command = Schema.decodeUnknownSync(SessionCommand, {
-        onExcessProperty: "error",
-      })(JSON.parse(text));
-    } catch {
-      socket.close(1008, "Invalid private command");
+    const decoded = decodeSessionCommand(message);
+    if (decoded._tag === "Rejected") {
+      socket.close(decoded.closeCode, "Invalid private command");
       return;
     }
-    const frame = this.#execute(command, generation);
+    const frame = this.#execute(decoded.command, generation);
     this.#socket.send(generation, JSON.stringify(frame));
   }
   #execute(command: SessionCommand, generation: string) {

@@ -247,3 +247,10 @@ export const TescoShoppingOperations = [
     (service, input) => service.checkoutHandoff(input)
   ),
 ] as const;
+
+const shoppingOperationsByName = new Map<
+  string,
+  (typeof TescoShoppingOperations)[number]
+>(TescoShoppingOperations.map((operation) => [operation.name, operation]));
+export const findTescoShoppingOperation = (name: string) =>
+  shoppingOperationsByName.get(name);

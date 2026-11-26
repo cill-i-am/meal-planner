@@ -1,7 +1,8 @@
 import type * as NativeCloudflare from "@cloudflare/workers-types";
+import { MAX_PRIVATE_FRAME_BYTES } from "@meal-planner/private-interview-api";
 import { and, eq, gt, or } from "drizzle-orm";
 import type { SQLiteAsyncDatabase } from "drizzle-orm/sqlite-core";
-import { Schema } from "effect";
+import { Option, Predicate, Schema } from "effect";
 
 import type { PrivateDiscoveryModelEnvironment } from "./private-discovery-workers-ai.js";
 import {
@@ -38,6 +39,28 @@ type OutputSocketEnvironment = Pick<
   PrivateInterviewEnvironment,
   "AccountOutputLifecycle" | "HouseholdAgent"
 >;
+
+/** Decode client frames only at the native WebSocket seam, before dispatch. */
+export const privateCommandDecoder = <S extends Schema.Decoder<unknown, never>>(
+  command: S
+) => {
+  const decode = Schema.decodeUnknownOption(Schema.fromJsonString(command), {
+    onExcessProperty: "error",
+  });
+  const encoder = new TextEncoder();
+  return (message: string | ArrayBuffer) => {
+    if (!Predicate.isString(message)) {
+      return { _tag: "Rejected", closeCode: 1008 } as const;
+    }
+    if (encoder.encode(message).byteLength > MAX_PRIVATE_FRAME_BYTES) {
+      return { _tag: "Rejected", closeCode: 1009 } as const;
+    }
+    const decoded = decode(message);
+    return Option.isSome(decoded)
+      ? ({ _tag: "Accepted", command: decoded.value } as const)
+      : ({ _tag: "Rejected", closeCode: 1008 } as const);
+  };
+};
 
 const socketSlot = 1;
 const requestSlot = 2;

@@ -2,7 +2,6 @@ import type * as NativeCloudflare from "@cloudflare/workers-types";
 import {
   DirectoryCommand,
   DirectoryFrame,
-  MAX_PRIVATE_FRAME_BYTES,
 } from "@meal-planner/private-interview-api";
 import { instrumentDrizzle } from "cloudflare-drizzle-tracing";
 import { DurableObject } from "cloudflare:workers";
@@ -12,7 +11,10 @@ import { migrate } from "drizzle-orm/durable-sqlite/migrator";
 import { Schema } from "effect";
 
 import migrations from "../../../private-output-migrations/migrations.js";
-import { PrivateOutputSocket } from "./private-output-socket.js";
+import {
+  PrivateOutputSocket,
+  privateCommandDecoder,
+} from "./private-output-socket.js";
 import type { PrivateInterviewEnvironment } from "./private-output-socket.js";
 import {
   Generation,
@@ -28,6 +30,8 @@ import {
   privateReceipts,
 } from "./private-output.database-schema.js";
 import { PrivateDirectoryRequest } from "./private-request.contract.js";
+
+const decodeDirectoryCommand = privateCommandDecoder(DirectoryCommand);
 
 declare const Response: typeof NativeCloudflare.Response;
 const Authorization = Schema.Struct({
@@ -205,21 +209,12 @@ export class PrivateInterviewDirectory extends DurableObject<PrivateInterviewEnv
       socket.close(1008, "Reauthentication required");
       return;
     }
-    let command: DirectoryCommand;
-    try {
-      const text = Schema.decodeUnknownSync(Schema.String)(message);
-      if (new TextEncoder().encode(text).byteLength > MAX_PRIVATE_FRAME_BYTES) {
-        socket.close(1009, "Invalid private command");
-        return;
-      }
-      command = Schema.decodeUnknownSync(DirectoryCommand, {
-        onExcessProperty: "error",
-      })(JSON.parse(text));
-    } catch {
-      socket.close(1008, "Invalid private command");
+    const decoded = decodeDirectoryCommand(message);
+    if (decoded._tag === "Rejected") {
+      socket.close(decoded.closeCode, "Invalid private command");
       return;
     }
-    const frame = this.#execute(command, generation);
+    const frame = this.#execute(decoded.command, generation);
     this.#socket.send(generation, JSON.stringify(frame));
   }
   #execute(command: DirectoryCommand, generation: string) {
