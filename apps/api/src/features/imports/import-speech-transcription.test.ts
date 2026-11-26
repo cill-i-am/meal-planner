@@ -4,11 +4,12 @@ import {
   recipeIngredientFromText,
   recipeInstructionFromText,
 } from "@meal-planner/recipe-domain";
+import { sha256Bytes } from "@meal-planner/recipe-imports/evidence/digest";
+import type { RecipeSpeechTranscriber } from "@meal-planner/recipe-imports/evidence/speech-transcriber";
+import { RetryableAcquisitionError } from "@meal-planner/recipe-imports/media/errors";
+import { EvidenceRetentionSeconds } from "@meal-planner/recipe-imports/media/model";
 import { Effect, Option } from "effect";
 
-import { sha256Bytes } from "./import-digest.js";
-import { RetryableAcquisitionError } from "./import-media.errors.js";
-import { EvidenceRetentionSeconds } from "./import-media.model.js";
 import { produceRecipeDraftForImport } from "./import-recipe-draft.js";
 import type {
   RecipeDraft,
@@ -19,7 +20,6 @@ import type {
   RecipeExtractor,
 } from "./import-recipe-extractor.js";
 import { groundRecipeCandidate } from "./import-recipe-grounding.js";
-import type { SpeechTranscriber } from "./import-speech-transcriber.js";
 import { transcribeAcquiredImport } from "./import-speech-transcription.js";
 import type {
   CompletedTranscriptEvidence,
@@ -77,7 +77,7 @@ const pipelineFixture = (
       };
       return checkedResult;
     };
-    const speechTranscriber: SpeechTranscriber = {
+    const speechTranscriber: RecipeSpeechTranscriber = {
       transcribe: () =>
         Effect.sync(() => {
           calls.push("provider");

@@ -10,10 +10,10 @@ import {
 } from "../auth/delegated-access.js";
 import { readProductAccount } from "./product-account.js";
 import { productOpenApi } from "./product-api.contract.js";
-import type { ProductScope } from "./product-api.contract.js";
-import { matchProductOperation } from "./product-api.transport.js";
 import { makeProductMcpState } from "./product-mcp-state.js";
 import { handleProductMcp } from "./product-mcp.js";
+import type { ProductScope } from "./product-operations.js";
+import { matchProductOperation } from "./product-operations.js";
 
 export interface ProductHttpOptions {
   readonly auth: MealPlannerAuthService;

@@ -1,9 +1,13 @@
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
+import {
+  AcquisitionGeneration,
+  Sha256Hex,
+} from "@meal-planner/recipe-imports/media/model";
 import { Context, Effect, Schema } from "effect";
 
 import { HouseholdDispatchId } from "../households/foundation/import-workflow-admission.contract.js";
 import { HouseholdOrganizationId } from "../households/household.contract.js";
 import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
-import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
 import {
   hasHouseholdProviderRecoveryProgress,
   prepareHouseholdProviderRecovery,
@@ -14,7 +18,6 @@ import {
 import type { RecipeRecoveryPreparationHouseholdAuthority } from "./import-recipe-recovery.household.js";
 import { RecipeRecoveryOrdinal } from "./import-recipe-recovery.js";
 import type { RecipeRecoveryWorkflowStarter } from "./import-recipe-recovery.js";
-import { ImportId } from "./import.contracts.js";
 import type { ImportWorkflowStarter } from "./import.workflow.js";
 
 const recoveryRequest = {

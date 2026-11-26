@@ -4,16 +4,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
-import { Cause, Effect, Exit, Option, Schema } from "effect";
-import { describe, expect, it } from "vitest";
-
-import { TikTokMediaContainerDockerfile } from "./import-media-container.runtime.js";
+import { TikTokMediaContainerDockerfile } from "@meal-planner/recipe-imports/media/container.runtime";
+import { TerminalMediaError } from "@meal-planner/recipe-imports/media/errors";
 import {
   MediaProbeOutput,
   hasIsoBaseMediaFileType,
   validateMediaProbe,
-} from "./import-media-validation.js";
-import { TerminalMediaError } from "./import-media.errors.js";
+} from "@meal-planner/recipe-imports/media/validation";
+import { Cause, Effect, Exit, Option, Schema } from "effect";
+import { describe, expect, it } from "vitest";
 
 const execFilePromise = promisify(execFile);
 const enabled = process.env["MEAL_PLANNER_RUN_CONTAINER_TESTS"] === "1";

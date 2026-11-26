@@ -1,7 +1,10 @@
+import {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
 import { and, eq, exists, gte, isNull, lte, sql } from "drizzle-orm";
 import { Context, DateTime, Effect, Schema } from "effect";
 
-import { ImportId, ImportTimestamp } from "../imports/import.contracts.js";
 import {
   providerAccountingBudgets as budgets,
   providerAccountingDispatches as dispatches,

@@ -1,3 +1,9 @@
+import {
+  importPersistenceCorrupt,
+  importPersistenceUnavailable,
+  importTransitionRejected,
+  invalidImportRequest,
+} from "@meal-planner/recipe-imports/contracts/errors";
 import { Effect } from "effect";
 import { HttpRouter, HttpServerRequest } from "effect/http";
 
@@ -8,12 +14,6 @@ import {
 } from "./import-provider-recovery.js";
 import type { ProviderRecoveryError } from "./import-provider-recovery.js";
 import { ImportSystemAuthorizer } from "./import-system.auth.js";
-import {
-  importPersistenceCorrupt,
-  importPersistenceUnavailable,
-  importTransitionRejected,
-  invalidImportRequest,
-} from "./import.errors.js";
 import { respond } from "./import.http.js";
 
 const decodeRequest = HttpServerRequest.schemaBodyJson(

@@ -70,3 +70,47 @@ describe("recipe feature ownership", () => {
     }
   });
 });
+
+describe("recipe processing workspace ownership", () => {
+  it("keeps source, media and evidence processing independent of the admitting API", () => {
+    const root = path.join(repositoryRoot, "apps/recipe-imports/src");
+    for (const file of readdirSync(root, {
+      recursive: true,
+      encoding: "utf-8",
+    })) {
+      if (!file.endsWith(".ts") || file.endsWith(".test.ts")) {
+        continue;
+      }
+      const filePath = path.join(root, file);
+      const { program, errors } = parseSync(
+        file,
+        readFileSync(filePath, "utf-8")
+      );
+      expect(errors, file).toEqual([]);
+      for (const statement of program.body) {
+        if (
+          statement.type !== "ImportDeclaration" &&
+          statement.type !== "ExportNamedDeclaration" &&
+          statement.type !== "ExportAllDeclaration"
+        ) {
+          continue;
+        }
+        const specifier = statement.source?.value;
+        if (!specifier) {
+          continue;
+        }
+        if (specifier.startsWith(".")) {
+          expect(
+            path.relative(
+              root,
+              path.resolve(path.dirname(filePath), specifier)
+            ),
+            file
+          ).not.toMatch(/^\.\.(?:\/|$)/u);
+        } else {
+          expect(specifier, file).not.toMatch(/^@meal-planner\/api(?:\/|$)/u);
+        }
+      }
+    }
+  });
+});

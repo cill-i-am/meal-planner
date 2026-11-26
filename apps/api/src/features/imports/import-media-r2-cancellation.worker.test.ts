@@ -1,10 +1,10 @@
 import type * as Cloudflare from "@alchemy.run/cloudflare";
+import { adaptAcquisitionBucket } from "@meal-planner/recipe-imports/media/acquisition-bucket.alchemy";
 import type { BaseRuntimeContext } from "alchemy/RuntimeContext";
 import { env } from "cloudflare:test";
 import { Deferred, Effect, Fiber, Stream } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
 import type { ImportWorkerR2TestEnvironment } from "./import-worker-test-environment.js";
 
 declare const FixedLengthStream: new (bytes: number) => {

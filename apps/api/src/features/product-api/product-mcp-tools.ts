@@ -1,13 +1,13 @@
 import type { CallToolResult } from "@modelcontextprotocol/server";
 import { Data, Effect, Schema, Stream } from "effect";
 
-import { ProductOperations } from "./product-api.contract.js";
-import type { ProductScope } from "./product-api.contract.js";
+import type { ProductMcpState } from "./product-mcp-state.js";
 import {
   productToolRequest,
   productToolSchema,
-} from "./product-api.transport.js";
-import type { ProductMcpState } from "./product-mcp-state.js";
+} from "./product-mcp-transport.js";
+import { ProductOperations } from "./product-operations.js";
+import type { ProductScope } from "./product-operations.js";
 
 export class ProductMcpFailure extends Data.TaggedError("ProductMcpFailure") {}
 
@@ -28,7 +28,9 @@ const toolFailure = (message: string) => {
   return checkedResult;
 };
 
-export const toolDefinitions = (dispatch: ProductMcpDispatch) =>
+export const toolDefinitions = (
+  dispatch: Pick<ProductMcpDispatch, "permits">
+) =>
   ProductOperations.filter((operation) =>
     dispatch.permits(operation.scopes)
   ).map((operation) => ({

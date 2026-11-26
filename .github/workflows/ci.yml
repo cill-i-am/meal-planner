@@ -40,6 +40,7 @@ jobs:
               - '.github/workflows/**'
               - 'alchemy.run.ts'
               - 'apps/api/**'
+              - 'apps/recipe-imports/**'
               - 'packages/**'
               - 'patches/**'
               - 'scripts/**'
@@ -117,6 +118,8 @@ jobs:
             command: pnpm --filter @meal-planner/sigen-api test
           - name: tesco
             command: pnpm --filter @meal-planner/tesco test && pnpm --filter @meal-planner/tesco test:runtime
+          - name: recipe-imports
+            command: pnpm --filter @meal-planner/recipe-imports test
           - name: recipe-extraction
             command: pnpm evals:recipe:test
           - name: api-1-of-7

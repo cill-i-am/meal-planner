@@ -10,8 +10,8 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Data, Effect, Schema } from "effect";
 
-import { TescoMcpTools } from "./mcp.contract.js";
-import type { TescoMcpCapabilities } from "./mcp.contract.js";
+import { TescoShoppingOperations } from "../shopping/shopping.operations.js";
+import type { TescoShoppingCapabilities } from "../shopping/shopping.operations.js";
 
 export class TescoMcpTransportFailure extends Data.TaggedError(
   "TescoMcpTransportFailure"
@@ -25,12 +25,14 @@ const toolFailure = (message: string) => {
   return checkedResult;
 };
 const callTool = (message: CallToolRequest) => {
-  const tool = TescoMcpTools.find(({ name }) => name === message.params.name);
+  const tool = TescoShoppingOperations.find(
+    ({ name }) => name === message.params.name
+  );
   if (tool === undefined) {
     const checkedResult: Effect.Effect<
       CallToolResult,
       never,
-      TescoMcpCapabilities
+      TescoShoppingCapabilities
     > = Effect.succeed(toolFailure("Unknown Tesco tool."));
     return checkedResult;
   }
@@ -38,7 +40,7 @@ const callTool = (message: CallToolRequest) => {
     const checkedResult: Effect.Effect<
       CallToolResult,
       never,
-      TescoMcpCapabilities
+      TescoShoppingCapabilities
     > = tool.execute(message.params.arguments ?? {}).pipe(
       Effect.map((encoded) => ({
         content: [{ text: JSON.stringify(encoded), type: "text" as const }],
@@ -78,7 +80,7 @@ const jsonSchema = (schema: Schema.Top) => {
  */
 export const handleTescoMcp = (request: Request) =>
   Effect.gen(function* serveMcpProtocol() {
-    const context = yield* Effect.context<TescoMcpCapabilities>();
+    const context = yield* Effect.context<TescoShoppingCapabilities>();
     const owner = new AbortController();
     const server = new Server(
       { name: "Private Tesco", version: "1.0.0" },
@@ -94,7 +96,7 @@ export const handleTescoMcp = (request: Request) =>
     });
     server.setRequestHandler(ListToolsRequestSchema, () =>
       Promise.resolve({
-        tools: TescoMcpTools.map((tool) => ({
+        tools: TescoShoppingOperations.map((tool) => ({
           annotations: {
             destructiveHint: "destructive" in tool,
             idempotentHint:

@@ -1,6 +1,5 @@
+import { ImportTimestamp } from "@meal-planner/recipe-imports/contracts";
 import { Cause, Effect, Exit, Schema } from "effect";
-
-import { ImportTimestamp } from "../imports/import.contracts.js";
 
 const Identifier = Schema.String.pipe(
   Schema.check(Schema.isTrimmed(), Schema.isNonEmpty(), Schema.isMaxLength(128))

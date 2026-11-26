@@ -3,14 +3,18 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { Effect, Redacted } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { ProductOperations, productOpenApi } from "./product-api.contract.js";
+import { productOpenApi } from "./product-api.contract.js";
+import { makeProductMcpState } from "./product-mcp-state.js";
+import { toolDefinitions } from "./product-mcp-tools.js";
 import {
-  matchProductOperation,
   productToolRequest,
   productToolSchema,
-} from "./product-api.transport.js";
-import { makeProductMcpState } from "./product-mcp-state.js";
+} from "./product-mcp-transport.js";
 import { handleProductMcp } from "./product-mcp.js";
+import {
+  matchProductOperation,
+  ProductOperations,
+} from "./product-operations.js";
 
 const operation = (name: string) => {
   const found = ProductOperations.find((candidate) => candidate.name === name);
@@ -39,6 +43,33 @@ describe("shared public contracts", () => {
       paths["/v1/recipe-import-intents/{id}/actions/{actionId}/confirm"]?.post
     ).toBeDefined();
     expect(paths["/imports/operator-provider-accounting"]).toBeUndefined();
+  });
+
+  it("requires the same complete private assistant mutation scope on HTTP and MCP", () => {
+    const path = "/v1/agent-conversations/setup/turns";
+    const name = "conversation_turns_setup";
+    const scopes = [
+      "meal-planner:assistant",
+      "meal-planner:write",
+      "meal-planner:private",
+    ];
+    expect(matchProductOperation("POST", path)).toBe(operation(name));
+    expect(matchProductOperation("POST", path)?.scopes).toEqual(scopes);
+    expect(productOpenApi().paths[path]?.post?.security).toEqual([
+      { mealPlannerOAuth: scopes },
+    ]);
+
+    const partiallyAuthorized = toolDefinitions({
+      permits: (required) => !required.includes("meal-planner:private"),
+    });
+    expect(
+      partiallyAuthorized.find((tool) => tool.name === name)
+    ).toBeUndefined();
+    const authorized = toolDefinitions({
+      permits: (required) => required.every((scope) => scopes.includes(scope)),
+    });
+    const tool = authorized.find((candidate) => candidate.name === name);
+    expect(tool?._meta.securitySchemes).toEqual([{ scopes, type: "oauth2" }]);
   });
 
   it("requires explicit family context and forwards only authorized protocol fields", async () => {

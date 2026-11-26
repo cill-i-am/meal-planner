@@ -21,12 +21,12 @@ import {
   ResolvedProcessingStage,
   SucceededRecipeImportIntent,
 } from "@meal-planner/recipe-import-api";
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import type { EffectSQLiteDoDatabase } from "drizzle-orm/effect-sqlite-do";
 import { Clock, Effect, Option, Schema } from "effect";
 
 import { ImportTraceContext } from "../../imports/import-observability.js";
-import { ImportId } from "../../imports/import.contracts.js";
 import { ensureHouseholdProvenance } from "../foundation/household-provenance.js";
 import {
   HouseholdDispatchId,

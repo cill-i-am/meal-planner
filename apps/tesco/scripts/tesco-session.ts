@@ -7,7 +7,7 @@ import {
   TescoConnectionHealth,
   TescoSessionCredentials,
   TescoSessionReport,
-} from "../src/mcp/session.model.js";
+} from "../src/session/session.model.js";
 
 const OperatorFile = Schema.Struct({
   operatorToken: Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u)),

@@ -1,4 +1,10 @@
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import { SourceCanonicalId } from "@meal-planner/recipe-imports/contracts";
+import {
+  importPersistenceUnavailable,
+  importTransitionRejected,
+} from "@meal-planner/recipe-imports/contracts/errors";
+import { sha256Bytes } from "@meal-planner/recipe-imports/evidence/digest";
 import { Effect, Schema } from "effect";
 
 import {
@@ -21,7 +27,6 @@ import {
   HouseholdRecipeImportExecutionView,
 } from "../households/recipe-import/household-recipe-import.contract.js";
 import type { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
-import { sha256Bytes } from "./import-digest.js";
 import type { HouseholdEvidenceDomain } from "./import-evidence.repository.household.js";
 import {
   makeHouseholdImportEvidenceCurrentRepository,
@@ -32,11 +37,6 @@ import type {
   RecipeRecoveryWorkflowInput,
 } from "./import-recipe-recovery.js";
 import { RecipeRecoveryAttempt as RecipeRecoveryAttemptSchema } from "./import-recipe-recovery.js";
-import { SourceCanonicalId } from "./import.contracts.js";
-import {
-  importPersistenceUnavailable,
-  importTransitionRejected,
-} from "./import.errors.js";
 
 const PersistenceUnavailableFailure = Schema.Struct({
   reason: Schema.Literal("persistence_unavailable"),

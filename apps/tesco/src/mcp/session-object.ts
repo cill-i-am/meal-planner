@@ -19,7 +19,16 @@ import { makeTescoAuthenticatedGraphQlTransportLive } from "../catalogue/authent
 import type { TescoCatalogueError } from "../catalogue/catalogue.errors.js";
 import { TescoCatalogue } from "../catalogue/catalogue.port.js";
 import { makeTescoXapiCatalogueLive } from "../catalogue/xapi-catalogue.js";
+import {
+  EncryptedTescoSession,
+  TescoSessionFailure,
+} from "../session/session.model.js";
 import * as ShoppingModel from "../shopping/shopping.model.js";
+import {
+  TescoCategoryInput,
+  TescoSearchInput,
+  TescoSuggestionsInput,
+} from "../shopping/shopping.operations.js";
 import { TescoShopping } from "../shopping/shopping.port.js";
 import {
   makeTescoXapiShopping,
@@ -28,13 +37,7 @@ import {
 } from "../shopping/xapi-shopping.js";
 import { TescoApiKeyValue, TescoLocale, TescoRegion } from "../tesco.config.js";
 import type { TescoCatalogueConfig } from "../tesco.config.js";
-import {
-  TescoMcpCategory,
-  TescoMcpSearch,
-  TescoMcpSuggestions,
-} from "./mcp.contract.js";
 import { TescoSessionHttpLive } from "./session.http.js";
-import { EncryptedTescoSession, TescoSessionFailure } from "./session.model.js";
 import {
   makeSessionEncryption,
   makeTescoSessionService,
@@ -110,11 +113,9 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
             ),
             mangoUrl: new URL(credentials.mangoUrl),
             region: Schema.decodeUnknownSync(TescoRegion)("IE"),
-            releaseBranch: null,
             suggestionUrl: new URL(
               "https://search.api.tesco.com/search/suggestion/"
             ),
-            transactionPurpose: null,
           };
           const auth = Layer.succeed(
             TescoAuthSession,
@@ -204,6 +205,23 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
         Effect.scoped
       );
 
+    const catalogueRead = <S extends Schema.Top, A>(
+      schema: S,
+      input: S["Type"],
+      call: (
+        service: TescoCatalogue,
+        value: S["Type"]
+      ) => Effect.Effect<A, TescoCatalogueError>
+    ) =>
+      boundary(
+        Schema.decodeUnknownEffect(schema)(input).pipe(
+          Effect.mapError(invalidInput),
+          Effect.flatMap((value) =>
+            catalogue((service) => call(service, value))
+          )
+        )
+      );
+
     const shoppingCall = <S extends Schema.Top, A>(
       schema: S,
       input: S["Type"],
@@ -235,14 +253,9 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
         ),
       basket: () =>
         shoppingCall(ShoppingModel.EmptyInput, {}, (service) => service.basket),
-      categoryProducts: (input: typeof TescoMcpCategory.Type) =>
-        boundary(
-          Schema.decodeUnknownEffect(TescoMcpCategory)(input).pipe(
-            Effect.mapError(invalidInput),
-            Effect.flatMap((value) =>
-              catalogue((service) => service.categoryProducts(value))
-            )
-          )
+      categoryProducts: (input: typeof TescoCategoryInput.Type) =>
+        catalogueRead(TescoCategoryInput, input, (service, value) =>
+          service.categoryProducts(value)
         ),
       checkoutHandoff: (
         input: typeof ShoppingModel.CheckoutHandoffInput.Type
@@ -305,14 +318,9 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
         shoppingCall(ShoppingModel.ReserveSlotInput, input, (service, value) =>
           service.reserveSlot(value)
         ),
-      search: (input: typeof TescoMcpSearch.Type) =>
-        boundary(
-          Schema.decodeUnknownEffect(TescoMcpSearch)(input).pipe(
-            Effect.mapError(invalidInput),
-            Effect.flatMap((value) =>
-              catalogue((service) => service.search(value))
-            )
-          )
+      search: (input: typeof TescoSearchInput.Type) =>
+        catalogueRead(TescoSearchInput, input, (service, value) =>
+          service.search(value)
         ),
       sessionReport: () =>
         boundary(
@@ -336,14 +344,9 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
           input,
           (service, value) => service.setBasketItems(value)
         ),
-      suggestions: (input: typeof TescoMcpSuggestions.Type) =>
-        boundary(
-          Schema.decodeUnknownEffect(TescoMcpSuggestions)(input).pipe(
-            Effect.mapError(invalidInput),
-            Effect.flatMap((value) =>
-              catalogue((service) => service.suggestions(value))
-            )
-          )
+      suggestions: (input: typeof TescoSuggestionsInput.Type) =>
+        catalogueRead(TescoSuggestionsInput, input, (service, value) =>
+          service.suggestions(value)
         ),
     };
   });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
+import { RetryableAcquisitionError } from "@meal-planner/recipe-imports/media/errors";
 import { Effect, Option, Schema } from "effect";
 
-import { RetryableAcquisitionError } from "./import-media.errors.js";
 import {
   TranscriptEvidenceDocument,
   transcriptEvidenceStatus,

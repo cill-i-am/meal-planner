@@ -6,6 +6,19 @@ import {
 } from "@alchemy.run/cloudflare/Workflows";
 import type { WorkflowInstanceRestartOptions } from "@alchemy.run/cloudflare/Workflows";
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import {
+  ImportId,
+  SourceCanonicalId,
+} from "@meal-planner/recipe-imports/contracts";
+import { acquireStoreVerify } from "@meal-planner/recipe-imports/media/acquirer";
+import type {
+  AcquisitionBucketLike,
+  AcquisitionMediaSource,
+  R2ObjectBodyLike,
+  R2ObjectLike,
+} from "@meal-planner/recipe-imports/media/acquirer";
+import { RetryableAcquisitionError } from "@meal-planner/recipe-imports/media/errors";
+import { AcquisitionTaskOutcome } from "@meal-planner/recipe-imports/media/model";
 import { WorkflowEntrypoint } from "cloudflare:workers";
 import { Effect, Schema, Stream } from "effect";
 
@@ -24,22 +37,12 @@ import {
 } from "../households/recipe-import/household-recipe-import.contract.js";
 import { HouseholdMemberAdmission } from "../households/rpc/command-envelope.js";
 import { ImportIntentExecutionGeneration } from "../households/shared-kernel/workflow-identity.js";
-import { acquireStoreVerify } from "./import-media-acquirer.js";
-import type {
-  AcquisitionBucketLike,
-  AcquisitionMediaSource,
-  R2ObjectBodyLike,
-  R2ObjectLike,
-} from "./import-media-acquirer.js";
-import { RetryableAcquisitionError } from "./import-media.errors.js";
-import { AcquisitionTaskOutcome } from "./import-media.model.js";
 import { workerTestR2PutBody } from "./import-worker-test-environment.js";
 import type {
   WorkerTestR2Bucket,
   WorkerTestR2Object,
   WorkerTestR2ObjectBody,
 } from "./import-worker-test-environment.js";
-import { ImportId, SourceCanonicalId } from "./import.contracts.js";
 import { runHouseholdAcquisitionTask } from "./import.workflow.js";
 
 interface TestKvNamespace {

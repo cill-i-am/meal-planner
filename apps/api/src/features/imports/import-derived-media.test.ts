@@ -1,19 +1,19 @@
-import { Effect, Schema, Stream } from "effect";
-import { describe, expect, it } from "vitest";
-
-import {
-  makeR2SpeechAudioExtractor,
-  makeR2VisualFrameSampler,
-  persistDerivedProviderEvidence,
-} from "./import-derived-media.js";
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
 import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
   R2ObjectBodyLike,
-} from "./import-media-acquirer.js";
-import { VerifiedPreparedMediaArtifact } from "./import-media-acquirer.js";
-import { AcquisitionGeneration } from "./import-media.model.js";
-import { ImportId } from "./import.contracts.js";
+} from "@meal-planner/recipe-imports/media/acquirer";
+import { VerifiedPreparedMediaArtifact } from "@meal-planner/recipe-imports/media/acquirer";
+import {
+  makeR2SpeechAudioExtractor,
+  makeR2VisualFrameSampler,
+  persistDerivedProviderEvidence,
+} from "@meal-planner/recipe-imports/media/derived-media";
+import { AcquisitionGeneration } from "@meal-planner/recipe-imports/media/model";
+import { Effect, Schema, Stream } from "effect";
+import { describe, expect, it } from "vitest";
+
 import { memoryBucket } from "./transcript-evidence.fixture.js";
 
 const hash = async (bytes: Uint8Array) =>

@@ -1,6 +1,6 @@
+import type { ImportId } from "@meal-planner/recipe-imports/contracts";
 import { Effect, Schema } from "effect";
 
-import type { ImportId } from "../../imports/import.contracts.js";
 import {
   HouseholdCanonicalEncoding,
   HouseholdDigest,

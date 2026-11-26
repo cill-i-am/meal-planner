@@ -2,15 +2,18 @@ import { createHash, timingSafeEqual } from "node:crypto";
 
 import { Effect, Redacted, Schema, Stream } from "effect";
 
-import { tescoPrivateOpenApi } from "./http.contract.js";
-import { TescoMcpCapabilities, TescoMcpTools } from "./mcp.contract.js";
-import { handleTescoMcp } from "./mcp.protocol.js";
-import { TescoSessionCredentials } from "./session.model.js";
+import { TescoSessionCredentials } from "../session/session.model.js";
 import type {
   TescoConnectionHealth,
   TescoSessionFailure,
   TescoSessionReport,
-} from "./session.model.js";
+} from "../session/session.model.js";
+import {
+  TescoShoppingCapabilities,
+  TescoShoppingOperations,
+} from "../shopping/shopping.operations.js";
+import { tescoPrivateOpenApi } from "./http.contract.js";
+import { handleTescoMcp } from "./mcp.protocol.js";
 
 const authorized = (
   request: Request,
@@ -67,7 +70,7 @@ const readJson = (request: Request) =>
   });
 
 export interface TescoMcpHttpOptions {
-  readonly capabilities: TescoMcpCapabilities;
+  readonly capabilities: TescoShoppingCapabilities;
   readonly disconnect: Effect.Effect<void, TescoSessionFailure>;
   readonly enroll: (
     credentials: Redacted.Redacted<TescoSessionCredentials>
@@ -162,7 +165,7 @@ export const makeTescoMcpHttpHandler =
             })
           : new Response(null, { headers: { allow: "GET" }, status: 405 });
       }
-      const tool = TescoMcpTools.find(
+      const tool = TescoShoppingOperations.find(
         ({ name }) => url.pathname === `/v1/${name}`
       );
       if (tool !== undefined) {
@@ -179,7 +182,7 @@ export const makeTescoMcpHttpHandler =
         }
         const result = yield* readJson(request).pipe(
           Effect.flatMap(tool.execute),
-          Effect.provideService(TescoMcpCapabilities, options.capabilities)
+          Effect.provideService(TescoShoppingCapabilities, options.capabilities)
         );
         return Response.json(result, {
           headers: { "cache-control": "no-store" },
@@ -192,7 +195,7 @@ export const makeTescoMcpHttpHandler =
         return new Response(null, { headers: { allow: "POST" }, status: 405 });
       }
       const mcpResponse = yield* handleTescoMcp(request).pipe(
-        Effect.provideService(TescoMcpCapabilities, options.capabilities)
+        Effect.provideService(TescoShoppingCapabilities, options.capabilities)
       );
       mcpResponse.headers.set("cache-control", "no-store");
       return mcpResponse;

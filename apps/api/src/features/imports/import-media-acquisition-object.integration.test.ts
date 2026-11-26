@@ -13,6 +13,34 @@ import path from "node:path";
 import { Readable } from "node:stream";
 
 import * as Cloudflare from "@alchemy.run/cloudflare";
+import {
+  ImportId,
+  SourceCanonicalId,
+} from "@meal-planner/recipe-imports/contracts";
+import { acquireStoreVerify } from "@meal-planner/recipe-imports/media/acquirer";
+import type { AcquisitionBucketLike } from "@meal-planner/recipe-imports/media/acquirer";
+import {
+  makeContainerMediaAcquirer,
+  makeSecureMediaDownloader,
+} from "@meal-planner/recipe-imports/media/acquirer.container";
+import type {
+  SecureMediaDownloadClient,
+  SecureMediaDownloadResponse,
+} from "@meal-planner/recipe-imports/media/acquirer.container";
+import { ImportMediaAcquisitionObjectRuntime } from "@meal-planner/recipe-imports/media/acquisition-object";
+import { makeAcquisitionMediaObject } from "@meal-planner/recipe-imports/media/acquisition-object.client";
+import type { AcquisitionMediaObjectStub } from "@meal-planner/recipe-imports/media/acquisition-object.client";
+import { makeTikTokMediaContainerRuntime } from "@meal-planner/recipe-imports/media/container.runtime";
+import { RetryableAcquisitionError } from "@meal-planner/recipe-imports/media/errors";
+import {
+  AcquisitionGeneration,
+  MaximumMediaProcessMilliseconds,
+  ProductionMediaLimits,
+  acquisitionCoordinatorId,
+} from "@meal-planner/recipe-imports/media/model";
+import { makeTemporaryArtifactStore } from "@meal-planner/recipe-imports/media/process";
+import type { MediaProcessRunner } from "@meal-planner/recipe-imports/media/process";
+import { makeTikTokSourceResolver } from "@meal-planner/recipe-imports/sources/source-resolver.tiktok";
 import * as Output from "alchemy/Output";
 import { Self } from "alchemy/Self";
 import { Cause, Context, Effect, Exit, Option, Schema, Stream } from "effect";
@@ -20,36 +48,11 @@ import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  makeContainerMediaAcquirer,
-  makeSecureMediaDownloader,
-} from "./import-media-acquirer.container.js";
-import type {
-  SecureMediaDownloadClient,
-  SecureMediaDownloadResponse,
-} from "./import-media-acquirer.container.js";
-import { acquireStoreVerify } from "./import-media-acquirer.js";
-import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
-import { makeAcquisitionMediaObject } from "./import-media-acquisition-object.client.js";
-import type { AcquisitionMediaObjectStub } from "./import-media-acquisition-object.client.js";
-import { ImportMediaAcquisitionObjectRuntime } from "./import-media-acquisition-object.js";
-import { makeTikTokMediaContainerRuntime } from "./import-media-container.runtime.js";
-import { makeTemporaryArtifactStore } from "./import-media-process.js";
-import type { MediaProcessRunner } from "./import-media-process.js";
-import { RetryableAcquisitionError } from "./import-media.errors.js";
-import {
-  AcquisitionGeneration,
-  MaximumMediaProcessMilliseconds,
-  ProductionMediaLimits,
-  acquisitionCoordinatorId,
-} from "./import-media.model.js";
 import type { ImportObservabilityEvent } from "./import-observability.js";
 import {
   ImportCorrelationId,
   ImportObservabilityTraceStore,
 } from "./import-observability.js";
-import { makeTikTokSourceResolver } from "./import-source-resolver.tiktok.js";
-import { ImportId, SourceCanonicalId } from "./import.contracts.js";
 import { runAcquisitionTask } from "./import.workflow.js";
 
 const identity = {

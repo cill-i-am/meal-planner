@@ -13,9 +13,9 @@ import {
 } from "@meal-planner/recipe-import-api";
 import { Effect, Redacted, Schema } from "effect";
 
-import type { ProductScope } from "./product-api.contract.js";
 import { makeProductMcpState } from "./product-mcp-state.js";
 import type { ProductMcpDispatch } from "./product-mcp-tools.js";
+import type { ProductScope } from "./product-operations.js";
 
 export const familyId = "family-transport-test";
 export const intentId = "018f47ad-91aa-7c35-b6fe-000000000001";

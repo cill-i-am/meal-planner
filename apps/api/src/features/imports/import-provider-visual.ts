@@ -1,3 +1,15 @@
+import type {
+  VisualEvidenceExtractionFailure,
+  VisualEvidenceExtractor,
+  VisualFrameArtifact,
+} from "@meal-planner/recipe-imports/evidence/visual-evidence-extractor";
+import {
+  projectVisualProviderSemanticsInput,
+  emptyVisualProviderSemantics,
+  MaximumVisualFrames,
+  visualEvidenceProviderSchemas,
+  visualEvidenceOutcomeForObservations,
+} from "@meal-planner/recipe-imports/evidence/visual-evidence-extractor";
 import { Effect, Option, Schema } from "effect";
 import type { Prompt } from "effect/ai";
 
@@ -17,18 +29,6 @@ import type {
   ProviderDispatchGate,
   WorkersAiTransport,
 } from "./import-provider-kernel.js";
-import type {
-  VisualEvidenceExtractionFailure,
-  VisualEvidenceExtractor,
-  VisualFrameArtifact,
-} from "./import-visual-evidence-extractor.js";
-import {
-  projectVisualProviderSemanticsInput,
-  emptyVisualProviderSemantics,
-  MaximumVisualFrames,
-  visualEvidenceProviderSchemas,
-  visualEvidenceOutcomeForObservations,
-} from "./import-visual-evidence-extractor.js";
 
 export { InstalledVisualModel } from "./import-provider-kernel.js";
 

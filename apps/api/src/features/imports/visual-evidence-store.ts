@@ -1,21 +1,27 @@
-import { DateTime, Context, Effect, Layer, Option, Schema } from "effect";
-
-import { bytesToHex, checksumBytes, sha256Bytes } from "./import-digest.js";
-import type { AcquisitionBucketLike } from "./import-media-acquirer.js";
+import {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
+import {
+  bytesToHex,
+  checksumBytes,
+  sha256Bytes,
+} from "@meal-planner/recipe-imports/evidence/digest";
+import type {
+  VisualEvidenceObservation,
+  VisualFrameArtifact,
+} from "@meal-planner/recipe-imports/evidence/visual-evidence-extractor";
+import {
+  MaximumVisualFrames,
+  VisualEvidence,
+} from "@meal-planner/recipe-imports/evidence/visual-evidence-extractor";
+import type { AcquisitionBucketLike } from "@meal-planner/recipe-imports/media/acquirer";
 import {
   AcquisitionGeneration,
   EvidenceRetentionSeconds,
   Sha256Hex,
-} from "./import-media.model.js";
-import type {
-  VisualEvidenceObservation,
-  VisualFrameArtifact,
-} from "./import-visual-evidence-extractor.js";
-import {
-  MaximumVisualFrames,
-  VisualEvidence,
-} from "./import-visual-evidence-extractor.js";
-import { ImportId, ImportTimestamp } from "./import.contracts.js";
+} from "@meal-planner/recipe-imports/media/model";
+import { DateTime, Context, Effect, Layer, Option, Schema } from "effect";
 
 const PositiveInteger = Schema.Number.pipe(
   Schema.check(Schema.isInt(), Schema.isGreaterThan(0))

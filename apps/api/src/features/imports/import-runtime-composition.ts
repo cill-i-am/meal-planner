@@ -1,5 +1,7 @@
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
+import { sha256Bytes } from "@meal-planner/recipe-imports/evidence/digest";
+import { adaptAcquisitionBucket } from "@meal-planner/recipe-imports/media/acquisition-bucket.alchemy";
 import { RuntimeContext } from "alchemy";
 import type { AnyD1Database } from "drizzle-orm/d1";
 import { Effect, Option, Schema } from "effect";
@@ -16,8 +18,6 @@ import {
   ProviderAccountingTimestamp,
 } from "../provider-accounting/provider-accounting.js";
 import { makeD1ProviderAccountingRepository } from "../provider-accounting/provider-accounting.repository.d1.js";
-import { sha256Bytes } from "./import-digest.js";
-import { adaptAcquisitionBucket } from "./import-media-acquisition-bucket.alchemy.js";
 import { observeImportWorkflowStart } from "./import-observability.js";
 import type { ImportCorrelationId } from "./import-observability.js";
 import {

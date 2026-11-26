@@ -9,7 +9,7 @@ import type {
   EncryptedTescoSession,
   TescoConnectionHealth,
   TescoRenewalStep,
-} from "./session.model.js";
+} from "../session/session.model.js";
 import {
   cookieHeaderFor,
   mergeSessionCookies,
@@ -20,7 +20,7 @@ import {
   TescoSessionCredentials,
   TescoSessionFailure,
   tokenExpiry,
-} from "./session.model.js";
+} from "../session/session.model.js";
 
 export const TescoSessionRecord = Schema.Struct({
   needsReauthentication: Schema.Boolean,

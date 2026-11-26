@@ -5,7 +5,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { Effect, Schema } from "effect";
-import { beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 import {
   createAccountedEvaluationTransport,
@@ -28,12 +36,10 @@ const request = (dispatchId: string, maximumCostMicroUsd = 100_000) =>
 const PendingRequest = Schema.Struct({ requestSha256: Schema.String });
 const readPending = async (rootDirectory: string, dispatchId: string) => {
   const files = evaluationBridgePaths(rootDirectory, dispatchId);
-  await expect
-    .poll(() => readFile(files.request, "utf-8"), { timeout: 10_000 })
-    .toBeDefined();
-  return Schema.decodeUnknownSync(PendingRequest)(
-    JSON.parse(await readFile(files.request, "utf-8"))
-  );
+  const raw = await vi.waitFor(() => readFile(files.request, "utf-8"), {
+    timeout: 10_000,
+  });
+  return Schema.decodeUnknownSync(PendingRequest)(JSON.parse(raw));
 };
 const respond = async (
   rootDirectory: string,
@@ -472,38 +478,59 @@ it("close drains unknown settlement before disposing D1 and permits safe inspect
   }
 });
 
-it.each(["node", "pnpm-tsx", "parent-killed"] as const)(
-  "the %s CLI preserves unknown settlement and closes its lock after interruption",
-  async (launcher) => {
-    const rootDirectory = await mkdtemp(
-      path.join(tmpdir(), "evaluation-transport-signal-")
-    );
+describe.each(["node", "pnpm-tsx", "parent-killed"] as const)(
+  "%s recipe CLI interruption",
+  (launcher) => {
     const dispatchId = "cli-interrupted";
-    const requestFile = path.join(rootDirectory, "input.json");
-    await writeFile(requestFile, JSON.stringify(request(dispatchId)));
-    const args = [
-      "evals/recipe-extraction/accounted-transport.ts",
-      "bridge",
-      rootDirectory,
-      "signal-test",
-      requestFile,
-    ];
-    const child =
-      launcher === "pnpm-tsx"
-        ? spawn("pnpm", ["exec", "tsx", ...args], {
-            stdio: ["ignore", "pipe", "pipe"],
-          })
-        : spawn(process.execPath, ["--import", "tsx", ...args], {
-            stdio: ["ignore", "pipe", "pipe"],
-          });
-    child.stdout.resume();
-    child.stderr.resume();
-    const closed = once(child, "close");
-    const resultFile = evaluationBridgePaths(rootDirectory, dispatchId)
-      .request.replace(`${path.sep}bridge${path.sep}`, path.sep)
-      .replace(".request.json", ".result.json");
-    try {
-      await readPending(rootDirectory, dispatchId);
+    const start = async () => {
+      const rootDirectory = await mkdtemp(
+        path.join(tmpdir(), "evaluation-transport-signal-")
+      );
+      const requestFile = path.join(rootDirectory, "input.json");
+      await writeFile(requestFile, JSON.stringify(request(dispatchId)));
+      const args = [
+        "evals/recipe-extraction/accounted-transport.ts",
+        "bridge",
+        rootDirectory,
+        "signal-test",
+        requestFile,
+      ];
+      const child =
+        launcher === "pnpm-tsx"
+          ? spawn("pnpm", ["exec", "tsx", ...args], {
+              stdio: ["ignore", "pipe", "pipe"],
+            })
+          : spawn(process.execPath, ["--import", "tsx", ...args], {
+              stdio: ["ignore", "pipe", "pipe"],
+            });
+      child.stdout.resume();
+      child.stderr.resume();
+      const closed = once(child, "close");
+      const resultFile = evaluationBridgePaths(rootDirectory, dispatchId)
+        .request.replace(`${path.sep}bridge${path.sep}`, path.sep)
+        .replace(".request.json", ".result.json");
+      return { child, closed, resultFile, rootDirectory };
+    };
+    let invocation: Awaited<ReturnType<typeof start>> | undefined;
+
+    beforeAll(async () => {
+      invocation = await start();
+      await readPending(invocation.rootDirectory, dispatchId);
+    });
+
+    afterAll(async () => {
+      if (invocation !== undefined) {
+        invocation.child.kill("SIGTERM");
+        await invocation.closed;
+        await rm(invocation.rootDirectory, { force: true, recursive: true });
+      }
+    });
+
+    it("preserves unknown settlement and closes its lock", async () => {
+      if (invocation === undefined) {
+        throw new Error("CLI launch did not complete");
+      }
+      const { child, closed, resultFile, rootDirectory } = invocation;
       child.kill(launcher === "parent-killed" ? "SIGKILL" : "SIGINT");
       const [exitCode, signal] = await closed;
       if (launcher === "parent-killed") {
@@ -564,10 +591,6 @@ it.each(["node", "pnpm-tsx", "parent-killed"] as const)(
       } finally {
         await transport.close();
       }
-    } finally {
-      child.kill("SIGTERM");
-      await closed;
-      await rm(rootDirectory, { force: true, recursive: true });
-    }
+    });
   }
 );

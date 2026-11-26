@@ -9,12 +9,12 @@ import {
   CatalogueProductResults,
   CatalogueSuggestions,
 } from "../catalogue/catalogue.model.js";
+import { TescoSessionFailure } from "../session/session.model.js";
 import * as Shopping from "../shopping/shopping.model.js";
+import type { TescoShoppingCapabilities } from "../shopping/shopping.operations.js";
 import { makeHttpShoppingFixture } from "./http-shopping.fixture.js";
 import { tescoPrivateOpenApi } from "./http.contract.js";
-import type { TescoMcpCapabilities } from "./mcp.contract.js";
 import { makeTescoMcpHttpHandler } from "./mcp.http.js";
-import { TescoSessionFailure } from "./session.model.js";
 
 const executorToken = "a".repeat(64);
 const operatorToken = "b".repeat(64);
@@ -35,7 +35,7 @@ const health = {
 };
 
 const setup = (
-  overrides: Partial<TescoMcpCapabilities> = {},
+  overrides: Partial<TescoShoppingCapabilities> = {},
   admitted = true
 ) => {
   const capabilities = {
@@ -607,6 +607,48 @@ describe("private Tesco HTTP and MCP parity", () => {
       });
       expect(valid.structuredContent).toMatchObject({ orderPlaced: false });
       expect(fixture.sent).toEqual([]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  it("rejects a real basket change over either transport, then accepts a new review", async () => {
+    const fixture = makeHttpShoppingFixture();
+    const app = setup(await Effect.runPromise(fixture.program));
+    const client = await connect(app.fetch);
+    try {
+      const prepared = await client.callTool({
+        arguments: {},
+        name: "prepare_checkout",
+      });
+      const review = Schema.decodeUnknownSync(Shopping.CheckoutReview)(
+        prepared.structuredContent
+      );
+      const changed = await post(app, "set_basket_items", {
+        items: [{ productId: "123", quantity: 2, unit: "pcs" }],
+        requestId: "basket-changed-after-review",
+      });
+      expect(changed.status).toBe(200);
+      expect(await changed.json()).toMatchObject({ outcome: "confirmed" });
+
+      const stale = await post(app, "approve_checkout_handoff", { review });
+      expect(stale.status).toBe(400);
+      const staleMcp = await client.callTool({
+        arguments: { review },
+        name: "approve_checkout_handoff",
+      });
+      expect(staleMcp.isError).toBe(true);
+
+      const refreshed = await post(app, "prepare_checkout", {});
+      const freshReview = Schema.decodeUnknownSync(Shopping.CheckoutReview)(
+        await refreshed.json()
+      );
+      const approved = await client.callTool({
+        arguments: { review: freshReview },
+        name: "approve_checkout_handoff",
+      });
+      expect(approved.structuredContent).toMatchObject({ orderPlaced: false });
+      expect(fixture.sent).toEqual(["SetPrivateBasketItems"]);
     } finally {
       await client.close();
     }

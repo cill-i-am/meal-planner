@@ -3,10 +3,11 @@ import {
   recipeIngredientFromText,
   recipeInstructionFromText,
 } from "@meal-planner/recipe-domain";
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
+import { AcquisitionGeneration } from "@meal-planner/recipe-imports/media/model";
 import { Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { AcquisitionGeneration } from "./import-media.model.js";
 import { extractionIsGrounded } from "./import-recipe-draft.js";
 import { GroundedRecipeFacts } from "./import-recipe-extractor.js";
 import type {
@@ -18,7 +19,6 @@ import {
   groundRecipeCandidate,
   projectRecipeEvidenceSpan,
 } from "./import-recipe-grounding.js";
-import { ImportId } from "./import.contracts.js";
 
 const items = (value: string) => {
   const checkedResult: readonly RecipeEvidenceItem[] = [

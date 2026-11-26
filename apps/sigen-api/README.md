@@ -2,6 +2,12 @@
 
 This independent Cloudflare service exposes 57 HTTP/MCP operations and 30 typed setting-change families from the [coverage matrix](../../docs/sigen/coverage.md). It includes station/profile/template inspection, equipment and smart-load summaries, preheating, diagnostics, history and approval controls. Coverage includes charger reads and smart-load mode, off-grid and schedule controls. The matrix lists the evidence needed for charger and V2X writes, industrial and grouped profiles, and advanced smart-load schedule combinations. `packages/sigen` contains the reusable Effect 4 EU private client; this app owns encrypted sessions and the account Durable Object. `sigen.alchemy.ts` deploys only this service, with independent credentials.
 
+## Follow a request
+
+- **Telemetry:** [HTTP](src/http.ts) and [MCP](src/mcp.ts) resolve the same [operation catalog](src/contracts.ts). The [Worker](src/worker.ts) calls the [account Durable Object](src/account-object.ts). Its telemetry bindings validate RPC inputs, then [the session](src/session.ts) checks the enrolled station and handles token renewal before calling the [vendor client](../../packages/sigen/src/client.ts).
+- **Controls:** the Durable Object's `controlRpc` bindings lead to [the command book](src/commands.ts). Follow `prepareCommand` → `approveCommand` → `executeCommand` → `verifyByReadback` for the review, approval, recorded write attempt and verified outcome. The command book stays in Durable Object storage; the vendor client still owns provider calls.
+- **Runtime proof:** [the synthetic Alchemy/workerd test](../../scripts/sigen-worker-runtime.test.ts) exercises both transports, scheduled renewal and persisted approval across a restart without contacting devices.
+
 ## Current surface
 
 | Operation | Input | Result |

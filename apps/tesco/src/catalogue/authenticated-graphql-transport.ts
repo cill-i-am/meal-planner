@@ -25,8 +25,8 @@ const TescoGraphQlStatus = Schema.Struct({
 const mangoHeaders = (
   config: TescoCatalogueConfig,
   authorization: TescoAuthorization
-) => {
-  const headers: Record<string, string> = {
+) =>
+  ({
     accept: "application/json",
     "accept-language": config.locale,
     "apollographql-client-name": "meal-planner-api",
@@ -36,20 +36,7 @@ const mangoHeaders = (
     language: config.locale,
     region: config.region,
     "x-apikey": Redacted.value(config.mangoApiKey),
-  };
-
-  if (config.transactionPurpose !== null) {
-    headers["transaction-purpose"] = config.transactionPurpose;
-  }
-  if (config.releaseBranch !== null) {
-    headers["release-branch"] = config.releaseBranch;
-  }
-
-  {
-    const checkedResult: Record<string, string> = headers;
-    return checkedResult;
-  }
-};
+  }) satisfies Record<string, string>;
 
 const isUnavailableStatus = (status: number) => {
   const checkedResult: boolean = status === 429 || status >= 500;

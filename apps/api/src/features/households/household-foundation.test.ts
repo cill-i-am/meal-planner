@@ -1,7 +1,7 @@
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { ImportId } from "../imports/import.contracts.js";
 import { HouseholdImportWorkflowOutboxPayload } from "./foundation/import-workflow-admission.contract.js";
 import { routeAdmittedHouseholdCommand } from "./household-command-router.js";
 import {

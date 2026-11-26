@@ -2,9 +2,9 @@ import {
   RecoveryGuidance,
   StablePublicErrorCode,
 } from "@meal-planner/recipe-import-api";
+import type { AcquisitionTaskOutcome } from "@meal-planner/recipe-imports/media/model";
 import { Schema } from "effect";
 
-import type { AcquisitionTaskOutcome } from "./import-media.model.js";
 import type { ProviderTaskStage } from "./import-provider-workflow-task.js";
 
 export const PublicIntentFailure = Schema.Struct({

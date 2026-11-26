@@ -1,0 +1,45 @@
+{
+  "name": "@meal-planner/recipe-imports",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./contracts": "./src/contracts/import.contracts.ts",
+    "./contracts/errors": "./src/contracts/import.errors.ts",
+    "./evidence/digest": "./src/evidence/import-digest.ts",
+    "./evidence/speech-transcriber": "./src/evidence/import-speech-transcriber.ts",
+    "./evidence/visual-evidence-extractor": "./src/evidence/import-visual-evidence-extractor.ts",
+    "./media/acquirer": "./src/media/import-media-acquirer.ts",
+    "./media/acquirer.container": "./src/media/import-media-acquirer.container.ts",
+    "./media/acquisition-bucket.alchemy": "./src/media/import-media-acquisition-bucket.alchemy.ts",
+    "./media/acquisition-object": "./src/media/import-media-acquisition-object.ts",
+    "./media/acquisition-object.client": "./src/media/import-media-acquisition-object.client.ts",
+    "./media/artifact-transport": "./src/media/import-media-artifact-transport.ts",
+    "./media/container.runtime": "./src/media/import-media-container.runtime.ts",
+    "./media/derived-media": "./src/media/import-derived-media.ts",
+    "./media/errors": "./src/media/import-media.errors.ts",
+    "./media/model": "./src/media/import-media.model.ts",
+    "./media/process": "./src/media/import-media-process.ts",
+    "./media/validation": "./src/media/import-media-validation.ts",
+    "./sources/source-identity": "./src/sources/source-identity.ts",
+    "./sources/source-identity.tiktok": "./src/sources/source-identity.tiktok.ts",
+    "./sources/source-resolver.tiktok": "./src/sources/import-source-resolver.tiktok.ts",
+    "./sources/source-session": "./src/sources/import-source-session.ts"
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@alchemy.run/cloudflare": "2.0.0-beta.87",
+    "@meal-planner/transcription": "workspace:*",
+    "alchemy": "2.0.0-beta.87",
+    "effect": "4.1.4",
+    "parse5": "8.1.1"
+  },
+  "devDependencies": {
+    "@effect/vitest": "4.1.4",
+    "@types/node": "26.6.6",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

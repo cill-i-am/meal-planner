@@ -1,17 +1,17 @@
 import { RecipeImportIntentId } from "@meal-planner/recipe-import-api";
-import { Schema } from "effect";
-
-import {
-  MediaStreamSummary,
-  VerifiedSourceMetadata,
-} from "../../imports/import-media.model.js";
-import { RecipeDraft } from "../../imports/import-recipe-draft.repository.js";
-import { RecipeExtractorDescriptor } from "../../imports/import-recipe-extractor.js";
-import { SpeechEvidenceStatus } from "../../imports/import-speech-transcriber.js";
 import {
   ImportTimestamp,
   SourceCanonicalId,
-} from "../../imports/import.contracts.js";
+} from "@meal-planner/recipe-imports/contracts";
+import {
+  MediaStreamSummary,
+  VerifiedSourceMetadata,
+} from "@meal-planner/recipe-imports/media/model";
+import { SpeechEvidenceStatus } from "@meal-planner/transcription";
+import { Schema } from "effect";
+
+import { RecipeDraft } from "../../imports/import-recipe-draft.repository.js";
+import { RecipeExtractorDescriptor } from "../../imports/import-recipe-extractor.js";
 import { HouseholdImportMutationId } from "../recipe-import/household-recipe-import.contract.js";
 import { HouseholdSystemAdmission } from "../rpc/command-envelope.js";
 

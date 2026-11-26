@@ -1,7 +1,7 @@
+import { sha256Bytes } from "@meal-planner/recipe-imports/evidence/digest";
 import { Effect, Schema } from "effect";
 
 import { HouseholdImportMutationId } from "../households/recipe-import/household-recipe-import.contract.js";
-import { sha256Bytes } from "./import-digest.js";
 
 export const workflowMutationId = (semanticKey: string) =>
   sha256Bytes(

@@ -9,9 +9,7 @@
     "check": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate --name provider_accounting",
     "household:db:generate": "drizzle-kit generate --config household.drizzle.config.ts --name household_domain",
-    "dev": "pnpm --filter @meal-planner/tesco dev",
     "private-output:db:generate": "drizzle-kit generate --config private-output.drizzle.config.ts --name private_output_lifecycle",
-    "start": "pnpm --filter @meal-planner/tesco start",
     "test": "vitest run"
   },
   "dependencies": {
@@ -28,6 +26,8 @@
     "@meal-planner/private-interview-api": "workspace:*",
     "@meal-planner/recipe-domain": "workspace:*",
     "@meal-planner/recipe-import-api": "workspace:*",
+    "@meal-planner/recipe-imports": "workspace:*",
+    "@meal-planner/transcription": "workspace:*",
     "@modelcontextprotocol/ext-tasks": "0.2.3",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@modelcontextprotocol/server": "2.4.0",
@@ -43,7 +43,6 @@
     "drizzle-orm": "1.0.0-rc.5",
     "effect": "4.1.4",
     "openai": "7.58.0",
-    "parse5": "8.1.1",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "react-email": "6.11.16"

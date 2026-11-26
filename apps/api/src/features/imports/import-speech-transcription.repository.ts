@@ -1,9 +1,12 @@
+import type {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
+import type { AcquisitionGeneration } from "@meal-planner/recipe-imports/media/model";
+import type { SpeechEvidenceStatus } from "@meal-planner/transcription";
 import { Schema } from "effect";
 import type { Effect } from "effect";
 
-import type { AcquisitionGeneration } from "./import-media.model.js";
-import type { SpeechEvidenceStatus } from "./import-speech-transcriber.js";
-import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportTransitionError } from "./import.repository.js";
 
 export interface CompletedTranscriptEvidence {

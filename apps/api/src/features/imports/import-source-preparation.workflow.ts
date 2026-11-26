@@ -1,11 +1,11 @@
 import { CanonicalTikTokUrl } from "@meal-planner/recipe-import-api";
+import { SourceDescriptor } from "@meal-planner/recipe-imports/contracts";
+import type { CanonicalIdentityResolution } from "@meal-planner/recipe-imports/sources/source-identity";
 import { Effect, Schema } from "effect";
 
 import type { HouseholdDomainWorkerMethods } from "../households/household-domain-worker.js";
 import type { HouseholdReadRecipeImportSubmissionInput } from "../households/recipe-import/household-recipe-import.contract.js";
 import { workflowMutationId } from "./import-workflow-mutation.js";
-import { SourceDescriptor } from "./import.contracts.js";
-import type { CanonicalIdentityResolution } from "./source-identity.js";
 
 /**
  * Native workflow startup adapter. The host supplies its bound household RPC and

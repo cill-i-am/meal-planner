@@ -1,4 +1,20 @@
 import * as Cloudflare from "@alchemy.run/cloudflare";
+import {
+  ImportId,
+  SourceCanonicalId,
+} from "@meal-planner/recipe-imports/contracts";
+import { acquireStoreVerify } from "@meal-planner/recipe-imports/media/acquirer";
+import { adaptAcquisitionBucket } from "@meal-planner/recipe-imports/media/acquisition-bucket.alchemy";
+import { ImportMediaAcquisitionObjectRuntime } from "@meal-planner/recipe-imports/media/acquisition-object";
+import { makeAcquisitionMediaObject } from "@meal-planner/recipe-imports/media/acquisition-object.client";
+import type { AcquisitionMediaObjectStub } from "@meal-planner/recipe-imports/media/acquisition-object.client";
+import { AcquisitionReaderHeader } from "@meal-planner/recipe-imports/media/artifact-transport";
+import { persistDerivedProviderEvidence } from "@meal-planner/recipe-imports/media/derived-media";
+import {
+  AcquisitionGeneration,
+  acquisitionArtifactId,
+  acquisitionCoordinatorId,
+} from "@meal-planner/recipe-imports/media/model";
 import * as Output from "alchemy/Output";
 import type { BaseRuntimeContext } from "alchemy/RuntimeContext";
 import { Self } from "alchemy/Self";
@@ -14,23 +30,7 @@ import {
   Stream,
 } from "effect";
 
-import { persistDerivedProviderEvidence } from "../../features/imports/import-derived-media.js";
-import { acquireStoreVerify } from "../../features/imports/import-media-acquirer.js";
-import { adaptAcquisitionBucket } from "../../features/imports/import-media-acquisition-bucket.alchemy.js";
-import { makeAcquisitionMediaObject } from "../../features/imports/import-media-acquisition-object.client.js";
-import type { AcquisitionMediaObjectStub } from "../../features/imports/import-media-acquisition-object.client.js";
-import { ImportMediaAcquisitionObjectRuntime } from "../../features/imports/import-media-acquisition-object.js";
-import { AcquisitionReaderHeader } from "../../features/imports/import-media-artifact-transport.js";
-import {
-  AcquisitionGeneration,
-  acquisitionArtifactId,
-  acquisitionCoordinatorId,
-} from "../../features/imports/import-media.model.js";
 import type { WorkerTestR2Bucket } from "../../features/imports/import-worker-test-environment.js";
-import {
-  ImportId,
-  SourceCanonicalId,
-} from "../../features/imports/import.contracts.js";
 import { LifecycleFixtureDurationSeconds } from "./lifecycle.fixture.js";
 
 const workerResource = { bind: () => () => Effect.void };

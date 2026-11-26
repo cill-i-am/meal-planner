@@ -33,11 +33,7 @@ const mapTransportError = (
   operation: TescoCatalogueOperation
 ) => {
   switch (error._tag) {
-    case "TescoCredentialsRejected":
-    case "TescoSoftLoginUnavailable":
-    case "TescoSoftLoginResponseInvalid":
-    case "TescoRefreshTokenExpired":
-    case "TescoAccessTokenNotRenewed": {
+    case "TescoCredentialsRejected": {
       return new TescoCatalogueAuthenticationUnavailable({ operation });
     }
     case "TescoAuthenticatedRequestUnavailable": {

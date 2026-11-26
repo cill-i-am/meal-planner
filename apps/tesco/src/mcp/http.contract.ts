@@ -7,7 +7,7 @@ import {
   OpenApi,
 } from "effect/http-api";
 
-import { TescoMcpTools } from "./mcp.contract.js";
+import { TescoShoppingOperations } from "../shopping/shopping.operations.js";
 
 const failure = (error: string, status: number) =>
   Schema.Struct({ error: Schema.Literal(error) }).pipe(
@@ -26,15 +26,15 @@ const errors = [
     ]),
   }).pipe(HttpApiSchema.status(503)),
 ];
-const endpoint = (tool: (typeof TescoMcpTools)[number]) =>
+const endpoint = (tool: (typeof TescoShoppingOperations)[number]) =>
   HttpApiEndpoint.post(tool.name, `/v1/${tool.name}`, {
     error: errors,
     payload: tool.input,
     success: tool.output,
   }).annotate(OpenApi.Description, tool.description);
-const [firstTool, ...remainingTools] = TescoMcpTools;
+const [firstTool, ...remainingTools] = TescoShoppingOperations;
 
-/** Private owner-only HTTP aliases of the exact MCP operation registry. */
+/** Private owner-only HTTP aliases of the Tesco shopping operation table. */
 export const TescoPrivateHttpApi = HttpApi.make("privateTesco")
   .add(
     HttpApiGroup.make("tesco").add(

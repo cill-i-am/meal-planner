@@ -1,7 +1,7 @@
 import { Context } from "effect";
 import type { Schema, Effect } from "effect";
 
-import type { TescoSessionFailure } from "../mcp/session.model.js";
+import type { TescoSessionFailure } from "../session/session.model.js";
 import type * as Model from "./shopping.model.js";
 
 type Operation<I extends Schema.Top, O extends Schema.Top> = (

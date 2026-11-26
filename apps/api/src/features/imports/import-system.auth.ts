@@ -1,8 +1,8 @@
+import { unauthorizedImportCaller } from "@meal-planner/recipe-imports/contracts/errors";
+import type { UnauthorizedImportCaller } from "@meal-planner/recipe-imports/contracts/errors";
 import { Context, Effect, Redacted } from "effect";
 
 import type { ImportPrincipal } from "./import-system-principal.js";
-import { unauthorizedImportCaller } from "./import.errors.js";
-import type { UnauthorizedImportCaller } from "./import.errors.js";
 
 const hmacAlgorithm = { hash: "SHA-256", name: "HMAC" } as const;
 const challenge = new TextEncoder().encode("meal-planner-system-auth-v1");

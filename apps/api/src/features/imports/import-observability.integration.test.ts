@@ -1,3 +1,4 @@
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
 import { RuntimeContext } from "alchemy";
 import { Effect, Schema, Tracer } from "effect";
 import { describe, expect, it, vi } from "vitest";
@@ -23,7 +24,6 @@ import {
 import { makeVisualTransport } from "./import-provider-adapters.fixture.js";
 import { makeProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
-import { ImportId } from "./import.contracts.js";
 import { makeImportWorkflowStarter } from "./import.workflow.js";
 
 const correlationId = Schema.decodeUnknownSync(ImportCorrelationId)(

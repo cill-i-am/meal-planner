@@ -1,3 +1,8 @@
+import { ProductionMediaLimits } from "@meal-planner/recipe-imports/media/model";
+import {
+  MediaProbeOutput,
+  validateMediaProbe,
+} from "@meal-planner/recipe-imports/media/validation";
 import { Effect, Schema } from "effect";
 import { expect, it } from "vitest";
 
@@ -6,11 +11,6 @@ import {
   LifecycleFixtureDurationSeconds,
   lifecycleFixtureProbe,
 } from "../../test/import-media-lifecycle/lifecycle.fixture.js";
-import {
-  MediaProbeOutput,
-  validateMediaProbe,
-} from "./import-media-validation.js";
-import { ProductionMediaLimits } from "./import-media.model.js";
 
 it("the lifecycle fixture source probe passes the real preparation validation contract", async () => {
   const probe = Schema.decodeUnknownSync(MediaProbeOutput)(

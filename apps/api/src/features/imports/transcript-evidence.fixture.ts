@@ -1,24 +1,30 @@
-import { Effect, Option, Schema, Stream } from "effect";
-import { TestClock } from "effect/testing";
-
-import { checksumBytes, sha256Bytes } from "./import-digest.js";
-import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
-import { acquireStoreVerify } from "./import-media-acquirer.js";
-import type {
-  AcquisitionBucketLike,
-  AcquisitionPutValue,
-  R2ObjectBodyLike,
-} from "./import-media-acquirer.js";
-import { AcquisitionGeneration, Sha256Hex } from "./import-media.model.js";
-import {
-  SpeechTranscript,
-  SpeechUnavailableEvidence,
-} from "./import-speech-transcriber.js";
 import {
   ImportId,
   ImportTimestamp,
   SourceCanonicalId,
-} from "./import.contracts.js";
+} from "@meal-planner/recipe-imports/contracts";
+import {
+  checksumBytes,
+  sha256Bytes,
+} from "@meal-planner/recipe-imports/evidence/digest";
+import { acquireStoreVerify } from "@meal-planner/recipe-imports/media/acquirer";
+import type {
+  AcquisitionBucketLike,
+  AcquisitionPutValue,
+  R2ObjectBodyLike,
+} from "@meal-planner/recipe-imports/media/acquirer";
+import {
+  AcquisitionGeneration,
+  Sha256Hex,
+} from "@meal-planner/recipe-imports/media/model";
+import {
+  SpeechTranscript,
+  SpeechUnavailableEvidence,
+} from "@meal-planner/transcription";
+import { Effect, Option, Schema, Stream } from "effect";
+import { TestClock } from "effect/testing";
+
+import type { HouseholdImportEvidenceCurrentRepository } from "./import-evidence.repository.household.js";
 import { TranscriptEvidenceDocument } from "./transcript-evidence-store.js";
 
 export const importId = Schema.decodeUnknownSync(ImportId)(

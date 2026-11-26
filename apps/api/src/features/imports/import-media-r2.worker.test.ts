@@ -1,20 +1,13 @@
-import { env } from "cloudflare:test";
-import { Cause, Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
-import * as HttpServerResponse from "effect/http/HttpServerResponse";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-import { HouseholdReadEvidenceReferencesResult } from "../households/evidence/household-evidence.contract.js";
 import {
-  makeR2SpeechAudioExtractor,
-  makeR2VisualFrameSampler,
-  persistDerivedProviderEvidence,
-} from "./import-derived-media.js";
-import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
+  ImportId,
+  ImportTimestamp,
+  SourceCanonicalId,
+} from "@meal-planner/recipe-imports/contracts";
 import {
   VerifiedPreparedMediaArtifact,
   acquireStoreVerify,
   readVerifiedAcquisitionEvidence,
-} from "./import-media-acquirer.js";
+} from "@meal-planner/recipe-imports/media/acquirer";
 import type {
   AcquisitionBucketLike,
   AcquisitionMediaObjectLike,
@@ -24,10 +17,15 @@ import type {
   PreparedMediaArtifact,
   R2ObjectBodyLike,
   R2ObjectLike,
-} from "./import-media-acquirer.js";
-import { makeAcquisitionMediaObject } from "./import-media-acquisition-object.client.js";
-import type { AcquisitionMediaObjectStub } from "./import-media-acquisition-object.client.js";
-import { RetryableAcquisitionError } from "./import-media.errors.js";
+} from "@meal-planner/recipe-imports/media/acquirer";
+import { makeAcquisitionMediaObject } from "@meal-planner/recipe-imports/media/acquisition-object.client";
+import type { AcquisitionMediaObjectStub } from "@meal-planner/recipe-imports/media/acquisition-object.client";
+import {
+  makeR2SpeechAudioExtractor,
+  makeR2VisualFrameSampler,
+  persistDerivedProviderEvidence,
+} from "@meal-planner/recipe-imports/media/derived-media";
+import { RetryableAcquisitionError } from "@meal-planner/recipe-imports/media/errors";
 import {
   AcquisitionGeneration,
   MaximumR2OperationMilliseconds,
@@ -38,18 +36,20 @@ import {
   acquisitionArtifactId,
   manifestObjectKey,
   mediaObjectKey,
-} from "./import-media.model.js";
+} from "@meal-planner/recipe-imports/media/model";
+import { env } from "cloudflare:test";
+import { Cause, Effect, Exit, Fiber, Option, Schema, Stream } from "effect";
+import * as HttpServerResponse from "effect/http/HttpServerResponse";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { HouseholdReadEvidenceReferencesResult } from "../households/evidence/household-evidence.contract.js";
+import { inspectHouseholdEvidenceReferences } from "./import-evidence-availability.js";
 import { workerTestR2PutBody } from "./import-worker-test-environment.js";
 import type {
   ImportWorkerR2TestEnvironment,
   WorkerTestR2Object,
   WorkerTestR2ObjectBody,
 } from "./import-worker-test-environment.js";
-import {
-  ImportId,
-  ImportTimestamp,
-  SourceCanonicalId,
-} from "./import.contracts.js";
 
 const testEnv: ImportWorkerR2TestEnvironment = env;
 const mediaBytes = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70]);

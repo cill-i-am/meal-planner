@@ -1,8 +1,9 @@
+import { ImportId } from "@meal-planner/recipe-imports/contracts";
+import { AcquisitionGeneration } from "@meal-planner/recipe-imports/media/model";
 import { Effect, Schema } from "effect";
 import { describe, expect, it } from "vitest";
 
 import { isProviderKnownZeroCostFailure } from "../provider-accounting/provider-accounting.js";
-import { AcquisitionGeneration } from "./import-media.model.js";
 import {
   correlationId,
   localDispatchGate,
@@ -13,7 +14,6 @@ import { makeWorkersAiTransport } from "./import-provider-kernel.js";
 import type { ProviderDispatchGate } from "./import-provider-kernel.js";
 import { makeInstalledVisualEvidenceExtractor } from "./import-provider-visual.js";
 import { syntheticThreeFrameResponse } from "./import-provider-visual.scout.fixture.js";
-import { ImportId } from "./import.contracts.js";
 
 const request = {
   dispatchId: "visual:http-boundary:1",

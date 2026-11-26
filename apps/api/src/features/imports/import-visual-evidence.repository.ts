@@ -1,8 +1,11 @@
+import type {
+  ImportId,
+  ImportTimestamp,
+} from "@meal-planner/recipe-imports/contracts";
+import type { AcquisitionGeneration } from "@meal-planner/recipe-imports/media/model";
 import { Schema } from "effect";
 import type { Effect } from "effect";
 
-import type { AcquisitionGeneration } from "./import-media.model.js";
-import type { ImportId, ImportTimestamp } from "./import.contracts.js";
 import type { ImportTransitionError } from "./import.repository.js";
 
 type VisualEvidenceOutcome = "empty" | "found" | "low_confidence";

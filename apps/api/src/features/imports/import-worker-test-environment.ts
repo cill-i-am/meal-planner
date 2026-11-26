@@ -1,8 +1,7 @@
+import type { AcquisitionPutValue } from "@meal-planner/recipe-imports/media/acquirer";
+import type { RetryableAcquisitionFailure } from "@meal-planner/recipe-imports/media/model";
 import { Effect, Stream } from "effect";
 import type { Miniflare } from "miniflare";
-
-import type { AcquisitionPutValue } from "./import-media-acquirer.js";
-import type { RetryableAcquisitionFailure } from "./import-media.model.js";
 
 /** The D1 binding returned by Miniflare's public test API. */
 export type WorkerTestD1Database = Awaited<

@@ -1,3 +1,9 @@
+import {
+  SpeechEnvelopeFamily,
+  SpeechEnvelopeFailure,
+  SpeechEnvelopeUnsupportedLocation,
+  SpeechEnvelopeUnsupportedRootProperty,
+} from "@meal-planner/transcription/workers-ai";
 import { Cause, Console, Context, Effect, Option, Schema } from "effect";
 
 import { ProviderTaskDiagnosticReasonCode } from "./import-provider-workflow-checkpoint.js";
@@ -82,49 +88,6 @@ export const ProviderDecodeReason = Schema.Literals([
   "speech_transcript_normalization_invalid",
 ]);
 export type ProviderDecodeReason = typeof ProviderDecodeReason.Type;
-
-export const SpeechEnvelopeFamily = Schema.Literals([
-  "generic",
-  "model_specific",
-  "unclassified",
-]);
-export type SpeechEnvelopeFamily = typeof SpeechEnvelopeFamily.Type;
-
-export const SpeechEnvelopeFailure = Schema.Literals([
-  "nested_container_type",
-  "nested_entry_type",
-  "nested_metadata_type",
-  "normalized_text_invalid",
-  "not_object",
-  "required_text_missing",
-  "required_text_type",
-  "root_metadata_type",
-  "semantic_constraint",
-  "unsupported_property",
-]);
-export type SpeechEnvelopeFailure = typeof SpeechEnvelopeFailure.Type;
-
-export const SpeechEnvelopeUnsupportedLocation = Schema.Literals([
-  "root",
-  "segment",
-  "transcription_info",
-  "word",
-]);
-export type SpeechEnvelopeUnsupportedLocation =
-  typeof SpeechEnvelopeUnsupportedLocation.Type;
-
-export const SpeechEnvelopeUnsupportedRootProperty = Schema.Literals([
-  "duration",
-  "duration_after_vad",
-  "language",
-  "language_probability",
-  "multiple",
-  "other",
-  "task",
-  "words",
-]);
-export type SpeechEnvelopeUnsupportedRootProperty =
-  typeof SpeechEnvelopeUnsupportedRootProperty.Type;
 
 export const ImportObservabilityEvent = Schema.Struct({
   attempt: Schema.optionalKey(

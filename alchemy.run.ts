@@ -1,5 +1,7 @@
 import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as GitHub from "@alchemy.run/github";
+import TikTokMediaContainerLive from "@meal-planner/recipe-imports/media/container.runtime";
+import { EvidenceRetentionSeconds } from "@meal-planner/recipe-imports/media/model";
 import * as Alchemy from "alchemy";
 import * as Output from "alchemy/Output";
 import * as Config from "effect/Config";
@@ -7,8 +9,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import HouseholdDomainWorkerLive from "./apps/api/src/features/households/household-domain-worker.js";
-import TikTokMediaContainerLive from "./apps/api/src/features/imports/import-media-container.runtime.js";
-import { EvidenceRetentionSeconds } from "./apps/api/src/features/imports/import-media.model.js";
 import { ImportEvidenceBucket } from "./apps/api/src/infrastructure/import-evidence-bucket.js";
 import {
   ImportProviderGateway,

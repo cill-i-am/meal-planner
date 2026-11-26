@@ -121,7 +121,7 @@ describe("household foundation structural boundaries", () => {
   it("binds invitation acceptance to the authenticated Better Auth subject without email inference", async () => {
     const [auth, composition, controlPlane, repository] = await Promise.all([
       read(path.join(apiFeaturesRoot, "auth/auth.ts")),
-      read(path.join(householdRoot, "household-request-composition.ts")),
+      read(path.join(householdRoot, "people/household-people.gateway.ts")),
       read(
         path.join(householdRoot, "people/household-people.control-plane.ts")
       ),
@@ -138,7 +138,7 @@ describe("household foundation structural boundaries", () => {
 
     const recipientProof = composition
       .split("export const makeHouseholdInvitationRecipientVerifier =")[1]
-      ?.split("const persistenceFailure")[0];
+      ?.split("const mapPeopleFailure")[0];
     const acceptedLink = composition
       .split("completeAdultLink: ({ payload, principal }) =>")[1]
       ?.split("    create:")[0];

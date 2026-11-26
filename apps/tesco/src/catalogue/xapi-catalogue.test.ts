@@ -86,9 +86,7 @@ const makeConfig = (mangoUrl: URL) => {
     ),
     mangoUrl,
     region: Schema.decodeUnknownSync(TescoRegion)("IE"),
-    releaseBranch: null,
     suggestionUrl: new URL(mangoUrl),
-    transactionPurpose: null,
   };
   return checkedResult;
 };
