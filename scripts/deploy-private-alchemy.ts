@@ -12,8 +12,8 @@ import {
   targetSpecs,
 } from "./private-release.js";
 
-const env = process.env;
-const integration = process.argv[2];
+const { argv, env } = process;
+const [integration] = argv.slice(2);
 const account = env["CLOUDFLARE_ACCOUNT_ID"];
 const token = env["CLOUDFLARE_API_TOKEN"];
 const mode = env["INTEGRATION_DEPLOY_MODE"];
@@ -29,10 +29,10 @@ if (
   env["GITHUB_REF"] !== "refs/heads/main" ||
   !sha ||
   !/^[a-f0-9]{40}$/u.test(sha) ||
-  execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim() !==
+  execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf-8" }).trim() !==
     sha ||
   execFileSync("git", ["status", "--porcelain=v1", "--untracked-files=all"], {
-    encoding: "utf8",
+    encoding: "utf-8",
   }).trim() !== "" ||
   !account ||
   !/^[a-f0-9]{32}$/u.test(account) ||
