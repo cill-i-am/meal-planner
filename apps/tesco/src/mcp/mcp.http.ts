@@ -10,10 +10,15 @@ import type {
 } from "../session/session.model.js";
 import {
   TescoShoppingCapabilities,
-  TescoShoppingOperations,
+  findTescoShoppingOperation,
 } from "../shopping/shopping.operations.js";
 import { tescoPrivateOpenApi } from "./http.contract.js";
 import { handleTescoMcp } from "./mcp.protocol.js";
+
+const shoppingOperationAtPath = (path: string) =>
+  path.startsWith("/v1/")
+    ? findTescoShoppingOperation(path.slice("/v1/".length))
+    : undefined;
 
 const authorized = (
   request: Request,
@@ -165,9 +170,7 @@ export const makeTescoMcpHttpHandler =
             })
           : new Response(null, { headers: { allow: "GET" }, status: 405 });
       }
-      const tool = TescoShoppingOperations.find(
-        ({ name }) => url.pathname === `/v1/${name}`
-      );
+      const tool = shoppingOperationAtPath(url.pathname);
       if (tool !== undefined) {
         if (request.method !== "POST") {
           return new Response(null, {

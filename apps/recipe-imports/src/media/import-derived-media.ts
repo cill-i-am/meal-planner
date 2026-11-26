@@ -2,7 +2,11 @@ import { Effect, Schema } from "effect";
 
 import { ImportId } from "../contracts/import.contracts.js";
 import type { ImportId as ImportIdType } from "../contracts/import.contracts.js";
-import { bytesToHex, checksumBytes } from "../evidence/import-digest.js";
+import {
+  bytesToHex,
+  checksumBytes,
+  digestSha256,
+} from "../evidence/import-digest.js";
 import type { SpeechAudioExtractor } from "../evidence/import-speech-transcriber.js";
 import type { VisualFrameSampler } from "../evidence/import-visual-evidence-extractor.js";
 import type {
@@ -146,7 +150,7 @@ const hash = Effect.fn("ImportDerivedMedia.hash")(function* hashEffect(
 ) {
   const digest = yield* Effect.tryPromise({
     catch: derivedFailure,
-    try: () => crypto.subtle.digest("SHA-256", Uint8Array.from(bytes).buffer),
+    try: () => digestSha256(bytes),
   });
   const hex = bytesToHex(digest);
   return yield* Schema.decodeUnknownEffect(Sha256Hex)(hex).pipe(

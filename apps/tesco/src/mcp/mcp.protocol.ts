@@ -10,7 +10,10 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js";
 import { Data, Effect, Schema } from "effect";
 
-import { TescoShoppingOperations } from "../shopping/shopping.operations.js";
+import {
+  findTescoShoppingOperation,
+  TescoShoppingOperations,
+} from "../shopping/shopping.operations.js";
 import type { TescoShoppingCapabilities } from "../shopping/shopping.operations.js";
 
 export class TescoMcpTransportFailure extends Data.TaggedError(
@@ -25,9 +28,7 @@ const toolFailure = (message: string) => {
   return checkedResult;
 };
 const callTool = (message: CallToolRequest) => {
-  const tool = TescoShoppingOperations.find(
-    ({ name }) => name === message.params.name
-  );
+  const tool = findTescoShoppingOperation(message.params.name);
   if (tool === undefined) {
     const checkedResult: Effect.Effect<
       CallToolResult,

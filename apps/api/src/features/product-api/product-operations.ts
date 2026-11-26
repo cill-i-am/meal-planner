@@ -376,12 +376,12 @@ export const ProductOperations: readonly ProductOperation[] = Object.values(
 const pathSegments = (path: string) => path.split("/");
 
 export const matchProductOperation = (method: string, pathname: string) => {
+  const actual = pathSegments(pathname);
   const checkedResult: ProductOperation | undefined = ProductOperations.find(
     ({ endpoint }) => {
       if (method !== endpoint.method) {
         return false;
       }
-      const actual = pathSegments(pathname);
       const expected = pathSegments(endpoint.path);
       return (
         actual.length === expected.length &&

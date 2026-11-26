@@ -288,7 +288,7 @@ const operation = <
         SigenCapabilities
       > = run(value).pipe(
         Effect.flatMap((result) =>
-          Schema.encodeUnknownEffect(output)(result).pipe(
+          Schema.encodeEffect(output)(result).pipe(
             Effect.mapError(() => failure("SchemaMismatch"))
           )
         )

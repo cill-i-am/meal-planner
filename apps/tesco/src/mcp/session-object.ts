@@ -117,22 +117,19 @@ const TescoSessionRuntime = Effect.gen(function* constructSessionObject() {
               "https://search.api.tesco.com/search/suggestion/"
             ),
           };
+          const authorization = (effect: typeof sessions.credentials) =>
+            atBoundary(effect).pipe(
+              Effect.map((value) =>
+                Redacted.make(Redacted.value(value).authorization)
+              ),
+              Effect.mapError(() => new TescoCredentialsRejected())
+            );
           const auth = Layer.succeed(
             TescoAuthSession,
             TescoAuthSession.of({
-              authorization: atBoundary(sessions.credentials).pipe(
-                Effect.map((value) =>
-                  Redacted.make(Redacted.value(value).authorization)
-                ),
-                Effect.mapError(() => new TescoCredentialsRejected())
-              ),
+              authorization: authorization(sessions.credentials),
               refreshAfterUnauthorized: (failed) =>
-                atBoundary(sessions.forceRefresh(Redacted.value(failed))).pipe(
-                  Effect.map((value) =>
-                    Redacted.make(Redacted.value(value).authorization)
-                  ),
-                  Effect.mapError(() => new TescoCredentialsRejected())
-                ),
+                authorization(sessions.forceRefresh(Redacted.value(failed))),
             })
           );
           const stored = <S extends Schema.Top>(key: string, schema: S) =>
